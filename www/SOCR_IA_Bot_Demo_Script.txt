@@ -1,0 +1,41 @@
+SOCR AI Bot – Demonstration Script (March 2023)
+
+
+I. Code-generation
+	fit a linear model of the outcome rating using the predictor complaints.
+
+	<Check the box "Continue from this Chunk">
+	Plot the linear model of the outcome rating using the predictor complaints.
+
+	fit a linear model of the outcome rating using the predictors complaints and privileges.
+
+	fit a linear model of the outcome rating using complaints and privileges as predictors and report the model summary.
+
+II. Health Survey Abstract
+	
+	contemporary health system challenges and opportunities.
+
+
+III. Medical Image generation
+
+	generate a sagittal brain image.
+
+
+IV. Report (Rmd R-script generation
+
+	Select "All chunks", not exclusive to "without errors".
+	Then print report and download Rmarkdown script.
+
+
+V. EDA
+
+	Select some examples...
+
+IV. Ask IA Bot
+
+	What is Kruskal-Wallis statistical test.
+
+
+** Note: To prevent extreme costs and unstainable OpenAI API fees, the current default options of the AI Bot rely on lower-quality generative-AI models. If you are interested in using the latest, greatest, and most expensive models, you need to provide your own OpenAI API  Key (specify your API Key in the “Setting”).
+
+
