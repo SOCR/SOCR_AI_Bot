@@ -7,13 +7,14 @@ library(golem)
 library(RCurl)
 library(json64)
 library(plotly)
-# library(biomartr)
+library(biomartr)
 library(shinydashboard)
 library(shinydashboardPlus)
 library(shinythemes)
 library(shinyBS)
 library(reticulate)
 library(httr)
+library(jsonlite)
 
 
 #' Add external Resources to the Application
@@ -107,8 +108,8 @@ predictor variables that are highly correlated?",
   'Vague question, w/ context' = "How does k-means clustering work in statistics?"
 )
 
-demo_model_choose <- c('Choose Model: (Default: GPT-3.5 Turbo)',
-                       'GPT-3.5 Turbo',
+demo_model_choose <- c('Choose Model: (Default: GPT-4o-mini)',
+                       'GPT-4o-mini',
                        'Gemini 1.0 Pro')
 
 demo_synth_prompts <- c('Example Text Prompts:' = "Example themes:",

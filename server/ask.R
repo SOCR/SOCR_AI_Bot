@@ -68,27 +68,29 @@ output$answer <- renderUI({
     ans <- NULL
     
     # OpenAI or Google API Logic
-    if (input$model_choose == demo_model_choose[1] || input$model_choose == demo_model_choose[2]) {
+    if (input$model_choose == demo_model_choose[1] || input$model_choose == demo_model_choose[2]) { #CHATGPT
       chat <- function(input_message) {
         user_input <- list(list(role = "user", content = input_message))
         base_url <- "https://api.openai.com/v1/chat/completions"
         api_key_openAI <- api_key_session()$api_key_openAI
-        body <- list(
-          model = language_model,
-          messages = user_input,
-          max_tokens = 200,
-          temperature = sample_temp()
-        )
-        req <- request(base_url)
-        resp <- req |>
-          req_auth_bearer_token(token = api_key_openAI) |>
-          req_headers("Content-Type" = "application/json") |>
-          req_body_json(body) |>
-          req_retry(max_tries = 4) |>
-          req_throttle(rate = 15) |>
-          req_perform()
         
-        openai_chat_response <- resp |> resp_body_json(simplifyVector = TRUE)
+        Body <- toJSON(list(
+          model = "gpt-4o-mini", #CAN CHANGE THIS LATER
+          messages = list(list(role = "user", content = input_message))
+        ), auto_unbox = TRUE)
+        
+        handle <- new_handle()
+        
+        handle_setopt(handle, post = TRUE)
+        handle_setopt(handle, postfields = Body)
+        handle_setheaders(handle,
+                          "Content-Type" = "application/json",
+                          "Authorization" = paste("Bearer", api_key_openAI)
+        )
+        response <- curl_fetch_memory(base_url, handle = handle)
+        openai_chat_response <- fromJSON(rawToChar(response$content))
+        
+        chat_content <- openai_chat_response$choices$message$content[1] #Fixed code
         return(openai_chat_response)
       }
       
@@ -101,9 +103,9 @@ output$answer <- renderUI({
         }
       )
       
-      ans <- if (!is.null(response)) response$choices$message$content else "No response available."
+      ans <- if (!is.null(response)) response$choices$message$content[1] else "No response available."
       
-    } else if (input$model_choose == demo_model_choose[3]) {
+    } else if (input$model_choose == demo_model_choose[3]) { #GEMINI
       chat <- function(input_message) {
         api_key_gemini <- api_key_session()$api_key_gemini
         base_url <- "https://generativelanguage.googleapis.com/v1beta/models"

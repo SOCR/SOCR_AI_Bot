@@ -28,7 +28,7 @@ clean_api_key <- function(api_key) {
 validate_api_key_openAI <- function(api_key) {
   valid <- TRUE
   # if 51 characters, use the one in the file
-  if (nchar(api_key) != 51 && nchar(api_key) != 132) {
+  if (nchar(api_key) == 0) {
     valid <- FALSE
   }
   return(valid)
