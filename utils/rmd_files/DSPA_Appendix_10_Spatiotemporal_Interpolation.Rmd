@@ -1,0 +1,596 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<u>Appendix 10: Interpolation of Irregularly Sampled Spatiotemporal Data</u>"
+author: "SOCR/MIDAS (Ivo Dinov)"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+This [DSPA2 appendix](https://www.socr.umich.edu/DSPA2/) demonstrates useful protocols for spatiotemporal interpolation, regularization, and uniform sampling of univariate and multivariate, spatial and temporal (longitudinal) data. The process of *interpolation* used to regularize irregularly sampled data, impute missing values, and facilitate homologies between cases, studies, cohorts, participants, populations, clusters, etc.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(akima)
+library(plotly)
+```
+
+# Motivation of Interpolation of Irregularly Sampled Data
+
+Let's use the R package [akima](https://cran.r-project.org/web/packages/akima/) to illustrate the regularization of a process, or function $z=f(x,y)$, that is only observed on irregularly sampled points $(x,y)\in \mathbb{R}^2$, distributed throughout the 2D $(x,y)\in \mathbb{R}^2$ plane. Note that each of the axes can represent space or time, one of the axes can be time and the other one can be space, or alternatively the signal can represent irregularly sampled [kimesurface, $z=f(x,y)$](https://spacekime.org/) over complex time (*kime*), $\kappa\equiv z\in\mathbb{C}\cong\mathbb{R}^2\ni (x,y)$, where the kime-magnitude $t=|\kappa|=\sqrt{x^2+y^2}$ and the kime-phase $\phi$ are irregularly sampled and $\kappa=t e^{i\phi}\in\mathbb{C}$.
+
+# Univariate Process Interpolation
+
+In general, function interpolation returns a list of points smoothly interpolating the observed (irregularly-sampled) data points.
+
+## Regularly spaced sample
+
+```{r error=F, message=F, warning=F}
+x <- 1:10
+y <- c(rnorm(5), c(1,1,1,1,3))
+xnew <- seq(-1, 11, 0.1)
+# plot(x, y, ylim=c(-3, 3), xlim=range(xnew))
+# lines(spline(x, y, xmin=min(xnew), xmax=max(xnew), n=200), col="blue")
+spl <- spline(x, y, xmin=min(xnew), xmax=max(xnew), n=200)
+plot_ly(x=x, y=y, type="scatter", mode="markers", name="Raw Obs") %>%
+  add_trace(x=spl$x, y=spl$y, type="scatter", mode="lines", name="Spline Model") %>%
+  layout(title="Spline Modeling of a 1D Process (Uniform Sampling)",
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+
+## Irregularly spaced sample
+
+```{r error=F, message=F, warning=F}
+x <- sort(runif(10, max=10))
+y <- c(rnorm(5), c(1,1,1,1,3))
+
+spl_1 <- aspline(x, y, xnew)
+spl_2 <- aspline(x, y, xnew, method="improved")
+spl_3 <- aspline(x, y, xnew, method="improved", degree=10)
+
+plot_ly(x=x, y=y, type="scatter", mode="markers", name="Raw Obs") %>%
+  add_trace(x=spl$x, y=spl$y, type="scatter", mode="lines", name="Spline Model") %>%
+  add_trace(x=spl_1$x, y=spl_1$y, type="scatter", mode="lines", name="Spline Model 1") %>%
+  add_trace(x=spl_2$x, y=spl_2$y, type="scatter", mode="lines", name="Spline Model 2") %>%
+  add_trace(x=spl_3$x, y=spl_3$y, type="scatter", mode="lines", name="Spline Model 3") %>%
+  layout(title="Four Spline Models of a 1D Process (Uniform Sampling)",
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+## Another Example - Irregular Sampling
+
+```{r error=F, message=F, warning=F}
+x <- c(-3, -2, -1, 0, 1, 2, 2.5, 3)
+y <- c( 0, 0, 0, 0, -1, -1, 0, 2)
+
+spl <- spline(x, y, n=200)
+spl_1 <- aspline(x, y, n=200)
+spl_2 <- aspline(x, y, n=200, method="improved")
+spl_3 <- aspline(x, y, n=200, method="improved", degree=10)
+
+plot_ly(x=x, y=y, type="scatter", mode="markers", name="Raw Obs") %>%
+  add_trace(x=spl$x, y=spl$y, type="scatter", mode="lines", name="Spline Model") %>%
+  add_trace(x=spl_1$x, y=spl_1$y, type="scatter", mode="lines", name="Spline Model 1") %>%
+  add_trace(x=spl_2$x, y=spl_2$y, type="scatter", mode="lines", name="Spline Model 2") %>%
+  add_trace(x=spl_3$x, y=spl_3$y, type="scatter", mode="lines", name="Spline Model 3") %>%
+  layout(title="Four Spline Models of a 1D Process (Irregular Sampling)",
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+## Bicubic Bivariate Interpolation for Data Irregularly smapled on a Rectangular Grid $(x,y)$
+
+```{r error=F, message=F, warning=F}
+data(akima760)
+# interpolate at the diagonal of the grid [0,8]x[0,10]
+akima.bic <- bicubic(akima760$x, akima760$y, akima760$z, seq(0,8,length=50), seq(0,10,length=50))
+x <- sqrt(akima.bic$x^2+akima.bic$y^2)
+y <- akima.bic$z
+
+plot_ly(x=x, y=y, type="scatter", mode="markers+lines", name="Raw Obs") %>%
+  layout(title="Bicubic Bivariate Interpolation (Irregular Sampling)",
+         xaxis=list(title="Argument Magnitude (||(x,y)||)"),
+         yaxis=list(title="Functional Value (z=f(x,y))"),
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+
+x <- akima760$x
+y <- akima760$y
+z <- akima760$z
+plot_ly(x=x, y=y, z=z, type="surface", name="Raw Obs") %>%
+  layout(title="Bicubic Bivariate Interpolation (Irregular Sampling)",
+         xaxis=list(title="Argument Magnitude (||(x,y)||)"),
+         yaxis=list(title="Functional Value (z=f(x,y))"),
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+## Bicubic-grid: Bivariate Interpolation for Data on a Rectangular Grid
+
+Interpolation of a bivariate function, $z=f(x,y)$, on a rectangular grid in the x-y plane, based on the revised Akima method `bicubic.grid(x,y,z,xlim,ylim,dx,dy)`.
+
+```{r error=F, message=F, warning=F}
+data(akima760)
+# interpolate at a grid [0,8]x[0,10]
+akima.bic <- bicubic.grid(akima760$x, akima760$y, akima760$z, c(0,8),c(0,10),0.1,0.1)
+
+# ==================
+# interp:  Gridded Bivariate Interpolation for Irregular Data
+# ==========================
+# implement bivariate interpolation onto a grid for irregularly spaced input data.
+# Bilinear or bicubic spline interpolation is applied using different versions of algorithms from Akima
+
+data(akima)
+# plot(y ~ x, data = akima, main = "akima example data")
+# with(akima, text(x, y, formatC(z,dig=2), adj = -0.1))
+values <- formatC(akima$z,dig=2)
+plot_ly(as.data.frame(akima), x=~x, y=~y, type="scatter", mode="markers", name="Raw Obs") %>%
+  add_text(x=~x, y=~y, text=values, name=values, textposition = 'middle top') %>%
+  layout(title="Bicubic Bivariate Interpolation (Irregular Sampling)",
+         xaxis=list(title="x"),
+         yaxis=list(title="y"),
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+
+
+## linear interpolation
+akima_df <- as.data.frame(akima)
+akima_df <- akima_df %>% replace(is.na(.), 0)
+
+# interpolation
+akima_lin_interpol <- 
+  interp(akima_df$x, akima_df$y, akima_df$z, 
+         xo=seq(min(akima_df$x), max(akima_df$x), length = 200),
+         yo=seq(min(akima_df$y), max(akima_df$y), length = 200))
+akima_lin_interpol$z <- akima_lin_interpol$z %>% replace(is.na(.), 0)
+
+df <- as.data.frame(akima)
+plot_ly() %>% add_contour(x=~akima_lin_interpol$x, y=~akima_lin_interpol$y,
+                          z=~akima_lin_interpol$z, name="Bivariate Linear Model") %>%
+    add_trace(x=~df$x, y=~df$y, type="scatter", mode="markers", name="Raw Obs") %>%
+    layout(title="Linear Bivariate Interpolation (Irregular Sampling)",
+           xaxis=list(title="x"),yaxis=list(title="y"),
+           legend = list(orientation = 'h')) %>%
+    hide_colorbar()
+
+
+## use finer grid to increase interpolation-model smoothness
+akima.smooth <- 
+  with(akima, interp(x, y, z, xo=seq(0,25, length=200), yo=seq(0,20, length=200)))
+akima.smooth$z <- akima.smooth$z %>% replace(is.na(.), 0)
+
+plot_ly() %>% add_contour(x=~akima.smooth$x, y=~akima.smooth$y, 
+                          z=~akima.smooth$z, name="Smooth Bivariate Model") %>%
+    add_trace(x=~df$x, y=~df$y, type="scatter", mode="markers", name="Raw Obs") %>%
+    layout(title="Bivariate Interpolation (Finer 2D Grid)",
+           xaxis=list(title="x"),yaxis=list(title="y"),
+           legend = list(orientation = 'h')) %>%
+    hide_colorbar()
+
+# Sparse-data Interpolation using only 10 points (within convex hull)
+df <- as.data.frame(akima)
+subset_int <- sample(nrow(df), 10)  
+df <- df[subset_int, ]
+
+akima.part <- with(df, interp(x, y, z))
+akima.part$z <- akima.part$z %>% replace(is.na(.), 0)
+
+df$z <- df$z %>% replace(is.na(.), 0)
+plot_ly() %>% add_contour(x=~akima.part$x, y=~akima.part$y, z=~akima.part$z, name="Space (10-point-based) Model") %>%
+    add_trace(x=~df$x, y=~df$y, type="scatter", mode="markers", name="Raw Obs") %>%
+    layout(title="Sparce-data (n=10) Bivariate Interpolation",
+           xaxis=list(title="x"),yaxis=list(title="y"),
+           legend = list(orientation = 'h')) %>%
+    hide_colorbar()
+```
+
+# Bivariate Case
+
+## Linear Interpolation
+
+### Gridded Bivariate Interpolation of Irregularly-Sampled Data
+
+```{r error=F, message=F, warning=F}
+# sample of akima
+data(akima)
+dat <- as.data.frame(akima)
+
+# Display raw data observations
+plot_ly(dat, type="scatter3d", mode="markers", x=~x, y=~y, z=~z) 
+  # %>% add_surface(x=~x, y=~y, z=~z)
+
+# interpolation
+data_grid_interpol <- 
+  interp(dat$x, dat$y, dat$z, 
+         xo=seq(min(dat$x), max(dat$x), length = 200),
+         yo=seq(min(dat$y), max(dat$y), length = 200))
+
+plot_ly(dat, type="scatter3d", mode="markers", x=~x, y=~y, z=~z, 
+        name="Observed Sample Data") %>%
+  add_surface(x=~data_grid_interpol$x, y=~data_grid_interpol$y, 
+                z=~data_grid_interpol$z, name="Model Manifold",
+                contours = list(x = list(show = TRUE, start = 0.5, 
+                                         end=25, size=5, color='gray'), 
+                                z = list(show = TRUE, start = 0.5, 
+                                         end = 60, size = 5))) %>%
+  layout(title="Linear Modeling & Grid-Interpolation of 2D Processes",
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+### Pointwise Bivariate Interpolation of Irregularly-Sampled Data:
+
+```{r error=F, message=F, warning=F}
+data_pointwise_interpol <- 
+  interpp(dat$x, dat$y, dat$z, runif(20, min(dat$x), max(dat$x)),
+          runif(20, min(dat$y), max(dat$y)))
+
+plot_ly(dat, type="scatter3d", mode="markers", x=~x, y=~y, z=~z, 
+        marker = list(color = "red", size=3), opacity=0.6,
+        name="Observed Sample Data") %>%
+    add_trace(type="scatter3d", mode="markers",
+              x=~data_pointwise_interpol$x,
+              y=~data_pointwise_interpol$y, 
+              z=~data_pointwise_interpol$z, 
+              marker = list(color = "blue", size=6), opacity=0.6,
+              name="Pointwise Interpolation"
+              ) %>%
+    add_surface(x=~data_grid_interpol$x, y=~data_grid_interpol$y, 
+                z=~data_grid_interpol$z, name="Model Manifold",
+                opacity=0.2) %>%
+  layout(title=
+      "Linear Modeling & Pointwise-Interpolation of 2D Processes",
+      legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+## Nonlinear (Spline) Interpolation 
+
+### Bivariate Cubic-Spline Grid Interpolation
+
+```{r error=F, message=F, warning=F}
+data_cubspline_interpol <- 
+  interp(dat$x, dat$y, dat$z, 
+         xo=seq(min(dat$x), max(dat$x), length = 200),
+         yo=seq(min(dat$y), max(dat$y), length = 200),
+         linear = FALSE, extrap = TRUE)
+
+plot_ly(dat, type="scatter3d", mode="markers", x=~x, y=~y, z=~z, 
+        name="Observed Sample Data") %>%
+  add_surface(x=~data_cubspline_interpol$x,
+                y=~data_cubspline_interpol$y, 
+                z=~data_cubspline_interpol$z, 
+                name="Spline Model Manifold") %>%
+  layout(title="Nonlinear Spline Model Interpolation of 2D Processes",
+         legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+### Bivariate Cubic-Spline Pointwise Interpolation
+
+```{r error=F, message=F, warning=F}
+data_pointwise_interpol <- 
+  interpp(dat$x, dat$y, dat$z, runif(20, min(dat$x), max(dat$x)),
+          runif(20, min(dat$y), max(dat$y)), 
+          linear = FALSE, extrap = TRUE)
+
+plot_ly(dat, type="scatter3d", mode="markers", x=~x, y=~y, z=~z, 
+        marker = list(color = "red", size=3), opacity=0.6,
+        name="Observed Sample Data") %>%
+  add_trace(type="scatter3d", mode="markers",
+              x=~data_pointwise_interpol$x,
+              y=~data_pointwise_interpol$y, 
+              z=~data_pointwise_interpol$z, 
+              marker = list(color = "blue", size=6), opacity=0.6,
+              name="Pointwise Spline Interpolation") %>%
+  add_surface(x=~data_grid_interpol$x, y=~data_grid_interpol$y, 
+                z=~data_grid_interpol$z, name="Model Manifold",
+                opacity=0.2) %>%
+  layout(title=
+      "Spline Modeling & Pointwise-Interpolation of 2D Processes",
+      legend = list(orientation = 'h')) %>%
+  hide_colorbar()
+```
+
+# Image Super-resolution via Sinc Interpolation
+
+[Sinc interpolation](https://en.wikipedia.org/wiki/Whittaker%E2%80%93Shannon_interpolation_formula) 
+is the optimal strategy to increase image resolution by a specified factor without relying on additional information. The examples below utilize the [imager](https://cran.r-project.org/web/packages/imager) and
+[pracma](https://cran.r-project.org/web/packages/pracma/) `R` packages to demonstrate
+resampling 2D images and increasing their resolution by feeding zeo ($0$) rows 
+and columns in the Fourier space representation of the input images, which is 
+the core of *sinc interpolation* (aka *Whittaker–Shannon interpolation*).
+
+This demonstration performs the following steps
+
+ - Define the sinc function.
+ - Create a new grid for the rescaled image.
+ - Initialize a new matrix for the rescaled image.
+ - Apply the sinc interpolation formula to calculate the pixel values for the new image.
+ - Load an example image and applies the sinc interpolation with a specified scaling factor.
+ - Save and plot the rescaled image.
+
+The zero-padding the Fourier transform of a signal preserves the original signal's 
+frequency components while introducing (empty, information neutral) higher frequency 
+components that correspond to the interpolated samples. Adjusting the *scaling factor*
+increases, or decreases, the image resolution (subsample or super-resolution) the original image.
+
+```{r sincInterpolation, error=F, message=F, warning=F, fig.height=9, fig.width=9}
+# Install the necessary packages:
+# install.packages("imager")
+# install.packages("pracma")
+library(imager)
+library(plotly)
+library(jpeg)
+
+# FFT SHIFT
+#' This function is useful for visualizing the Fourier transform with the zero-frequency 
+#' component in the middle of the spectrum.
+#' 
+#' @param img_ff A Fourier transform of a 1D signal, 2D image, or 3D volume.
+#' @param dim Number of dimensions (-1, 1, 2, 3).
+#' @return A properly shifted FT of the array.
+#' 
+fftshift <- function(img_ff, dim = -1) {
+
+  rows <- dim(img_ff)[1]    
+  cols <- dim(img_ff)[2]
+  # planes <- dim(img_ff)[3]
+
+  swap_up_down <- function(img_ff) {
+    rows_half <- ceiling(rows/2)
+    return(rbind(img_ff[((rows_half+1):rows), (1:cols)], img_ff[(1:rows_half), (1:cols)]))
+  }
+
+  swap_left_right <- function(img_ff) {
+    cols_half <- ceiling(cols/2)
+    return(cbind(img_ff[1:rows, ((cols_half+1):cols)], img_ff[1:rows, 1:cols_half]))
+  }
+  
+  #swap_side2side <- function(img_ff) {
+  #  planes_half <- ceiling(planes/2)
+  #  return(cbind(img_ff[1:rows, 1:cols, ((planes_half+1):planes)], img_ff[1:rows, 1:cols, 1:planes_half]))
+  #}
+
+  if (dim == -1) {
+    img_ff <- swap_up_down(img_ff)
+    return(swap_left_right(img_ff))
+  }
+  else if (dim == 1) {
+    return(swap_up_down(img_ff))
+  }
+  else if (dim == 2) {
+    return(swap_left_right(img_ff))
+  }
+  else if (dim == 3) {
+    # Use the `abind` package to bind along any dimension a pair of multi-dimensional arrays
+    # install.packages("abind")
+    library(abind)
+    
+    planes <- dim(img_ff)[3]
+    rows_half <- ceiling(rows/2)
+    cols_half <- ceiling(cols/2)
+    planes_half <- ceiling(planes/2)
+    
+    img_ff <- abind(img_ff[((rows_half+1):rows), (1:cols), (1:planes)], 
+                    img_ff[(1:rows_half), (1:cols), (1:planes)], along=1)
+    img_ff <- abind(img_ff[1:rows, ((cols_half+1):cols), (1:planes)], 
+                    img_ff[1:rows, 1:cols_half, (1:planes)], along=2)
+    img_ff <- abind(img_ff[1:rows, 1:cols, ((planes_half+1):planes)], 
+                    img_ff[1:rows, 1:cols, 1:planes_half], along=3)
+    return(img_ff)
+  }
+  else {
+    stop("Invalid dimension parameter")
+  }
+}
+
+# Define the sinc interpolation function using FFT
+sinc_interp_fft <- function(image, factor) {
+  # Get original image dimensions
+  orig_x <- dim(image)[1]
+  orig_y <- dim(image)[2]
+  
+  # Apply FFT to the original image
+  fft_image <- fft(image)
+  
+  # Zero-padding in the Fourier domain
+  pad_x <- orig_x * factor
+  pad_y <- orig_y * factor
+  pad_fft <- matrix(0, nrow = pad_x, ncol = pad_y)
+  
+  # Calculate the center of the original FFT
+  center_x <- ceiling(orig_x / 2)
+  center_y <- ceiling(orig_y / 2)
+  
+  # Copy the original FFT to the center of the padded FFT matrix
+  pad_fft[1:center_x, 1:center_y] <- fft_image[1:center_x, 1:center_y]
+  pad_fft[(pad_x - center_x + 1):pad_x, 1:center_y] <- 
+    fft_image[(center_x + 1):orig_x, 1:center_y]
+  pad_fft[1:center_x, (pad_y - center_y + 1):pad_y] <- 
+    fft_image[1:center_x, (center_y + 1):orig_y]
+  pad_fft[(pad_x - center_x + 1):pad_x, (pad_y - center_y + 1):pad_y] <- 
+    fft_image[(center_x + 1):orig_x, (center_y + 1):orig_y]
+  
+  # Inter-splice zeros uniformly throughout the k-space 
+  # pad_fft[seq(1, pad_x, by = factor), seq(1, pad_y, by = factor)] <- fft_image
+  
+  # Apply inverse FFT to get the interpolated image
+  interp_image <- fft(pad_fft, inverse = TRUE)
+  
+  # Normalize the image
+  interp_image <- Re(interp_image) * (factor^2)/(length(interp_image))
+  
+  return(list(interp_image=as.cimg(interp_image), fft_image=fft_image, pad_fft=pad_fft))
+}
+
+# Load an example image
+# image <- load.image(system.file("extdata/parrots.png", package = "imager"))
+# Read Image in and display it
+# Either download the JPG image locally from https://umich.instructure.com/courses/38100/files/1627149/download?download_frd=1 and then read it in
+# mri <- readJPEG("C:/Users/user/Desktop/MRI_ImageHematoma.jpg")
+
+# Or directly load it from the web
+pathToMRI <- tempfile(fileext = ".jpg")
+download.file("https://umich.instructure.com/courses/38100/files/1627149/download?download_frd=1", 
+              mode = "wb", pathToMRI)
+image <- readJPEG(pathToMRI)
+# load.image(system.file(pathToMRI, package = "imager"))
+
+# Convert the image to grayscale for simplicity
+# gray_image <- grayscale(image[,,1])
+
+# Perform sinc interpolation with a scaling factor of 2, and pull the result list of images
+res <- sinc_interp_fft(t(image[,,1]), 2)
+rescaled_image <- res$interp_image
+fft_image <- res$fft_image
+pad_fft <- res$pad_fft
+# image(rescaled_image[,,1,1] )
+
+# spacetime domain images
+plt_orig <- plot_ly(z=apply(t(image[,,1]), 1, rev), type="heatmap", name="Original Img") %>%
+  layout(title="Original Image") %>% hide_colorbar()
+plt_SuperResSincInterpol <- plot_ly(z=apply(rescaled_image[,,1,1], 1, rev),
+                                    type="heatmap", name="Sinc Interpolated Image") %>%
+  layout(title="Sinc Interpolated Image (Zoom-Factor=2*2)") %>% hide_colorbar()
+
+# Fourier k-space images
+mag_FFT <- sqrt(Re(fftshift(fft_image))^2 + Im(fftshift(fft_image))^2)
+plt_OrigFFT <- plot_ly(z=log(apply(mag_FFT, 1, rev)), type="heatmap", name="FFT") %>%
+  layout(title="FFT Log-Magnitute of Original Image (center-shifted k-space)") %>%
+  hide_colorbar()
+mag_FFT_padded <- sqrt(Re(fftshift(pad_fft))^2 + Im(fftshift(pad_fft))^2)
+plt_FFTpadded <- plot_ly(z=log(apply(mag_FFT_padded, 1, rev)+0.001),
+                         type="heatmap", name="Padded FFT") %>%
+  layout(title="Sinc FFT-padded Log-Magnitute of Image in k-space") %>%
+  hide_colorbar()
+
+subplot(plt_orig, plt_SuperResSincInterpol, plt_OrigFFT, plt_FFTpadded, nrows = 2) %>%
+  layout(title = 'Sinc Interpolation: Original and Superresolution Images and their Fourier-space counterparts')
+```
+
+
+# Longitudinal Data
+
+There are different `R` packages facilitating longitudinal data interpolation and smoothing, e.g., `splines`, `akima`, time-series and spatial interpolation, e.g., `deldir`, `interp`, `spatial`. The nature of interpolation methods relies on pooling information from neighboring observations spatiotemporally co-located in spacetime. The `brokenstick` package is useful for modeling and prediction based on independent irregularly sampled multivariate time series using linear mixed models to increase time-series stability across replicates. 
+
+## Univariate Time-Series
+
+Let's demonstrate some of the spatiotemporal interpolation strategies for modeling of geographic and longitudinal data using the [Barcelona air-quality and accidents dataset (2017)](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/other) (.XLSX).
+
+```{r error=F, message=F, warning=F}
+library(lubridate)
+
+tmp = tempfile(fileext = ".xlsx")
+download.file(url = "https://umich.instructure.com/files/29669631/download?download_frd=1", destfile = tmp, mode="wb")
+barcelona_Accidents <- openxlsx::read.xlsx(xlsxFile=tmp, sheet="Barcelona_Accidents_2017", skipEmptyRows=TRUE)
+barcelona_AirQuality <- openxlsx::read.xlsx(xlsxFile=tmp, sheet="air_quality_Nov2017", skipEmptyRows=TRUE)
+dim(barcelona_Accidents)
+dim(barcelona_AirQuality)
+
+# Reconstruct the Date-Time (new column) from columns Month, Day, Hour
+a <- month(as.POSIXct( barcelona_Accidents$Month, format = "%B"), label=T)
+barcelona_Accidents$Year <- 2017
+barcelona_Accidents$Month <- match(barcelona_Accidents$Month, month.name)
+barcelona_Accidents$Date <- 
+  make_datetime(barcelona_Accidents$Year, barcelona_Accidents$Month, 
+                barcelona_Accidents$Day, barcelona_Accidents$Hour)
+```
+
+
+```{r error=F, message=F, warning=F}
+# install.packages("brokenstick")
+library(brokenstick)
+library(lubridate)
+library(plotly)
+
+# table(as.factor(barcelona_Accidents$Neighborhood.Name))
+
+ids <- barcelona_Accidents$Weekday
+barcelona_Accidents$X_hours <- hour(barcelona_Accidents$Date)
+# knots <- 0:23 # hourly
+knots <- c(0, 5, 11, 17, 23, 24)
+
+# By District Name
+fit <- brokenstick(Victims ~ X_hours | District.Name, boundary = c(0,24),
+                   barcelona_Accidents, knots = knots, method="kr")
+ggplotly(plot(fit, barcelona_Accidents, # group = as.factor(Weekday),
+     xlab = "Time (hours)", ylab = "Number of Victims") +
+    ggtitle("Regularized Models of the Data - Blue = observed data, Red = Fitted broken stick curves"))
+
+# By Neighborhood Name
+fit <- brokenstick(Victims ~ X_hours | Neighborhood.Name, boundary = c(0,24),
+                   barcelona_Accidents, knots = knots, method="kr")
+ggplotly(plot(fit, barcelona_Accidents, # group = as.factor(Weekday),
+     xlab = "Time (hours)", ylab = "Number of Victims") +
+    ggtitle("Regularized Models of the Data - Blue = observed data, Red = Fitted broken stick curves"))
+
+# ctl_lmer <- lmerControl(check.conv.grad = .makeCC("warning", tol = 0.04))
+# f <- Victims ~ X_hours + Neighborhood.Name + Weekday +
+#   (0 + X_hours + Neighborhood.Name + Weekday | District.Name)
+# mod_lmer <- lme4::lmer(f, barcelona_Accidents, control = ctl_lmer)
+```
+
+
+## Multi-variate Longitudinal Processes
+...
+
+```{r error=F, message=F, warning=F}
+
+```
+
+## Longitudinal Processes with Exogeneous-Variables 
+...
+
+```{r error=F, message=F, warning=F}
+
+```
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

@@ -1,0 +1,2408 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Linear Algebra, Matrix Computing &amp; Regression</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+In this chapter we present the fundamental linear algebra concepts underpinning many modern matrix computing operations, vector-based operations, linear modeling techniques, eigenspectra decompositions, multivariate linear regression modeling, ordinary least squares estimation, machine learning and artificial intelligence algorithms. We will demonstrate these techniques using simulated data and real observed data of baseball players and clinical heart attack patients.
+
+Some students and readers may find it useful to first review some of the [fundamental mathematical representations, analytical modeling techniques, and basic concepts](https://socr.umich.edu/BPAD/BPAD_notes/Biophysics430_Chap01_MathFoundations.html). These foundations play critical roles in all subsequent chapters and sections. Examples of core mathematical principles include calculus of differentiation and integration; representation of scalars, vectors, matrices, and tensors; displacement, velocity, and acceleration; polynomials, exponents, and logarithmic functions; Taylor’s series; complex numbers; ordinary and partial differential equations; probability and statistics; statistical moments; and probability distributions.
+
+# Linear Algebra
+
+*Linear algebra* is a branch of mathematics that studies linear associations using vectors, vector-spaces, linear equations, linear  transformations and matrices. Although it is generally challenging to visualize complex data, e.g., large vectors, tensors, and tables in n-dimensional Euclidean spaces ($n\ge 3$), linear algebra allows us to represent, model, synthesize and summarize such complex data.
+
+Virtually all natural processes permit first-order linear approximations. This is useful because linear equations are easy (to write, interpret, solve) and these first order approximations may be useful to practically assess the process, determine general trends, identify potential patterns, and suggest associations in the data.
+
+Linear equations represent the simplest type of models for many processes. Higher order models may include additional nonlinear terms, e.g., [Taylor-series expansion](https://en.wikipedia.org/wiki/Taylor_series). Linear algebra provides the foundation for linear representation, analytics, solutions, inference and visualization of first-order affine models. Linear algebra is a small part of the larger mathematics *functional analysis* field, which is actually the infinite-dimensional version of linear algebra.
+
+Specifically, *linear algebra* allows us to **computationally** manipulate, model, solve, and interpret complex systems of equations representing large numbers of dimensions/variables. Arbitrarily large problems can be mathematically transformed into simple matrix equations of the form $A x = b$ or $A x = \lambda x$.
+
+In this chapter, we review the fundamentals of linear algebra, matrix manipulation and their applications to representation, modeling, and analysis of real data. Specifically, we will cover (1) construction of matrices and matrix operations, (2) general matrix algebra notations, (3) eigenvalues and eigenvectors of linear operators, (4) least squares estimation, and (5) linear regression and variance-covariance matrices.
+
+## Building Matrices
+
+The easiest way to create a matrix in `R` is by using the `matrix()` or `array()` functions, which allow splicing a long vector into a matrix or a tensor of certain size. 
+
+```{r eval=T}
+seq1<-seq(1:6)
+m1<-matrix(seq1, nrow=2, ncol=3)
+m1
+m2<-diag(seq1)
+m2
+m3<-matrix(rnorm(20), nrow=5)
+m3
+```
+
+The function `diag()` is very useful. When the object is a vector, it creates a diagonal matrix with the vector in the principal diagonal.
+
+```{r eval=T}
+diag(c(1, 2, 3))
+```
+
+When the object is a matrix, `diag()` returns its principal diagonal.
+
+```{r eval=T}
+diag(m1)
+```
+
+When the object is a scalar, `diag(k)` returns a $k\times k$ identity matrix.
+
+```{r eval=T}
+diag(4)
+```
+
+The functions `cbind()` and `rbind()` are also useful for building matrices from vectors by column or row concatenation.
+
+```{r eval=T}
+c1<-1:5
+m4<-cbind(m3, c1)
+m4
+r1<-1:4
+m5<-rbind(m3, r1)
+m5
+```
+
+Note that `m5` has a row name `r1` in the *4*th row. We remove row/column names by naming them as `NULL`. 
+
+```{r eval=T}
+dimnames(m5)<-list(NULL, NULL)
+m5
+```
+
+## Matrix subscripts
+
+Each element in a matrix has a location indexed by the corresponding row and column. `A[i, j]` stores the element in the *i*th row and *j*th column in the matrix `A`. We can also access some specific rows or columns using matrix subscripts.
+
+```{r eval=T}
+m6<-matrix(1:12, nrow=3)
+m6
+m6[1, 2]
+m6[1, ]
+m6[, 2]
+m6[, c(2, 3)]
+```
+
+The ordinal scalar operations addition, subtraction, multiplication and division can be generalized as matrix operations.
+
+## Addition and subtraction
+
+Matrix addition and subtraction require matrices of the same dimensions. The sum or difference of two matrices are matrices containing elements representing the scalar sum or difference, respectively, of the values in corresponding positions in the two matrices.
+
+```{r eval=T}
+m7<-matrix(1:6, nrow=2)
+m7
+m8<-matrix(2:7, nrow = 2)
+m8
+m7+m8
+```
+
+```{r eval=T}
+m8-m7
+m8-1
+```
+
+## Multiplication
+
+Element-wise matrix multiplication is valid for matrices of the same sizes. However, *matrix multiplication* is different from component-wise scalar multiplication, and requires a special match between the dimensions of the multiplied matrices, $P_{m\times k}=L_{m\times n} \cdot R_{n\times k}$. That is, the number of *columns* in the left matrix, $L$,, must equal to the number of *rows* of the right matrix, $R$. Then, the $row\times column$ matrix multiplication rule yields a product matrix of dimensions corresponding to the number of rows ($m$) of $L$ and the number of columns ($k$) of $R$, i.e.,  $P_{m\times k}$.
+
+### Element-wise multiplication
+
+*Element-wise matrix multiplication* ($*$) involves scalar products of the elements in the same positions.
+
+```{r eval=T}
+m8 * m7
+```
+
+### Matrix multiplication (Product)
+
+Matrix product ($\%*\%$) generates an output matrix having the same number of rows as the left matrix and the same number of columns as the right matrix.
+
+```{r eval=T}
+dim(m8)
+m9<-matrix(3:8, nrow=3)
+m9
+dim(m9)
+M = m8 %*% m9
+M
+```
+
+The product of multiplying two matrices $m^8_{2\times 3}$ * $m^9_{3\times 2}$ is another matrix $M_{2\times 2}$ of dimensions $2\times 2$.
+
+The process of multiplying two vectors is called **outer product**. Assume we have two vectors $u$ and $v$. Using matrix multiplication, their outer product is the same as $u\ \underbrace{\% * \%}_{product}\ \overbrace{t(v)}^{transpose}$ or mathematically $uv^t$. In `R` the vector outer product operator is `%o%`, which generates second order tensors (matrices). 
+
+```{r eval=T}
+u<-c(1, 2, 3, 4, 5)
+v<-c(4, 5, 6, 7, 8)
+u %o% v
+u %*% t(v)
+```
+
+What are the differences between $u \%*\% v$, $u \%*\% t(v)$, $u * t(v)$, and $u * v$?
+
+### Matrix Inversion (Division)
+
+Element-wise matrix (or scalar) division is well defined for matrices of the same dimensions.
+
+```{r eval=T}
+m8 / m7
+m8 / 2
+```
+
+However, matrix inversion is different. Recall that the *transpose* of a matrix is a matrix with swapped columns and rows. In `R`, matrix transposition is done by the function `t()`.
+
+```{r eval=T}
+m8
+t(m8)
+```
+
+Notice that the $[1, 2]$ element in `m8[1, 2]` is the same as the $[2, 1]$ element in `t(m8)[2, 1]`.
+
+The *right inverse* of a matrix, ($A^{-1}_{m\times n}$), is a special matrix with the property that multiplying the original matrix ($A_{n\times m}$) on the *right* by this inverse  ($A^{-1}$) yields the identity matrix, which has $1$'s on the main diagonal and $0$'s off the diagonal. That is,
+
+$$A_{n\times m}\ A^{-1}_{m\times n} = I_{n\times n}.$$
+Similarly, a *left matrix inverse* is defined as a matrix, ($A^{-1}_{m\times n}$), with the property that multiplying the original matrix ($A_{n\times m}$) on the *left * by this inverse  ($A^{-1}$) yields the identity matrix.
+
+$$ A^{-1}_{m\times n}\ A_{n\times m} = I_{m\times m}.$$
+
+A *matrix inverse* is only defined for square matrices, $m=n$.
+
+Given four numbers satisfying $ad-bc \not= 0$, the following $2\times 2$ matrix.
+
+$$A_{2\times 2}=\left(\begin{array}{cc} 
+a & b \\
+c & d
+\end{array}\right) ,$$
+
+has an inverse matrix given by
+
+$$A^{-1}_{2\times 2} =\frac{1}{ad-bc}\left(\begin{array}{cc} 
+d & -b \\
+-c & a
+\end{array}\right) .$$
+
+It's easy to validate that $A_{2\times 2} A^{-1}_{2\times 2} =I_{2\times 2}$.
+
+In higher dimensions, the [Cramer's rule](https://en.wikipedia.org/wiki/Invertible_matrix#Analytic_solution) may be used to compute the matrix inverse. Matrix inversion is available in `R` via the `solve()` function.
+
+```{r eval=T}
+m10 <- matrix(1:4, nrow=2)
+m10
+solve(m10)
+m10 %*% solve(m10)
+```
+
+Note that only special matrices are invertible, not all.  These matrices are *square* (have the same number of rows and columns) and non-singular.
+
+Another function that can help us to get the inverse of a matrix is the `ginv()` function in the `MASS` package. This function gives us the Moore-Penrose Generalized Inverse of a matrix.
+
+```{r eval=T}
+require(MASS)
+ginv(m10)
+```
+
+In addition, the function `solve()` can be used to solve matrix equations. For instance, `solve(A, b)` returns a vector $x$ satisfying the equation $b = Ax$, i.e., $x= A^{-1}b$.
+
+```{r eval=T}
+s1 <- diag(c(2, 4, 6, 8))
+s2 <- c(1, 2, 3, 4)
+solve(s1, s2)
+```
+
+The following table summarizes some of the basic matrix operation functions.
+
+Expression    |Explanation
+--------------|----------------------------------------------------------------
+`t(x)`| transpose
+`diag(x)`| diagonal
+`%*%`| matrix multiplication
+`solve(a, b)`| solves `a %*% x = b` for x
+`solve(a)`| matrix inverse of a
+`rowsum(x)`| sum of rows for a matrix-like object. `rowSums(x)` is a faster version
+`colSums(x)`, `colSums(x)`| id. for columns 
+`rowMeans(x)`| fast version of row means 
+`colMeans(x)`| id. for columns
+
+```{r eval=T}
+mat1 <- cbind(c(1, -1/5), c(-1/3, 1))
+mat1.inv <- solve(mat1)
+
+mat1.identity <- mat1.inv %*% mat1
+mat1.identity
+b <- c(1, 2)
+x <- solve (mat1, b)
+x
+```
+
+# Matrix Computing
+
+Let's look at the basics of matrix notation and matrix algebra.  The product $AB$ between matrices $A$ and $B$ is defined only if the number of columns in $A$ equals the number of rows in $B$. That is, we can multiply an $m\times n$ matrix $A$ by an $n\times k$ matrix $B$ and the result will be $AB_{m\times k}$ matrix. Each element of the product matrix, $(AB_{i, j})$, represents the product of the $i$-th row in $A$ and the $j$-th column in $B$, which are of the same size $n$. Matrix multiplication is `row-by-column`.
+
+Linear algebra notation simplifies the mathematical descriptions and manipulations of linear models, as well as coding in `R`.
+
+The main point is to show how we can write *linear models* using matrix notation. Later, we'll explain how this is useful for solving the *least squares problems*. 
+
+## Solving Systems of Equations
+
+Linear algebra notation enables the mathematical analysis and derivation of solutions of systems of linear equations and provides a generic machinery for solving linear problems. 
+
+$$\begin{align*}
+a + b + 2c &= 6\\
+3a - 2b + c &= 2\\
+2a + b  - c &= 3
+\end{align*} $$
+
+
+$$\underbrace{\begin{pmatrix}
+1&1&2\\
+3&-2&1\\
+2&1&-1
+\end{pmatrix}}_{\text{A}}
+\underbrace{\begin{pmatrix}
+a\\
+b\\
+c
+\end{pmatrix}}_{\text{x}} =
+\underbrace{\begin{pmatrix}
+6\\
+2\\
+3
+\end{pmatrix}}_{\text{b}}$$
+
+That is, $Ax = b$, which implies that:
+
+$$\begin{pmatrix}
+a\\
+b\\
+c
+\end{pmatrix} =
+\begin{pmatrix}
+1&1&2\\
+3&-2&1\\
+2&1&-1
+\end{pmatrix}^{-1}
+\begin{pmatrix}
+6\\
+2\\
+3
+\end{pmatrix}$$
+
+In other words, $A^{-1}A x ==x = A^{-1}b$.
+
+Notice that this approach parallels the strategy for solving of simple (univariate) linear equations like: 
+$$\underbrace{2}_{\text{(design matrix) A }} \overbrace{x}^{\text{unknown x }} \underbrace{-3}_{\text{simple constant term}} = \overbrace{5}^{\text{b}}.$$
+
+The constant term, $-3$, can be moved and integrated into the right-hand-side, $b$, to form a new term $b'=5+3=8$. Thus, the shifting factor is mostly ignored in linear models, or linear equations, which simplifies the linear matrix equation to:
+$$\underbrace{2}_{\text{(design matrix) A }} \overbrace{x}^{\text{unknown x }}  = \underbrace{5+3}_{b'}=\overbrace{8}^{b'}.$$
+
+This (simple) linear equation is solved by multiplying both hand sides by the inverse (reciprocal) of the $x$ multiplier, $2$.
+
+$$\frac{1}{2} 2 x  = \frac{1}{2} 8.$$
+Thus, the unique solution is:
+$$x  = \frac{1}{2} 8=4.$$
+
+So, let's use exactly the same strategy to solve the corresponding *matrix equation* (linear equation, $Ax = b$) using `R`, where the *unknown* is $x$, and the *design matrix* $A$ and the *constant* vector $b$ are known.
+
+$$\underbrace{\begin{pmatrix}
+1&1&2\\
+3&-2&1\\
+2&1&-1
+\end{pmatrix}}_{\text{A}}
+\underbrace{\begin{pmatrix}
+a\\
+b\\
+c
+\end{pmatrix}}_{\text{x}} =
+\underbrace{\begin{pmatrix}
+6\\
+2\\
+3
+\end{pmatrix}}_{\text{b}}.$$
+
+
+```{r eval=T}
+A_matrix_values <- c(1, 1, 2, 3, -2, 1, 2, 1, -1)
+# matrix elements are arranged by columns, so, we need to transpose them to arrange them by rows.
+A <- t(matrix(A_matrix_values, nrow=3, ncol=3))  
+
+b <- c(6, 2, 3)
+# to solve Ax = b, x=A^{-1}*b
+x <- solve (A, b)
+# Ax = b ==> x = A^{-1} * b
+x
+
+# Check the Solution x=(1.35 1.75 1.45)
+LHS <- A %*% x
+round(LHS-b, 6)
+```
+
+How about if we want to triple-check the consistency of the `solve()` method to provide accurate solutions to matrix-based systems of linear equations?
+
+We can generate the solution ($x$) to the equation $Ax=b$ by using first principles.
+$$ x = A^{-1}b.$$
+
+```{r eval=T}
+A.inverse <- solve(A) # the inverse matrix A^{-1} 
+x1 <- A.inverse %*% b
+# check if X and x1 are the same
+x; x1
+round(x - x1, 6)
+```
+
+## The identity matrix
+
+The *identity matrix* is the matrix analog to the multiplicative numeric identity, the number $1$. Multiplying the identity matrix by any other matrix ($B$) does not change the matrix $B$. This property requires that the *multiplicative identity matrix* must look like this.
+
+$$\mathbf{I} = \begin{pmatrix} 1&0&0&\dots&0&0\\
+0&1&0&\dots&0&0\\
+0&0&1&\dots&0&0\\
+\vdots &\vdots & \vdots & \ddots&\vdots&\vdots\\
+0&0&0&\dots&1&0\\
+0&0&0&\dots&0&1 \end{pmatrix}.$$
+
+The identity matrix is always a square matrix with diagonal elements $1$ and $0$ at the off-diagonal elements.
+
+Following the above matrix multiplication rules, we can see that:
+
+$$\mathbf{X\times I} = \begin{pmatrix} x_{1, 1} & \dots & x_{1, p}\\
+& \vdots & \\ x_{n, 1} & \dots & x_{n, p} \end{pmatrix} 
+\begin{pmatrix} 1&0&0&\dots&0&0\\
+0&1&0&\dots&0&0\\
+0&0&1&\dots&0&0\\
+ & & &\vdots & &\\
+ 0&0&0&\dots&1&0\\
+0&0&0&\dots&0&1
+\end{pmatrix}=$$
+
+$$\begin{pmatrix} x_{1, 1} & \dots & x_{1, p}\\ & \vdots & \\ x_{n, 1} & \dots & x_{n, p} \end{pmatrix}= \mathbf{X}.$$
+
+In `R`, we can express the identity matrix as follows.
+
+```{r eval=T}
+n <- 3 #pick dimensions
+I <- diag(n); I
+A %*% I; I %*% A
+```
+
+## Vectors, Matrices, and Scalars
+
+Let's look at this notation deeper using the [Baseball players data](https://wiki.socr.umich.edu/index.php/SOCR_Data_MLB_HeightsWeights) containing three quantitative variables, `Heights`, `Weight`, and `Age`. Suppose the variable `Weight` is considered as a random `response` (outcome vector) denoted by $Y_1, Y_2, \dots, Y_n$.
+
+We can express each player's `Weight` as a function of `Age` and `Height`. 
+
+```{r eval=T}
+# Data: https://umich.instructure.com/courses/38100/files/folder/data   (01a_data.txt)
+data <- read.table('https://umich.instructure.com/files/330381/download?download_frd=1', as.is=T, header=T)    
+attach(data)
+head(data)
+```
+
+In matrix form, we can express the outcome using one symbol, $\mathbf{Y}$. We usually use **bold face** to distinguish between scalars, vectors, matrices and tensors.
+
+$$\mathbf{Y} = 
+\begin{pmatrix}
+Y_1\\
+Y_2\\
+\vdots\\
+Y_n
+\end{pmatrix}.$$
+
+In `R`, the default representation of vector data is as *columns*, i.e., our outcome vector dimension is $n\times 1$, as opposed to $1 \times n$ used for row vectors (e.g., $\mathbf{Y}^t$).
+
+Similarly, we can use matrix notation to represent the covariates, or predictors, `Age` and `Height`. In a case with two predictors, we can represent them like this:
+
+$$\mathbf{X}_1 = \begin{pmatrix}
+x_{1, 1}\\
+\vdots\\
+x_{n, 1}
+\end{pmatrix} \mbox{ and }
+\mathbf{X}_2 = \begin{pmatrix}
+x_{1, 2}\\
+\vdots\\
+x_{n, 2}
+\end{pmatrix}.$$
+
+In the that for the Baseball players study, $x_{1, 1}= Age_1$ and $x_{i, 1}=Age_i$ with $Age_i$ representing the `Age` of the $i$-th player, and similarly, $x_{i, 2}= Height_i$ is the height of the $i$-th player. These vectors can be thought of as $n\times 1$ matrices. For instance, it is convenient to represent the covariates as *design matrices*.
+
+$$\mathbf{X} = [ \mathbf{X}_1 \mathbf{X}_2 ] = \begin{pmatrix}
+x_{1, 1}&x_{1, 2}\\
+\vdots\\
+x_{n, 1}&x_{n, 2}
+\end{pmatrix}. $$
+
+This design matrix has dimension $n \times 2$.
+
+
+```{r eval=T}
+X <- cbind(Age, Height)
+head(X)
+dim(X)
+```
+
+We can also use this notation to denote an arbitrary number ($k$) of covariates with the following $n\times k$ matrix.
+
+$$\mathbf{X} = \begin{pmatrix}
+  x_{1, 1}&\dots & x_{1, k} \\
+  x_{2, 1}&\dots & x_{2, k} \\
+   & \vdots & \\
+  x_{n, 1}&\dots & x_{n, k} 
+  \end{pmatrix}. $$
+
+You can simulate such a design matrix in `R` using `matrix()`, instead of `cbind`.
+
+```{r eval=T}
+n <- 1034; k <- 5
+X <- matrix(1:(n*k), n, k)
+head(X)
+dim(X)
+```
+
+By default,  matrices are filled *column-by-column order*, however using the `byrow=TRUE` argument allows us to change the order to *row-by-row.*
+
+```{r eval=T}
+n <- 1034; k <- 5
+X <- matrix(1:(n*k), n, k, byrow=TRUE)
+head(X)
+dim(X)
+```
+
+*Scalars* are just one-dimensional values, typically numbers, that are different from their higher-dimensional counterparts, vectors, matrices, and tensors, which are usually denoted by  bold characters. 
+
+## Sample Statistics
+
+To compute the sample *average* and *variance* of a dataset, we use the formulas:
+$$\bar{Y}=\frac{1}{n} \sum_{i=1}^n {Y_i}$$ 
+
+and 
+
+$$\mbox{var}(Y)=\frac{1}{n-1} \sum_{i=1}^n {(Y_i - \bar{Y})}^2, $$
+which can be represented as matrix multiplications. 
+
+Define an $n \times 1$ matrix made of $1$'s.
+
+$$A=\begin{pmatrix}
+1\\
+1\\
+\vdots\\
+1
+\end{pmatrix}.$$
+
+This implies that.
+
+$$\frac{1}{n}
+\mathbf{A}^\top Y = \frac{1}{n}
+\begin{pmatrix}1&1& \dots&1\end{pmatrix}
+\begin{pmatrix}
+Y_1\\
+Y_2\\
+\vdots\\
+Y_n
+\end{pmatrix}=
+\frac{1}{n} \sum_{i=1}^n {Y_i}= \bar{Y}.$$
+
+Recall that we multiply matrices and scalars, like $\frac{1}{n}$, by `*`, whereas we multiply matrices using the matrix product operator, `%*%`.
+
+```{r, message=FALSE}
+# Using the Baseball dataset
+y <- data$Height
+print(mean(y))
+
+n <- length(y)
+Y <- matrix(y, n, 1)
+A <- matrix(1, n, 1)
+barY = (t(A) %*% Y) / n
+
+print(barY)
+# double-check the result
+mean(data$Height)
+```
+
+Multiplying the transpose of a matrix with another matrix is very common in linear modeling and statistical computing, so there is an appropriate function in `R`, `crossprod()`.
+
+```{r eval=T}
+barY = (crossprod(A, Y)) / n
+print(barY)
+```
+
+There is a similar matrix algebra for computing the variance.
+
+$$\mathbf{Y'}\equiv \begin{pmatrix}
+Y_1 - \bar{Y}\\
+\vdots\\
+Y_n - \bar{Y}
+\end{pmatrix}, \, \, 
+\frac{1}{n-1} \mathbf{Y'}^\top\mathbf{Y'} = 
+\frac{1}{n-1}\sum_{i=1}^n (Y_i - \bar{Y})^2. $$
+
+A `crossprod` with only one matrix computes $Y^\top Y$.
+
+```{r eval=T}
+Y1 <- y - mean(y)
+crossprod(Y1)/(n-1)  # Y1.man <- (1/(n-1))* t(Y1) %*% Y1
+
+# Check the result
+var(y)
+```
+
+
+## Applications of Matrix Algebra in Linear Modeling
+
+Let's use the following pair of matrices.
+ 
+$$\overbrace{\mathbf{Y}}^{outcome} = \begin{pmatrix}
+Y_1\\
+Y_2\\
+\vdots\\
+Y_n
+\end{pmatrix}
+, 
+\underbrace{\mathbf{X}}_{design} = \begin{pmatrix}
+1&x_1\\
+1&x_2\\
+\vdots\\
+1&x_n
+\end{pmatrix}
+, 
+\overbrace{\mathbf{\beta}}^{effects} = \begin{pmatrix}
+\beta_0\\
+\beta_1
+\end{pmatrix} \mbox{ and   }
+\underbrace{\mathbf{\varepsilon}}_{error} = \begin{pmatrix}
+\varepsilon_1\\
+\varepsilon_2\\
+\vdots\\
+\varepsilon_n
+\end{pmatrix}.$$
+
+Then, we can express the problem as a linear model.
+
+$$Y_i = \beta_0 + \beta_1 x_i + \varepsilon_i, i=1, \dots, n$$
+
+We can also express the complete problem formulation into a corresponding succinct matrix notation formula.
+
+$$\begin{pmatrix}
+Y_1\\
+Y_2\\
+\vdots\\
+Y_n
+\end{pmatrix} = 
+\begin{pmatrix}
+1&x_1\\
+1&x_2\\
+\vdots\\
+1&x_n
+\end{pmatrix}
+\begin{pmatrix}
+\beta_0\\
+\beta_1
+\end{pmatrix} +
+\begin{pmatrix}
+\varepsilon_1\\
+\varepsilon_2\\
+\vdots\\
+\varepsilon_n
+\end{pmatrix}. $$
+
+And in its matrix form.
+
+$$\mathbf{Y}=\mathbf{X}\boldsymbol{\beta}+\boldsymbol{\varepsilon},$$
+
+which is a  simpler way to write the same model equation. 
+
+One way to obtain an *optimal solution* is by minimizing all residuals ($\epsilon_i$). This *high-fidelity* criterion indicates a good model fit. The *least squares (LS) solution* represents one way to solve this matrix equation ($Y=X\beta+\epsilon$). The LS solution is obtained by minimizing the *residual sum square error* 
+$$\langle\epsilon^t, \epsilon \rangle = (Y-X\beta)^t \times (Y-X\beta).$$ 
+
+Let's define the LS objective function using the cross-product notation.
+
+$$f(\beta) = (\mathbf{Y}-\mathbf{X}\boldsymbol{\beta})^t
+(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}). $$
+
+We can determine the *effect size estimates*, ${\hat {\beta}}$, are obtained by minimizing this expression. Of course, we can derive an analytic solution using calculus to find the minimum of the cost (objective) function, $f(\beta)$. 
+
+## Finding function extrema (min/max) using calculus
+
+There are a number of rules that help with solving partial derivative equations in matrix form. recall that the *critical points* of the objective functions are either at the domain border or at values where the derivative of a objective function is trivial, $f'(x)=0$. hence, solving for the unknown parameter $\beta$ requires identifying the critical points, ${\hat {\beta}}$, which will represent candidate solution(s). The derivative of the above equation is
+
+$$2 \mathbf{X}^t (\mathbf{Y} - \mathbf{X} \boldsymbol{\hat{\beta}})=0,$$
+
+$$\mathbf{X}^t \mathbf{X} \boldsymbol{\hat{\beta}} = \mathbf{X}^t \mathbf{Y},$$
+
+$$\boldsymbol{\hat{\beta}} = (\mathbf{X}^t \mathbf{X})^{-1} \mathbf{X}^t \mathbf{Y}.$$
+
+This estimate ${\hat {\beta}}$ represents the desired LS solution to the linear modeling problem. The hat notation, ${\hat {\cdot}}$, is used to denote *estimates.* For instance, the solution for the unknown $\beta$ parameters is denoted by the (data-driven) estimate $\hat{\beta}$.
+
+The least squares minimization works because minimizing a function corresponds to finding the roots of its (first) derivative. With ordinary least squares (OLS), we square the residuals.
+
+$$(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta})^t
+(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}).$$ 
+
+Notice that the minimum of $f(x)$ and $f^2(x)$ are achieved at the same roots of $f'(x)$, as the derivative of $f^2(x)$ is $\frac{d}{dx}f^2(x) = 2f(x)f'(x)$. 
+
+Here is how we obtain the Least Square estimation in `R`.
+
+```{r eval=T}
+library(plotly)
+#x=cbind(data$Height, data$Age)
+x=data$Height
+y=data$Weight
+X <- cbind(1, x) 
+beta_hat <- solve( t(X) %*% X ) %*% t(X) %*% y 
+###or
+beta_hat <- solve( crossprod(X) ) %*% crossprod( X, y ) 
+```
+
+Now we can see the results of this by computing the estimated $\hat{\beta}_0+\hat{\beta}_1 x$ (fitted model prediction) corresponding to any covariate input value of $x$.
+
+```{r eval=T}
+# newx <- seq(min(x), max(x), len=100)
+X <- cbind(1, x)
+fitted <- X%*%beta_hat
+# or directly: fitted <- lm(y ~ x)$fitted
+# plot(x, y, xlab="MLB Player's Height", ylab="Player's Weight")
+# lines(x, fitted, col=2)
+
+plot_ly(x = ~x) %>% 
+  add_markers(y = ~y, name="Data Scatter") %>% 
+  add_lines(x = ~x, y = ~fitted[,1], name="(Manual) Linear Model (Weight ~ Height)") %>% 
+  add_lines(x = ~x, y = ~lm(y ~ x)$fitted, name="(Direct) lm(Weight ~ Height)", 
+            line = list(width = 4, dash = 'dash')) %>% 
+    layout(title='Baseball Players: Linear Model of Weight vs. Height', 
+           xaxis = list(title="Height (in)"), yaxis = list(title="Weight (lb)"),
+           legend = list(orientation = 'h'))
+```
+
+The closed-form analytical expression for the LS estimate
+$$\hat{\boldsymbol{\beta}}=(\mathbf{X}^t \mathbf{X})^{-1} \mathbf{X}^t \mathbf{Y}$$
+is one of the most widely used results in data analysis. One of the advantages of this approach is that we can use it in many different situations. 
+
+## Linear modeling in `R` 
+
+In `R`, there is a very convenient function `lm()` that fits these linear models. We will learn more about this function later, but here is a demonstration that it agrees with a simple manual LS estimation approach we showed above.
+
+```{r eval=T}
+# X <- cbind(data$Height, data$Age) # more complicated model
+X <- data$Height    # simple model
+y <- data$Weight
+fit <- lm(y ~ X)
+```
+
+## Eigenspectra - Eigenvalues and Eigenvectors
+
+Starting in the 18th century, the work of Euler's on rotational motion and later Lagrange on the study of inertia matrices, the notions of principal axes (*eigenvectors*) and characteristic roots (*eigenvectors*) arose. However, it took close to 200 years until Hilbert and others working on integral operators settled on using the terminology **eigen**, "own", to denote eigenvalues (proper characteristic values) and eigenvectors (principal axes).
+
+The *eigen-spectrum* (eigenspace) decomposition of linear operators (matrices) into *eigenvalues* and *eigenvectors* enables us to understand linear transformations and characterize their properties. The eigenvectors represent the "axes" (directions) along which a linear transformation acts by *stretching*, *compressing*, or *flipping*. 
+
+The eigenvalues represent the amounts of this linear transformation into the specified eigen-vector direction. In higher dimensions, there are more directions along which we need to understand the behavior of the linear transformation. The eigen-spectrum makes it easier to understand the linear transformation especially when many (all?) of the eigenvectors are linearly independent (orthogonal).
+
+For a given matrix $A$, if we have $A\vec{v}=\lambda \vec{v}$, then we say that a nonzero vector $\vec{v}$ is a right eigenvector of the matrix $A$ and the scale factor $\lambda$ is the eigenvalue corresponding to that eigenvector.
+
+With some calculations we can show that $A\vec{v}=\lambda \vec{v}$ is the same as $(\lambda I_n-A)\vec{v}=\vec{0}$, where $I_n$ is the $n\times n$ identity matrix. So, when we solve this equation, we get the corresponding eigenvalues and eigenvectors. As this is a very common operation, we don't need to do that by hand - the method `eigen()` provides this functionality.
+
+```{r eval=T}
+m11 <- diag(nrow = 2, ncol=2)
+m11
+eigen(m11)
+```
+
+We can easily validate that $(\lambda I_n-A)\vec{v}=\vec{0}$.
+
+```{r eval=T}
+(eigen(m11)$values*diag(2)-m11) %*% eigen(m11)$vectors
+```
+
+As we mentioned earlier, `diag(n)` creates a $n\times n$  identity matrix. Thus, `diag(2)` is the $I_2$ matrix in the above equation. The zero output matrix proves that the equation $(\lambda I_n-A)\vec{v}=\vec{0}$ holds true.
+
+Many interesting [applications of the eigen-spectrum are shown here](https://en.wikipedia.org/wiki/Eigenvalues_and_eigenvectors#Applications).
+
+## Other commonly used matrix computing functions
+
+Other important functions about matrix operation are listed in the following table.
+
+Functions              | Math expression or explanation
+-----------------------|---------------------------------------------
+`crossprod(A, B)`       | $A^TB$ Where $A$, $B$ are matrices
+`y<-svd(A)`            | the output has the following components 
+   -`y$d`              | vector containing the singular values of A, 
+   -`y$u`              | matrix with columns contain the left singular vectors of A, 
+   -`y$v`              | matrix with columns contain the right singular vectors of A  
+`k <- qr(A)`           | the output has the following components 
+   -`k$qr`             | has an upper triangle that contains the decomposition and a lower triangle that contains information on the Q decomposition.
+   -`k$rank`           |  is the rank of A. 
+   -`k$qraux`          |  a vector which contains additional information on Q. 
+   -`k$pivot`          |  contains information on the pivoting strategy used. 
+`rowMeans(A)`/`colMeans(A)`|  returns vector of row/column means
+`rowSums(A)`/`colSums(A)`   |  returns vector of row/column sums
+
+## Matrix notation
+
+Some flexible matrix operations can help us save time calculating row or column averages. For example, *column averages* can be calculated by the following matrix operation.
+
+$$AX = \left(\begin{array}{cccc} 
+\frac{1}{N}&\frac{1}{N}&\cdots&\frac{1}{N}
+\end{array}\right)
+\left(\begin{array}{cccc} 
+X_{1, 1}&\cdots&X_{1, p}\\
+X_{2, 1}&\cdots&X_{2, p}\\
+\vdots&\vdots&\vdots\\
+X_{N, 1}&\cdots&X_{N, p}
+\end{array}\right)=
+\left(\begin{array}{cccc} 
+\bar{X}_1&\bar{X}_2&\cdots &\bar{X}_N
+\end{array}\right).$$
+
+The *row averages* can be calculated similarly.
+
+$$XB = \left(\begin{array}{cccc} 
+X_{1, 1}&\cdots &X_{1, p}\\
+X_{2, 1}&\cdots &X_{2, p}\\
+\vdots &\vdots &\vdots \\
+X_{N, 1}&\cdots&X_{N, p}
+\end{array}\right)
+\left(\begin{array}{c} 
+\frac{1}{p}\\
+\frac{1}{p}\\
+\vdots\\
+\frac{1}{p}
+\end{array}\right)=
+\left(\begin{array}{c} 
+\bar{X}_1\\
+\bar{X}_2\\
+\vdots\\
+\bar{X}_q
+\end{array}\right). $$
+
+Expeditious matrix calculations can be done by multiplying a matrix on the left or at the right by another matrix. In general multiplying by a vector on the left can amounts to *weight averaging*.
+
+$$AX = \left(\begin{array}{cccc} 
+a_1&a_2&\cdots &a_N
+\end{array}\right)
+\left(\begin{array}{cccc} 
+X_{1, 1}&\cdots &X_{1, p}\\
+X_{2, 1}&\cdots &X_{2, p}\\
+\vdots&\vdots &\vdots \\
+X_{N, 1}&\cdots &X_{N, p}
+\end{array}\right)=
+\left(\begin{array}{cccc} 
+\sum_{i=1}^N a_i \bar{X}_{i, 1}&\sum_{i=1}^N a_i \bar{X}_{i, 2}&\cdots &\sum_{i=1}^N a_i \bar{X}_{i, N}
+\end{array}\right). $$
+
+Now let's try this matrix notation to look at genetic expression data including $8,793$ different genes for $208$ subjects. These gene expression data represents a microarray experiment - GSE5859 - comparing [Gene Expression Profiles from Lymphoblastoid cells](http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE5859). Specifically, the data compares the expression level of genes in lymphoblasts from individuals in three HapMap populations {*CEU*, *CHB*, *JPT*}. The study found that the mean expression levels between the {CEU} and {CHB+JPT} samples were significantly different ($p < 0.05$) for more than a thousand genes.
+
+The [gene expression profiles data](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/CaseStudy16_GeneExpression_GSE5859) has two components:
+
+ - The [gene expression intensities](https://umich.instructure.com/files/2001417/download?download_frd=1) (*exprs_GSE5859.csv*): rows represent features on the microarray (e.g., genes), and columns represent different microarray samples, and 
+ - [Meta-data about each of the samples](https://umich.instructure.com/files/2001418/download?download_frd=1) (*exprs_MetaData_GSE5859.csv*) rows represent samples and	columns represent meta-data (e.g., sex, age, treatment status, the date of the sample processing).
+
+```{r eval=T}
+gene <- read.csv("https://umich.instructure.com/files/2001417/download?download_frd=1", 
+                 header = T) # exprs_GSE5859.csv
+info<-read.csv("https://umich.instructure.com/files/2001418/download?download_frd=1", 
+               header=T)  # exprs_MetaData_GSE5859.csv
+```
+
+Recall that the `lapply()` function that we talked about in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html) and the `sapply()` function can be used to calculate column and row averages. Let's compare the outputs of `sapply` and the corresponding matrix algebra process.
+
+```{r eval=T}
+colmeans <- sapply(gene[, -1], mean)
+gene1 <- as.matrix(gene[, -1])
+# can also use built in functions
+# colMeans <- colMeans(gene1)
+colmeans.matrix <- crossprod(rep(1/nrow(gene1), nrow(gene1)), gene1)
+colmeans[1:15]
+colmeans.matrix[1:15]
+```
+
+The same outputs are generated by both protocols. Note that we uses `rep(1/nrow(gene1), nrow(gene1))` to create the vector
+
+$$\left(\begin{array}{cccc} 
+\frac{1}{N}&\frac{1}{N}&\cdots &\frac{1}{N}
+\end{array}\right). $$
+
+needed to obtain manually the column averages by matrix algebra. Similarly, we can compute the column means.
+
+```{r eval=T}
+colmeans <- as.matrix(colmeans)
+h <- hist(colmeans, plot=F)
+
+plot_ly(x = h$mids, y = h$counts, type = "bar", name = "Column Averages") %>% 
+    layout(title='Average Gene Expression Histogram', 
+          xaxis = list(title = "Column Means"),
+          yaxis = list(title = "Average Expression", side = "left"),
+           legend = list(orientation = 'h'))
+```
+
+The histogram shows that the distribution is symmetric, unimodal and bell-shaped, i.e., roughly normal.
+
+We can also solve harder problems using matrix algebra. For example, let's calculate the differences between genders for each gene. First, we need to get the gender information for each subject. 
+
+```{r eval=T}
+gender <- info[, c(3, 4)]
+rownames(gender) <- gender$filename
+```
+
+Then, we have to reorder the columns to make it consistent with the feature matrix `gene1`.
+
+```{r eval=T}
+gender <- gender[colnames(gene1), ]
+```
+
+Next, we are going to design the matrix. We want to multiply it with the feature matrix. The plan is to multiply the following two matrices.
+
+$$\left(\begin{array}{cccc} 
+X_{1, 1}&\cdots&X_{1, p}\\
+X_{2, 1}&\cdots&X_{2, p}\\
+\vdots & \vdots &\vdots \\
+X_{N, 1}&\cdots&X_{N, p}
+\end{array}\right)
+\left(\begin{array}{cc} 
+\frac{1}{p}&a_1\\
+\frac{1}{p}&a_2\\
+\vdots & \vdots \\
+\frac{1}{p}&a_p
+\end{array}\right)=
+\left(\begin{array}{cc} 
+\bar{X}_1&gender.diff_1\\
+\bar{X}_2&gender.diff_2\\
+\vdots & \vdots \\
+\bar{X}_N&gender.diff_N
+\end{array}\right),$$
+where $a_i=-\frac{1}{N_F}$ if the subject is *female* and $a_i=\frac{1}{N_M}$ if the subject is *male.* Thus, we gave each female and male the same weight before the subtraction. We average each gender and get their difference. $\bar{X}_i$ is the average across both genders and $gender.diff_i$ represents the gender difference for the *i*-th gene.
+
+```{r eval=T}
+table(gender$sex)
+gender$vector <- ifelse(gender$sex=="F", -1/86, 1/122)
+vec1 <- as.matrix(data.frame(rowavg=rep(1/ncol(gene1), ncol(gene1)), gender.diff=gender$vector))
+gender.matrix <- gene1 %*% vec1
+gender.matrix[1:15, ]
+```
+
+# Linear regression
+
+As we mentioned earlier, the formula for linear regression can be written as
+
+$$Y_i=\beta_0+X_{i, 1}\beta_1+\cdots+X_{i, p}\beta_p +\epsilon_i, i=1, \cdots, N$$
+This formula can also be expressed in matrix form.
+
+$$\left(\begin{array}{c} 
+Y_1\\
+Y_2\\
+\vdots\\
+Y_N
+\end{array}\right)=
+\left(\begin{array}{c} 
+1\\
+1\\
+\vdots\\
+1
+\end{array}\right)\beta_0+
+\left(\begin{array}{c} 
+X_{1, 1}\\
+X_{2, 1}\\
+\vdots\\
+X_{N, 1}
+\end{array}\right)\beta_1+\cdots +
+\left(\begin{array}{c} 
+X_{1, p}\\
+X_{2, p}\\
+\vdots \\
+X_{N, p}
+\end{array}\right)\beta_p+
+\left(\begin{array}{c} 
+\epsilon_1\\
+\epsilon_2\\
+\vdots \\
+\epsilon_N
+\end{array}\right), $$
+
+which can be compressed into a simple matrix equation $Y=X\beta +\epsilon$.
+
+$$\left(\begin{array}{c} 
+Y_1\\
+Y_2\\
+\vdots \\
+Y_N
+\end{array}\right)=
+\left(\begin{array}{cccc} 
+1&X_{1, 1}&\cdots&X_{1, p}\\
+1&X_{2, 1}&\cdots&X_{2, p}\\
+\vdots&\vdots&\vdots&\vdots\\
+1&X_{N, 1}&\cdots&X_{N, p}
+\end{array}\right)
+\left(\begin{array}{c} 
+\beta_o\\
+\beta_1\\
+\vdots\\
+\beta_p
+\end{array}\right)+
+\left(\begin{array}{c} 
+\epsilon_1\\
+\epsilon_2\\
+\vdots\\
+\epsilon_N
+\end{array}\right). $$
+As $Y=X\beta +\epsilon$ implies that $X^tY \sim X^t(X\beta)=(X^tX)\beta$, and thus, the LS solution for $\beta$ is obtained by multiplying both hand sides by the inverse of the square cross product matrix $(X^tX)^{-1}$:
+$$\hat{\beta}=(X^tX)^{-1}X^tY.$$
+
+Matrix calculations are much faster, especially on specialized computer chips, than fitting a manual regression model. Let's apply this to the [Lahman baseball data](https://seanlahman.com/files/database/readme2014.txt) representing yearly stats and standings. Let's download it first via this link [baseball.data](https://umich.instructure.com/files/2018445/download?download_frd=1) and save it in the `R` working directory. We can use the `load()` function to import the local RData. For this example, we subset the dataset by `G==162` and `yearID < 2002`. Also, we create a new feature named `Singles` that is equal to `H(Hits by batters) - X2B(Doubles) - X3B(Tripples) - HR(Home Runs by batters)`. Finally, we only pick four features *R* (Runs scored), *Singles*, *HR* (Home Runs by batters), and *BB* (Walks by batters).
+
+```{r eval=T}
+#If you downloaded the .RData locally first, then you can easily load it into the`R`workspace by:
+# load("Teams.RData")
+
+# Alternatively you can also download the data in CSV format from https://umich.instructure.com/courses/38100/files/folder/data (teamsData.csv)
+Teams <- read.csv('https://umich.instructure.com/files/2798317/download?download_frd=1', header=T)
+
+dat <- Teams[Teams$G==162&Teams$yearID<2002, ]
+dat$Singles <- dat$H-dat$X2B-dat$X3B-dat$HR
+dat <- dat[, c("R", "Singles", "HR", "BB")]
+head(dat)
+```
+
+In this example, let's work with *R* as the response variable and *BB* as the independent variable. For a full linear model, we need to add another column of $1$'s to the design matrix $X$. 
+
+```{r eval=T}
+Y <- dat$R
+X <- cbind(rep(1, n=nrow(dat)), dat$BB)
+X[1:10, ]
+```
+
+We use the LS analytical formula to obtain the beta (effects) estimates 
+
+$$\hat{\beta}=(X^t X)^{-1}X^t Y.$$
+
+```{r eval=T}
+beta <- solve(t(X) %*% X) %*% t(X) %*% Y
+beta
+```
+
+To confirm this manual calculation, we can refit the linear equation using the `lm()` function, and compare the computational times. In this simple example, is there evidence of higher computational efficiency using matrix calculations?
+
+```{r eval=T}
+fit <- lm(R~BB, data=dat)
+# fit <- lm(R~., data=dat) 
+# '.' indicates all other variables, very useful when fitting models with many predictors
+fit
+summary(fit)
+system.time(fit <- lm(R~BB, data=dat))
+system.time(beta1 <- solve(t(X) %*% X) %*% t(X) %*% Y)
+```
+
+For a better model, we can expand the covariates to include multiple predictors and compare the resulting estimates.
+
+```{r}
+X <- cbind(rep(1, n=nrow(dat)), dat$BB, dat$Singles, dat$HR)
+X[1:10, ]
+system.time(fit <- lm(R ~ BB+ Singles + HR, data=dat))
+system.time(beta2 <- solve(t(X) %*% X) %*% t(X) %*% Y)
+
+fit$coefficients; t(beta2)
+```
+
+A scatter plot would show visually the relationship between the outcome *R* and one of the predictors *BB*.
+
+```{r eval=T}
+# plot(dat$BB, dat$R, xlab = "BB", ylab = "R", main = "Scatter plot/regression for baseball data")
+# abline(beta1[1, 1], beta1[2, 1], lwd=4, col="red")
+
+plot_ly(x = ~dat$BB) %>% 
+  add_markers(y = ~dat$R, name="Data Scatter") %>% 
+  add_lines(x = ~dat$BB, y = ~lm(dat$R ~ dat$BB)$fitted, 
+            name="lm(Runs scored ~ Walks by batters)", line = list(width = 4)) %>% 
+    layout(title='Scatter plot/regression for baseball data', 
+           xaxis = list(title="(BB) Walks by batters"), yaxis = list(title="(R) Runs scored"),
+           legend = list(orientation = 'h'))
+```
+
+Here the color model line represents our regression model estimated using matrix algebra.
+
+The power of matrix algebra becomes more apparent when we use multiple variables. We can add the variable *HR* to the model.
+
+```{r eval=T, error=F, message=F, warning=F}
+library(reshape2)
+X <- cbind(rep(1, n=nrow(dat)), dat$BB, dat$HR)
+beta <- solve(t(X) %*% X) %*% t(X) %*% Y
+beta
+# #install.packages("scatterplot3d")
+# library(scatterplot3d)
+# myScatter3D <- scatterplot3d(dat$BB, dat$HR, dat$R)
+# 
+# fit = lm(dat$R ~ dat$BB + dat$HR, data = dat)
+# # Plot the linear model
+# # get the BB & HR ranges summary(dat$BB); summary(dat$HR)
+# cf = fit$coefficients
+# pltx = seq(344, 775,length.out = 100)
+# plty = seq(11,264,length.out = 100)
+# pltz = cf[1] + cf[2]*pltx + cf[3]*plty
+# #Add the line to the plot
+# myScatter3D$points3d(pltx,plty,pltz, type = "l", col = "red", lwd=3)
+
+# # interactive *rgl* 3D plot
+# library(rgl)
+# fit <- lm(dat$R ~ dat$BB + dat$HR)
+# coefs <- coef(fit)
+# a <- coefs["dat$BB"]
+# b <- coefs["dat$HR"]
+# c <- -1
+# d <- coefs["(Intercept)"]
+# open3d()
+# plot3d(dat$BB,  dat$HR, dat$R, type = "s", col = "red", size = 1)
+# planes3d(a, b, c, d, alpha = 0.5)
+# # planes3d(b, a, -1.5, d, alpha = 0.5)
+# # planes3d draws planes using the parametrization a*x + b*y + c*z + d = 0.
+# # Multiple planes may be specified by giving multiple values for the normal
+# # vector (a, b, c) and the offset parameter d
+# 
+# pca1 <- prcomp(as.matrix(cbind(dat$BB,  dat$HR, dat$R)), center = T); summary(pca1)
+# 
+# # Given two vectors PCA1 and PCA2, the cross product V = PCA1 x PCA2 
+# # is orthogonal to both A and to B, and a normal vector to the 
+# # plane containing PCA1 and PCA2
+# # If PCA1 = (a,b,c) and PCA2 = (d, e, f), then the cross product is
+# # PCA1 x PCA2 =  (bf - ce, cd - af, ae - bd)
+# # PCA1 = pca1$rotation[,1] and PCAS2=pca1$rotation[,2]
+# # https://en.wikipedia.org/wiki/Cross_product#Names
+# # prcomp$rotation contains the matrix of variable loadings, 
+# # i.e., a matrix whose columns contain the eigenvectors
+# #normVec = c(pca1$rotation[,1][2]*pca1$rotation[,2][3]-
+# #              pca1$rotation[,1][3]*pca1$rotation[,2][2],
+# #            pca1$rotation[,1][3]*pca1$rotation[,2][1]-
+# #              pca1$rotation[,1][1]*pca1$rotation[,2][3],
+# #            pca1$rotation[,1][1]*pca1$rotation[,2][2]-
+# #              pca1$rotation[,1][2]*pca1$rotation[,2][1]
+# #            )
+# normVec = c(pca1$rotation[2,1]*pca1$rotation[3,2]-
+#                  pca1$rotation[3,1]*pca1$rotation[2,2],
+#              pca1$rotation[3,1]*pca1$rotation[1,2]-
+#                  pca1$rotation[1,1]*pca1$rotation[3,2],
+#              pca1$rotation[1,1]*pca1$rotation[2,2]-
+#                  pca1$rotation[2,1]*pca1$rotation[1,2]
+# )
+# 
+# # Plot the PCA Plane
+# plot3d(dat$BB,  dat$HR, dat$R, type = "s", col = "red", size = 1)
+# planes3d(normVec[1], normVec[2], normVec[3], 90, alpha = 0.5)
+# myScatter3D <- scatterplot3d(dat$BB, dat$HR, dat$R)
+
+dat$name <- Teams[Teams$G==162&Teams$yearID<2002, "name"]
+
+fit = lm(dat$R ~ dat$BB + dat$HR, data = dat)
+# Plot the linear model
+# get the BB & HR ranges summary(dat$BB); summary(dat$HR)
+cf = fit$coefficients
+pltx = seq(344, 775,length.out = length(dat$BB))
+plty = seq(11,264,length.out = length(dat$BB))
+pltz = cf[1] + cf[2]*pltx + cf[3]*plty
+
+# Plot Scatter and add the LM line to the plot
+plot_ly() %>%
+  add_trace(x = ~pltx, y = ~plty, z = ~pltz, type="scatter3d", mode="lines",
+        line = list(color = "red", width = 4), name="lm(R ~ BB + HR") %>% 
+  add_markers(x = ~dat$BB, y = ~dat$HR, z = ~dat$R, color = ~dat$name, mode="markers") %>% 
+  layout(scene = list(xaxis = list(title = '(BB) Walks by batters'),
+                        yaxis = list(title = '(HR) Home runs by batters'),
+                        zaxis = list(title = '(R) Runs scored')))
+
+# Plot Scatter and add the LM PLANE to the plot
+lm <- lm(R ~ 0 + HR + BB, data = dat)
+
+#Setup Axis
+axis_x <- seq(min(dat$HR), max(dat$HR), length.out=100)
+axis_y <- seq(min(dat$BB), max(dat$BB), length.out=100)
+
+#Sample points
+lm_surface <- expand.grid(HR = axis_x, BB = axis_y, KEEP.OUT.ATTRS = F)
+lm_surface$R <- predict.lm(lm, newdata = lm_surface)
+lm_surface <- acast(lm_surface, HR ~ BB, value.var = "R") #`R`~ 0 + HR + BB
+
+plot_ly(dat, x = ~HR, y = ~BB, z = ~R,
+        text = ~name, type = "scatter3d", mode = "markers", color = ~dat$name) %>%
+  add_trace(x = ~axis_x, y = ~axis_y, z = ~lm_surface, type="surface", color="gray", opacity=0.3) %>%
+  layout(title="3D Plane Regression (R ~ BB + HR); Color=BB Team", showlegend = F,
+         xaxis = list(title = '(BB) Walks by batters'),
+         yaxis = list(title = '(HR) Home runs by batters'),
+         zaxis = list(title = '(R) Runs scored')) %>% 
+  hide_colorbar()
+```
+
+## Sample covariance matrix
+
+We can also express the covariance matrix for our features using matrix operation. Suppose
+
+$$X_{N\times K}=\left(\begin{array}{cccc} 
+X_{1, 1}&\cdots&X_{1, K}\\
+X_{2, 1}&\cdots&X_{2, K}\\
+\vdots&\ddots&\vdots\\
+X_{N, 1}&\cdots&X_{N, K}
+\end{array}\right)
+=[X_1 \ X_2\ \cdots\ X_K]. $$
+
+Then the $K\times K$ (square) covariance matrix is:
+$$\Sigma_{K\times K} = (\Sigma_{i, j}),$$
+where $\Sigma_{i, j}=Cov(X_i, X_j)=E\left( (X_i-\mu_i)(X_j-\mu_j)\right)$, $1\leq i, j, \leq K$. Note that earlier, we denoted the *number of variables* by $p$, whereas here we use $K$; this is to avoid potential confusion with probabilities, $p$.
+
+The sample covariance matrix is:
+$$\Sigma_{i, j}=\frac{1}{N-1}\sum_{m=1}^{N}\left(  x_{m, i}-\bar{x}_i \right)  \left( x_{m, j}-\bar{x}_j \right) , $$
+
+where 
+$$\bar{x}_{i}=\frac{1}{N}\sum_{m=1}^{N}x_{m, i}, \quad i=1, \cdots, K .$$  
+
+In general, 
+$$\Sigma=\frac{1}{n-1}(X-\bar{X})^t(X-\bar{X}).$$
+
+Suppose that we want to get the sample covariance matrix of the following $5\times 3$ feature matrix $x$.
+
+```{r eval=T}
+x <- matrix(c(4.0, 4.2, 3.9, 4.3, 4.1, 2.0, 2.1, 2.0, 2.1, 2.2, 0.60, 0.59, 0.58, 0.62, 0.63), ncol=3)
+x
+```
+
+Notice that this matrix represents the design matrix of $3$ features and $5$ observations. Let's compute the column means first.
+
+```{r eval=T}
+vec2 <- matrix(c(1/5, 1/5, 1/5, 1/5, 1/5), ncol=5)
+#column means
+x.bar <- vec2 %*% x
+x.bar
+
+x.bar <- matrix(rep(x.bar, each=5), nrow=5)
+S <- 1/4*t(x-x.bar) %*% (x-x.bar)
+S
+```
+
+In the covariance matrix, $S[i, i]$ is the variance of the *i*-th feature and $S[i, j]$ is the covariance of *i*-th and *j*-th features.
+
+Compare this to the automated calculation of the variance-covariance matrix.
+
+```{r eval=T}
+autoCov <- cov(x)
+autoCov
+```
+
+
+## Linear multivariate linear regression modeling
+
+Later, in [Chapter 5 (Supervised classification)](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html), we will cover some classification methods that use this mathematical framework for model-based and model-free ML/AI prediction. However, let's start with linear model-based statistical methods providing forecasting and classification functionality. Specifically, we will (1) demonstrate the predictive power of multivariate linear regression, (2) show the foundation of regression trees and model trees, and (3) examine two complementary case-studies (Baseball Players and Heart Attack).
+
+Regression represents a model of a relationship between a *dependent variable* (value to be predicted) and a group of *independent variables* (predictors or features). We assume the relationships between the outcome dependent variable and the independent variables is linear.
+
+## Simple linear regression
+
+Earlier, we discussed the straightforward case of regression as simple linear regression, which involves a single predictor
+$$y=a+bx.$$ 
+
+In this *slope-intercept* formula, `a` is the model *intercept* and `b` is the model *slope*. Thus, simple linear regression may be expressed as a bivariate equation. If we know `a` and `b`, for any given `x` we can estimate, or predict, `y` via the regression formula. If we plot `x` against `y` in a 2D coordinate system, where the two variables are exactly linearly related, the results will be a straight line.
+
+However, this is the ideal case. Bivariate scatterplots using real world data may show patterns that are not necessarily precisely linear, see [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html). Let's look at a bivariate scatterplot and try to fit a simple linear regression line using two variables, e.g., `hospital charges` or `CHARGES` as a dependent variable, and `length of stay` in the hospital or `LOS` as an independent predictor. The data is available in the [DSPA Data folder](https://umich.instructure.com/courses/38100/files/folder/Case_Studies) as `CaseStudy12_AdultsHeartAttack_Data`. We can remove the pair of observations with missing values using the command `heart_attack<-heart_attack[complete.cases(heart_attack), ]`. 
+
+```{r eval=T, warning=F, message=F}
+library(plotly)
+heart_attack <- read.csv("https://umich.instructure.com/files/1644953/download?download_frd=1", stringsAsFactors = F)
+heart_attack$CHARGES <- as.numeric(heart_attack$CHARGES)
+heart_attack <- heart_attack[complete.cases(heart_attack), ]
+
+fit1 <- lm(CHARGES ~ LOS, data=heart_attack)
+# par(cex=.8)
+# plot(heart_attack$LOS, heart_attack$CHARGES, xlab="LOS", ylab = "CHARGES")
+# abline(fit1, lwd=2, col="red")
+
+plot_ly(heart_attack, x = ~LOS, y = ~CHARGES, type = 'scatter', mode = "markers", name="Data") %>%
+    add_trace(x=~mean(LOS), y=~mean(CHARGES), type="scatter", mode="markers",
+            name="(mean(LOS), mean(Charge))", marker=list(size=20, color='blue', line=list(color='yellow', width=2))) %>%
+    add_lines(x = ~LOS, y = fit1$fitted.values, mode = "lines", name="Linear Model") %>%
+    layout(title=paste0("lm(CHARGES ~ LOS), Cor(LOS,CHARGES) = ", 
+                        round(cor(heart_attack$LOS, heart_attack$CHARGES),3)))
+```
+
+As expected, longer hospital stays are expected to be associated with higher medical costs, or hospital charges. The scatterplot shows dots for each pair of observed measurements ($x=LOS$ and $y=CHARGES$), and an increasing linear trend. 
+
+The estimated expression for this regression line is:
+$$\hat{y}=4582.70+212.29\times x$$
+
+or equivalently
+
+$$CHARGES=4582.70+212.29\times LOS.$$
+
+Once the linear model is fit, i.e., its coefficients are estimated, we can make predictions using this `explicit` regression model. Assume we have a patient that spent 10 days in hospital, then we have `LOS=10`. The predicted charge is likely to be $\$ 4582.70 + \$ 212.29 \times 10= \$ 6705.6$. Plugging `x` into the expression equation automatically gives us an estimated value of the outcome `y`. This [chapter of the Probability and statistics EBook provides an introduction to linear modeling](https://wiki.socr.umich.edu/index.php/EBook#Chapter_X:_Correlation_and_Regression).
+
+## Ordinary least squares estimation
+
+How did we get the estimated expression? The most common estimating method in statistics is *ordinary least squares* (OLS). OLS estimators are obtained by minimizing the sum of the squared errors - that is the sum of squared vertical distance from each dot on the scatter plot to the regression line. 
+
+```{r echo=F, fig.width=9, fig.height=9}
+# plot(heart_attack$LOS, heart_attack$CHARGES, xlab="LOS", ylab = "CHARGES")
+# abline(fit1, lwd=2, col="red")
+# segments(15, 7767.05, 15, 10959, col = 'blue', lwd=2)
+# text(18, 9363.025, "error", cex=1.5)
+# text(16, 9363.025, '}', cex = 7)
+# text(15, 10959, '.', col = "green", cex=5)
+# text(16, 11500, "true value(y)", cex = 1.5)
+# text(15, 7767.05, '.', col = "green", cex=5)
+# text(15, 7400.05, "estimated value(y.hat)", cex = 1.5)
+
+plot_ly(heart_attack, x = ~LOS, y = ~CHARGES, type = 'scatter', mode = "markers", name="Data") %>% 
+  add_lines(x = ~LOS, y = fit1$fitted.values, mode = "lines", name="Linear Model") %>%
+  add_segments(x=15, xend=15, y=7767.05, yend = 10959, showlegend=F) %>%
+  add_markers(x = 15, y = 7767.05, name="Model-estimated prediction (x=15,y=7767)",
+      marker=list(size=20, color='red', line=list(color='yellow', width=2))) %>%
+  add_markers(x = 15, y = 10959, name="True (observed) value (x=15,y=10959)",
+      marker=list(size=20, color='green', line=list(color='yellow', width=2))) %>%
+  layout(title=paste0("lm(CHARGES ~ LOS), Cor(LOS,CHARGES) = ", 
+                        round(cor(heart_attack$LOS, heart_attack$CHARGES),3))) %>%
+  layout(title="Ordinary Least Squares",
+         xaxis=list(title="LOS"),  # control the y:x axes aspect ratio
+         yaxis = list(title="CHARGES"),
+         legend = list(orientation = 'h'),
+         annotations = list(text="OLS Error",  x=15.5, y=9300, textangle=90,
+                  font=list(size=15, color="black"), showarrow=FALSE))
+```
+
+OLS is minimizing the following expression:
+
+$$\langle\epsilon , \epsilon\rangle^2 \equiv \sum_{i=1}^{n}(y_i-\hat{y}_i)^2=\sum_{i=1}^{n}\left (\underbrace{y_i}_{\text{observed outcome}}-\underbrace{(a+b\times x_i)}_{\text{predicted outcome}}\right )^2=\sum_{i=1}^{n}\underbrace{\epsilon_i^2}_{\text{squared residual}}.$$
+
+Some calculus-based calculations suggest that the value `b` minimizing the squared error is:
+
+$$b=\frac{\sum(x_i-\bar x)(y_i-\bar y)}{\sum(x_i-\bar x)^2}.$$
+
+Then, the corresponding constant term ($y$-intercept) `a` is
+
+$$a=\bar y-b\bar x.$$
+
+These expressions would become apparent if you review the material in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html). Recall that the variance is obtained by averaging sums of squared deviations ($var(x)=\frac{1}{n}\sum^{n}_{i=1} (x_i-\mu)^2$). When we use $\bar{x}$ to estimate the mean of $x$, we have the following formula for variance: $var(x)=\frac{1}{n-1}\sum^{n}_{i=1} (x_i-\bar{x})^2$. Note that this is $\frac{1}{n-1}$ times the denominator of *b*. Similar to the variance, the covariance of *x* and *y* is measuring the average sum of the deviance of *x* times the deviance of *y*:
+
+$$Cov(x, y)=\frac{1}{n}\sum^{n}_{i=1} (x_i-\mu_x)(y_i-\mu_y).$$
+
+If we utilize the sample averages ($\bar{x}$, $\bar{y}$) as estimates of the corresponding population means, we have:  
+
+$$Cov(x, y)=\frac{1}{n-1}\sum^{n}_{i=1} (x_i-\bar{x})(y_i-\bar{y}).$$
+
+This is $\frac{1}{n-1}$ times the numerator of *b*. Thus, combining the above 2 expressions, we get an estimate of the slope coefficient (effect-size of LOS on Charge) expressed as: 
+
+$$b=\frac{Cov(x, y)}{var(x)}.$$
+
+Let's use the [heart attack data](https://umich.instructure.com/courses/38100/files/folder/Case_Studies) to demonstrate these calculations.
+
+```{r eval=T}
+b <- cov(heart_attack$LOS, heart_attack$CHARGES)/var(heart_attack$LOS)
+b
+a<-mean(heart_attack$CHARGES)-b*mean(heart_attack$LOS)
+a
+# compare to the lm() estimate:
+fit1$coefficients[1]
+# we can do the same for the slope parameter (b==fit1$coefficients[2]
+```
+
+We can see that this is exactly the same as the previously computed estimate of the constant intercept terms using `lm()`.
+
+## Regression Model Assumptions
+
+Regression modeling has five key assumptions:
+
+ - Linear relationship between dependent outcome and the independent predictor(s),
+ - [Multivariate normality](https://en.wikipedia.org/wiki/Multivariate_normal_distribution),
+ - No or little [multicollinearity](https://en.wikipedia.org/wiki/Multicollinearity),
+ - No auto-correlation, independence, 
+ - [Homoscedasticity](https://en.wikipedia.org/wiki/Homoscedasticity).
+
+If these assumptions are violated, the model may provide invalid estimates and unreliable predictions.
+
+## Correlations
+
+*Note*: The [SOCR Interactive Scatterplot Game (requires Java enabled browser)](https://socr.umich.edu/html/gam/SOCR_Games.html) provides a dynamic interface demonstrating linear models, trends, correlations, slopes and residuals.
+
+Based on covariance we can calculate correlation, which indicates how closely the relationship between two variables follows a straight line.
+
+$$\rho_{x, y}=Corr(x, y)=\frac{Cov(x, y)}{\sigma_x\sigma_y}=\frac{Cov(x, y)}{\sqrt{Var(x)Var(y)}}.$$
+
+In `R`, the correlation may be computed using the method `cor()` and the square root of the variance, or the standard deviation, is computed by `sd()`.
+
+```{r eval=T}
+r <- cov(heart_attack$LOS, heart_attack$CHARGES)/(sd(heart_attack$LOS)*sd(heart_attack$CHARGES))
+r
+cor(heart_attack$LOS, heart_attack$CHARGES)
+```
+
+Same outputs are obtained. This correlation is a positive number that is relatively small. We can say there is a weak positive linear association between these two variables. If we have a negative number then it is a negative linear association. We have a weak association when $0.1 \leq Cor < 0.3$, a moderate association for $0.3 \leq Cor < 0.5$, and a strong association for $0.5 \leq Cor \leq 1.0$. If the correlation is below $0.1$ then it suggests little to no linear relation between the variables.
+
+## Multiple Linear Regression
+
+In practice, we usually have more situations with multiple predictors and one dependent variable, which may follow a multiple linear model.  That is:
+
+$$y=\alpha+\beta_1x_1+\beta_2x_2+ \cdots +\beta_kx_k+\epsilon,$$
+
+or equivalently
+
+$$y=\beta_0+\beta_1x_1+\beta_2x_2+ \cdots  +\beta_kx_k+\epsilon .$$
+
+We usually use the second notation method in statistics. This equation shows the linear relationship between *k* predictors and a dependent variable. In total we have *k+1* coefficients to estimate.
+
+The matrix notation for the above equation is
+
+$$Y=X\beta+\epsilon,$$
+
+where 
+
+$$Y=\left(\begin{array}{c} 
+y_1 \\
+y_2\\
+\vdots \\
+y_n
+\end{array}\right),$$
+
+$$X=\left(\begin{array}{ccccc} 
+1 & x_{11}&x_{21}&\cdots&x_{k1} \\
+1 & x_{12}&x_{22}&\cdots&x_{k2} \\
+\vdots & \vdots & \vdots & \vdots & \vdots\\
+1 & x_{1n}&x_{2n}&\cdots&x_{kn} 
+\end{array}\right) $$
+$$\beta=\left(\begin{array}{c} 
+\beta_0 \\
+\beta_1\\
+\vdots\\
+\beta_k
+\end{array}\right),$$
+
+and
+
+$$\epsilon=\left(\begin{array}{c} 
+\epsilon_1 \\
+\epsilon_2\\
+\vdots \\
+\epsilon_n
+\end{array}\right)$$ 
+is the *error* term.
+
+Similar to simple linear regression, our goal is to minimize the sum of squared errors. Solving the matrix equation for $\beta$, we get the OLS solution for the parameter vector:
+
+$$\hat{\beta}=(X^tX)^{-1}X^tY .$$
+
+The solution is presented in a matrix form, where $X^{-1}$ and $X^t$ are the *inverse* and the *transpose* matrices of the original design matrix $X$. This example demonstrates making *de novo* a simple regression (least squares estimating) function `reg()`.
+
+```{r eval=T}
+reg <- function(y, x){
+  x<-as.matrix(x)
+  x<-cbind(Intercept=1, x)
+  solve(t(x)%*%x)%*%t(x)%*%y
+}
+```
+
+We saw earlier that a clever use of matrix multiplication (`%*%`) and `solve()` can help with the explicit OLS solution.
+
+Next, we will apply our function `reg()` to the heart attack data. To begin with, let's check if the simple linear regression (`lm()`) output coincides with the results of our manual regression estimator, `reg()`.
+
+```{r eval=T}
+reg(y=heart_attack$CHARGES, x=heart_attack$LOS)
+fit1  # recall that fit1 <- lm(CHARGES ~ LOS, data=heart_attack)
+```
+
+The results of the official (`lm()`) and the manual (`reg()`) simple linear models agree and we can proceed with testing the multivariate  functionality using additional variables as predictors, e.g., just adding `age` as a second variable into the model. 
+
+```{r eval=T}
+str(heart_attack)
+reg(y=heart_attack$CHARGES, x=heart_attack[, c(7, 8)])
+# and compare the result to lm()
+fit2 <- lm(CHARGES ~ LOS+AGE, data=heart_attack); fit2
+```
+
+The following sections provide additional examples of simple and multivariate regression, and [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html) will generalize the OLS regression modeling to regularized linear model estimation, which facilitates joint model fitting and feature selection.
+
+## Case Study 1: Baseball Players
+
+### Step 1 - collecting data
+
+In this example, we will utilize the [MLB data (01a_data.txt)](https://umich.instructure.com/files/330381/download?download_frd=1). The data contains $1,034$ records of heights and weights for some recent Major League Baseball (MLB) Players. These data were obtained from different resources (e.g., IBM Many Eyes). 
+
+Variables:
+
+ - *Name*: MLB Player Name 
+ - *Team*: The Baseball team the player was a member of at the time the data was acquired
+ - *Position*: Player field position
+ - *Height*: Player height in inch 
+ - *Weight*: Player weight in pounds
+ - *Age*: Player age at time of record.
+
+### Step 2 - exploring and preparing the data
+
+Let's first load this dataset using `as.is=T` to keep non-numerical vectors as characters. Also, we will delete the `Name` variable because we don't need the players' names in this case study. 
+
+```{r eval=T}
+mlb <- read.table('https://umich.instructure.com/files/330381/download?download_frd=1', as.is=T, header=T)
+str(mlb)
+mlb <- mlb[, -1]
+```
+
+By looking at the `str()` output we notice that the variables `TEAM`  and `Position` are misspecified as characters. To fix this we can use the function `as.factor()` to convert numeric or character vectors to factors.
+
+```{r eval=T}
+mlb$Team <- as.factor(mlb$Team)
+mlb$Position <- as.factor(mlb$Position)
+```
+
+The data is now ready to compute some summary statistics and generate simple plots.
+
+```{r eval=T}
+summary(mlb$Weight)
+# hist(mlb$Weight, main = "Histogram for Weights")
+
+plot_ly(x = mlb$Weight, type = "histogram", name= "Histogram for Weights") %>%
+  layout(title="Baseball Players' Weight Histogram", bargap=0.1,
+         xaxis=list(title="Weight"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Frequency"))
+```
+
+The above plot illustrates our dependent variable `Weight`. As we saw in [Chapter 1](https://socr.umich.edu/DSPA2/DSPA2_notes/01_Introduction.html), this distribution appears a little right-skewed.
+
+Displaying `pairs plots` provides a compact summary of different features in the data.
+
+```{r eval=TRUE, fig.width=12, fig.height=12}
+# require(GGally)
+# mlb_binary = mlb
+# mlb_binary$bi_weight = as.factor(ifelse(mlb_binary$Weight>median(mlb_binary$Weight),1,0))
+# g_weight <- ggpairs(data=mlb_binary[-1], title="MLB Light/Heavy Weights",
+#            mapping=ggplot2::aes(colour = bi_weight),
+#            lower=list(combo=wrap("facethist",binwidth=1)),
+#            # upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))
+#            )
+# g_weight
+
+plot_ly(mlb) %>%
+    add_trace(type = 'splom', dimensions = list( list(label='', values=~Position), # Position
+    list(label='Height', values=~Height), list(label='Weight', values=~Weight), 
+    list(label='Age', values=~Age), list(label='', values=~Team)), # Team
+        text=~Team,
+        marker = list(color = as.integer(mlb$Team),
+            size = 7, line = list(width = 1, color = 'rgb(230,230,230)')
+        )
+    ) %>%
+    style(diagonal = list(visible = FALSE)) %>%
+    layout(title= 'MLB Pairs Plot', hovermode='closest', dragmode= 'select',
+        plot_bgcolor='rgba(240,240,240, 0.95)')
+```
+
+```{r eval=F, fig.width=12, fig.height=12}
+# We may also mark player positions by different colors in the ggpairs plot
+# g_position <- ggpairs(data=mlb[-1], title="MLB by Position",
+#               mapping=ggplot2::aes(colour = Position),
+#               lower=list(combo=wrap("facethist",binwidth=1)))
+# g_position
+```
+
+Let's try to summarize certain candidate predictors.
+
+```{r eval=T}
+table(mlb$Team)
+table(mlb$Position)
+summary(mlb$Height)
+summary(mlb$Age)
+```
+
+Here we have two *numerical predictors* and two *categorical predictors* for $1,034$ observations. Let's see how `R` treats these three different classes of variables.
+
+## Exploring relationships among features - the correlation matrix
+
+Before fitting linear models, let's examine the independence of our potential predictors and the dependent variable. Multiple linear regressions assume that predictors are all independent with each other. Is this assumption valid? As we mentioned earlier, the correlation function, `cor()`, can help with this question in the case of linear pairwise dependencies for numerical variables.
+
+```{r eval=T}
+cor(mlb[c("Weight", "Height", "Age")])
+```
+
+Of course, the correlation is symmetric, $cor(y, x)=cor(x, y)$ and $cov(x, x)=1$. Also, our `Height` variable is weakly (negatively) related to the players' age. The results look very good and do not suggest potential multicollinearity problems. If two of our predictors are highly correlated, they both provide similar information. Such multicollinearity may cause undue bias in the model and one common practice is to remove one of the highly correlated predictors prior to fitting the model.
+
+In general multivariate regression analysis, we can use the `variance inflation factors (VIFs)` to detect potential multicollinearity between all covariates. The variance inflation factor quantifies the amount of artificial inflation of the variance due to observed multicollinearity in the covariates. The $VIF_l$'s represent the expected inflation of the corresponding estimated variances. In a simple linear regression model with a single predictor $x_l$, $y_i=\beta_o + \beta_1 x_{i,l}+\epsilon_i,$ relative to the *baseline variance*, $\sigma$, the *lower bound (min) of the variance* of the estimated effect-size, $\beta_l$, is:
+
+$$Var(\beta_l)_{min}=\frac{\sigma^2}{\sum_{i=1}^n{\left ( x_{i,l}-\bar{x}_l\right )^2}}.$$
+
+This allows us to track the inflation of the $\beta_l$ variance $\left (Var(\beta_l)\right )$ in the presence of correlated predictors in the regression model. Suppose the linear model includes $k$ covariates with some of them being  multicollinear or correlated.
+
+$$y_i=\beta_o+\beta_1x_{i,1} + \beta_2 x_{i,2} + \cdots + \underbrace{\beta_l x_{i,l}}_{\text{effect*feature}} + \cdots + \beta_k x_{i,k} +\epsilon_i.$$
+
+Assume some of the predictors are correlated with the feature ${x_l}$, then the variance of its effect, $Var(\beta_l)$, will be inflated as follows:
+
+$$Var(\beta_l)=\frac{\sigma^2}{\sum_{i=1}^n{\left ( x_{i,l}-\bar{x}_l\right )^2}}\times \frac{1}{1-R_l^2},$$
+
+where $R_l^2$ is the $R^2$-value computed by regressing the $l^{th}$ feature on the remaining $(k-1)$ predictors. The stronger the *linear dependence* between the $l^{th}$ feature and the remaining predictors, the larger the corresponding $R_l^2$ value will be, the smaller the denominator in the inflation factor ($VIF_l$), and the larger the variance estimate of $\beta_l$.
+
+The *variance inflation factor* ($VIF_l$) is the ratio of the two variances - the variance of the effect (numerator) and the lower bound minimum variance of the effect (denominator).
+
+$$VIF_l=\frac{Var(\beta_l)}{Var(\beta_l)_{min}}=
+\frac{\frac{\sigma^2}{\sum_{i=1}^n{\left ( x_{i,l}-\bar{x}_l\right )^2}}\times \frac{1}{1-R_l^2}}{\frac{\sigma^2}{\sum_{i=1}^n{\left ( x_{i,l}-\bar{x}_l\right )^2}}}=\frac{1}{1-R_l^2}.$$
+
+The regression model's VIFs measure how much the variance of the estimated regression coefficients, $\beta_l$, may be "inflated" by unavoidable presence of multicollinearity among the model predictor features. $VIF_l\sim 1$ implies that there is no substantial multicollinearity involving the $l^{th}$ predictor and the remaining features, and hence, the variance estimate of $\beta_l$ is not inflated. On the other hand, when $VIF_l > 4$, potential multicollinearity is likely, when $VIF_l> 10$, there may be serious multicollinearity in the data, which may require some model correction to account for variance estimates that may be significantly biased.
+
+We can use the function `car::vif()` to compute and report the VIF factors.
+
+```{r}
+car::vif(lm(Weight ~ Height + Age, data=mlb))
+```
+
+## Multicollinearity and feature-selection in high-dimensional data
+
+In [Chapters 11 (Feature Selection)](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html), we will discuss the methods and computational strategies to identify salient features in high-dimensional datasets. Let's briefly identify some practical approaches to address multicollinearity problems and tackle challenges related to large numbers of inter-dependencies in the data. Data that contains a large number of predictors is likely to include completely unrelated variables having high sample correlation. To see the nature of this problem, assume we are generating a random Gaussian $n\times k$ matrix, $X=(X_1,X_2, \cdots, X_k)$ of $k$ feature vectors, $X_i, 1\leq i\leq k$, using IID standard normal random samples. Then, the expected maximum correlation between any pair of columns, $\rho(X_{i_1},X_{i_2})$, can be as large as $k\gg n$. 
+
+Even in this IID sampling problem, we still expect a high rate of intrinsic and strong feature correlations. In general, this phenomenon is amplified for high-dimensional observational data, which would be expected to have a high degree of collinearity. This problem presents a number of computational, model-fitting, model-interpretation, and selection of salient predictors challenges, e.g., function singularities and negative definite Hessian matrices.
+
+There are some techniques that allow us to resolve such multicollinearity issues in high-dimensional data. Let's denote $n$ to be the number of cases (samples, subjects, units, etc.) and and $k$ be the number of features. Using a divide-and-conquer strategy, we can split the problem into two special cases:
+
+ - When $n \geq k$, we can use the VIF to solve the problem parametrically. 
+ - When $n \ll k$, VIF does not apply and other creative approaches are necessary. In this case, examples of strategies that can be employed include:
+    + Use a [dimensionality-reduction (PCA, ICA, FA, SVD, PLSR, t-SNE)](https://socr.umich.edu/DSPA2/DSPA2_notes/04_DimensionalityReduction.html) to reduce the problem to $n \geq k'$ (using only the top $k'$ bases, functions, or directions).
+    + Compute the (Spearman's rank-order based) pair correlation (matrix) and do [some kind of feature selection](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html), e.g., choosing only features with lower paired-correlations.
+    + The [Sure Independence Screening (SIS) technique](https://orfe.princeton.edu/~jqfan/papers/06/SIS.pdf) is based on correlation learning utilizing the sample correlation between a response and a given predictor. SIS reduces the feature-dimension ($k$) to a moderate dimension $O(n)$.
+    + The basic SIS method estimates marginal linear correlations between predictor and responses, which can be done by fitting a simple linear model. [Non-parametric Independence Screening (NIS)](https://doi.org/10.1198/jasa.2011.tm09779) expands this model-based SIS strategy to use non-parametric models and allow more flexibility for the predictor ranking. Models' diagnostics for predictor-ranking may use the magnitude of the marginal  estimators,  non-parametric  marginal-correlations, or marginal residual sum of squares.
+    + [Generalized Correlation screening](https://doi.org/10.1198/jcgs.2009.08041) employs an empirical sample-driven estimate of a generalized correlation to rank the individual predictors. 
+    + *Forward Regression* using best subset regression is computationally very expensive because of the large combinatorial space, as the utility of each predictor depends on many other predictors.  It generates a nested sequence of models, each having one additional predictor than the prior model.  The model expansion adds new variables to the model based on their effect to improve the model quality, e.g., the largest decrease of the regression sum of squares, compared to the prior model. 
+    + [Model-Free Screening](https://dx.doi.org/10.1198%2Fjasa.2011.tm10563) strategy basically uses  empirical  estimates  for  conditional  densities  of  the  response  given the predictors.  Most methods have  [consistency  in  ranking  (CIR) property](https://dl.acm.org/doi/abs/10.5555/2999134.2999272), which ensures that the objective utility function ranks unimportant predictors lower than important predictors with high probability (as $p \rightarrow 1$).
+
+## Visualizing relationships between features
+
+There are many alternative ways to visualize correlations, e.g., `pairs()`, `ggpairs()`, or `plot_ly()`. 
+
+```{r eval=T}
+# pairs(mlb[c("Weight", "Height", "Age")])
+plot_ly(mlb) %>%
+    add_trace(type = 'splom', dimensions = list( list(label='Height', values=~Height),
+              list(label='Weight', values=~Weight), list(label='Age', values=~Age)),
+        text=~Position,
+        marker = list(color = as.integer(mlb$Team),
+            size = 7, line = list(width = 1, color = 'rgb(230,230,230)')
+        )
+    ) %>%
+    layout(title= 'MLB Pairs Plot', hovermode='closest', dragmode= 'select',
+        plot_bgcolor='rgba(240,240,240, 0.95)')
+```
+
+Some of these plots may give a sense of variable associations or show specific patterns in the data. The `psych::pairs.panels()` function provides another sophisticated display (*SPLOM* = scatter plot matrix) that is often useful in exploring multivariate relations. 
+
+```{r eval=T}
+# install.packages("psych")
+library(psych)
+pairs.panels(mlb[, c("Weight", "Height", "Age")])
+```
+
+This plot gives us much more information about the selected three variables. Above the diagonal, we have our correlation coefficients in numerical form. On the diagonal, there are histograms of variables. Below the diagonal, more visual information is presented to help us understand the corresponding bivariate trends. Specifically, this graph shows that height and weight are strongly positively correlated. Also there are some weaker relationships, e.g., between age and height, and age and weight (horizontal red line in the below diagonal graphs indicates weak relationships). 
+
+### Step 3 - training a model on the data
+
+The base `R` method we are going to use now is the linear modeling function, `lm()`. No extra package is needed when using this function. The `lm()` function has the following invocation protocol:
+
+**m <- lm(dv ~ iv, data=mydata)**
+
+ - *dv*: dependent variable
+ - *iv*: independent variables. Also see the function `OneR()` in [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html). If we use `.` as `iv`, then all of the variables, except the dependent variable ($dv$), are included as model predictors.
+ - *data*: specifies the data object containing both a dependent variable and independent variables.
+
+```{r eval=T}
+fit <- lm(Weight ~ ., data=mlb)
+fit
+```
+
+The output model report includes both numeric and factor predictors. For each factor variable, the model creates a set of several indicators (one-hot-encoding, dummy variables) with corresponding coefficients matching each factor level (except for all reference factor levels, as the effects of all factors are reported *relative* to the corresponding reference level). For each numerical variable, there is just one coefficient (the matching effect).
+
+### Step 4 - evaluating model performance
+
+Let's examine the linear model performance.
+
+```{r fig.height=3, fig.width=6}
+summary(fit)
+#plot(fit, which = 1:2)
+
+plot_ly(x=fit$fitted.values, y=fit$residuals, type="scatter", mode="markers") %>%
+  layout(title="LM: Fitted-values vs. Model-Residuals",
+         xaxis=list(title="Fitted"), yaxis = list(title="Residuals"))
+```
+
+The **summary** shows how well the model fits the dataset.
+
+ - *Residuals*: This tells us about the residuals. If we have extremely large or extremely small residuals for some observations compared to the rest of residuals, either they are outliers due to reporting error or the model fits data poorly. We have $73.649$ as our maximum and $-48.692$ as our minimum. Their extremeness could be examined by residual diagnostic plot.
+
+ - *Coefficients*: In this section, strong effects are indicated by more stars ($*$) in the right-most column. Stars, or dots, next to probability-value for each variable indicate whether the variable is a significant predictor of the outcome, and therefore should be included in the model. However, an empty field there suggests that (statistically speaking), this variable does not contribute significantly (in the specified model) to predicting the outcome, i.e., there is no strong evidence to suggest its estimated effect is non-zero. The column `Pr(>|t|)` contains the estimated probability corresponding to the t-statistic for this covariate. Smaller values (close to $0$$) indicate the variable is a significant covariate, and conversely, larger values indicate lack of significance and indication that the variable may be dropped from the model. In our examples, only some of the teams and positions are not significant, whereas `Age` and `Height` are significant predictors of the outcome, `Weight`.
+
+ - *R-squared*: Quantifies what percent in $Y$ (outcome) is explained by included predictors ($X$). Here, we have $R^2=38.58\%$, which indicates the model is not bad but could be improved. Usually a well-fitted linear regression would have over $R^2>50\%$.
+
+**Diagnostic plots** are also helpful for understanding the model performance relative to the data.
+
+ - *Residual vs Fitted*: This is the residual diagnostic plot. We can see that the residuals of observations indexed $65$, $160$ and $237$ are relatively far apart from the rest. They are potential influential points or outliers.
+
+ - *Normal Q-Q*: This plot examines the normality assumption of the model. If these dots follow the line on the graph, the normality assumption is valid. In our case, it is relatively close to the line. So, we can say that our model is valid in terms of normality.
+
+### Step 5 - improving model performance
+
+We can employ the `step` function to perform *forward* or *backward* selection of important features/predictors. It works for both `lm()` and `glm()` models. In most cases, backward-selection is preferable because it tends to retain much larger models. On the other hand, there are various criteria to evaluate a model. Commonly used criteria include Akaike Information Criterion (*AIC*), Bayesian Information Criterion (*BIC*), *Adjusted* $R^2$, etc. Let's compare the backward and forward model selection approaches. The `step` function argument `direction` allows this control (default is `both`, which will select the better result from either backward or forward selection). Later, in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html), we will present details about alternative feature selection approaches.
+
+```{r}
+step(fit,direction = "backward")
+step(fit,direction = "forward")
+step(fit,direction = "both")
+```
+
+We can observe that `forward` selection retains the whole model. The better feature selection model uses `backward` stepwise selection. Both backward and forward feature selection methods utilize greedy algorithms and do not guarantee an optimal model selection result. Identifying the best feature selection requires exploring every possible combination of the predictors, which is often not practically feasible due to computational complexity associated with model selection using $n \choose k$ combinations of features.
+
+Alternatively, we can choose models based on various **information criteria**. 
+
+```{r}
+step(fit, k=2)
+step(fit, k=log(nrow(mlb)))
+```
+
+Setting the parameter $k = 2$ yields the genuine AIC criterion, and $k = log(n)$ refers to BIC. Let's try to evaluate the model performance again.
+
+```{r}
+fit2 = step(fit,k=2,direction = "backward")
+summary(fit2)
+#plot(fit2, which = 1:2)
+plot_ly(x=fit2$fitted.values, y=fit2$residuals, type="scatter", mode="markers") %>%
+  layout(title="LM: Fitted-values vs. Model-Residuals",
+         xaxis=list(title="Fitted"), 
+         yaxis = list(title="Residuals"))
+
+# compute the quantiles
+QQ <- qqplot(fit2$fitted.values, fit2$residuals, plot.it=FALSE)
+# take a smaller sample size to expedite the viz
+ind <-  sample(1:length(QQ$x), 1000, replace = FALSE)
+plot_ly() %>%
+  add_markers(x=~QQ$x, y=~QQ$y, name="Quantiles Scatter", type="scatter", mode="markers") %>%
+  add_trace(x = ~c(160,260), y = ~c(-50,80), type="scatter", mode="lines",
+        line = list(color = "red", width = 4), name="Line", showlegend=F) %>%
+  layout(title='Quantile plot',
+           xaxis = list(title="Fitted"),
+           yaxis = list(title="Residuals"),
+           legend = list(orientation = 'h'))
+```
+
+Sometimes, simpler models are preferable, even when there is a little bit of loss of performance. In this case, we have a simpler model and $R^2=0.365$. The whole model is still very significant. We can see that observations $65$, $160$ and $237$ are relatively far from the bulk of other residuals. These cases represent potentially influential points, or outliers. 
+
+Also, we can observe the *leverage points* - those that are either outliers, influential points, or both. In a regression model setting, *observation leverage* is the relative distance of the observation (data point) from the mean of the explanatory variable. Observations near the mean of the explanatory variable have *low leverage* and those far from the mean have *high leverage.* Yet, not all points of high leverage are necessarily influential.
+
+```{r message=F, warning=F}
+# Half-normal plot for leverages
+# install.packages("faraway")
+library(faraway)
+halfnorm(lm.influence(fit)$hat, nlab = 2, ylab="Leverages")
+mlb[c(226,879),]
+summary(mlb)
+```
+
+A deeper discussion of variable selection, controlling the false discovery rate, is provided in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html).
+
+## Adding non-linear relationships
+
+In linear regression, the relationship between independent and dependent variables is assumed to be affine. However, in general, this might not be the case. The relationship between age and weight could be quadratic, logarithmic, exponential, etc. For instance, if middle-aged people are expected to gain weight dramatically and then lose it as they age. This is an example of adding a non-linear (quadratic) term to the linear model. Note that the model is still referred to as *linear*, as it still has a linear matrix representation.
+
+```{r eval=T}
+mlb$age2 <- (mlb$Age)^2
+fit2     <- lm(Weight ~ ., data=mlb)
+summary(fit2)
+```
+
+Including a quadratic factor may change the overall $R^2$.
+
+## Converting a numeric variable to a binary indicator
+
+As discussed earlier, middle-aged people might exhibit a different weight pattern, compared to younger or older people. The overall pattern may not always be cumulative, i.e., weight may represent two separate trajectories for young and middle-aged people. For concreteness, let's use the age of 30 as a threshold segregating young and middle-aged people. People over 30 may have a steeper line for weight change than those under 30. Here we use an `ifelse()` conditioning statement to create a new indicator variable ($age30$) based on this threshold value. 
+
+```{r eval=T}
+mlb$age30 <- ifelse(mlb$Age>=30, 1, 0)
+fit3      <- lm(Weight ~ Team+Position+Age+age30+Height, data=mlb)
+summary(fit3)
+```
+
+This model performs worse than the quadratic model in terms of $R^2$. Moreover, `age30` does not appear as a significant predictor of weight. Therefore, such a pseudo factor does not contribute to explaining the observed variability in the dataset. However, if including such binary indicator (dummy variable, or one-hot-encoding feature) improved the model (e.g., increased $R^2$), then we can leave the binary feature in the model and interpret its coefficient estimate in terms of a difference of expectations:
+
+ - $E(Weight_i | age30_i=0)=\beta_{o} + \beta_{Team}Team + \beta_{Position}Position + \beta_{Age}Age +\beta_{Height}Height$, is the expected Weight where $age30_i=0$, i.e., for younger people,
+ - $E(Weight_i | age30_i=1)=\beta_{o} + \beta_{Team}Team + \beta_{Position}Position + \beta_{Age}Age + \underbrace{\beta_{age30}}_{\text{effect size}}\overbrace{Age30}^{\text{dummy var.}}  +\beta_{Height}Height$, is the expected Weight, where $age30_i=1$, i.e., for older people. In other words, $\beta_{age30}\equiv E(Weight_i | age30_i=1) - E(Weight_i | age30_i=0)$. Therefore, $\beta_{age30}$ is the difference in age-group specific expectations, i.e., the difference in expected Weight between older and younger people.
+
+## Adding interaction effects
+
+So far, we only accounted for the individual and independent effects of each variable included in the linear model. It is also possible that pairs of features *jointly* affect the independent outcome variable. *Interactions* represent combined effects of two features on the outcome. If we are uncertain whether two variables interact, we could include them along with their interaction in the model, and then test the significance of the interaction term. If the interaction is significant, then it remains in the model, if not, this term can be dropped.
+
+```{r eval=T}
+fit4 <- lm(Weight ~ Team + Height +Age*Position + age2, data=mlb)
+summary(fit4)
+```
+
+In this example, we see that the overall $R^2$ improved by including a $Age\times Position$ interaction and we can interpret its significance level.
+
+# Understanding regression trees and model trees
+
+In [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html), we will discuss decision trees built by multiple conditional logical decisions that lead to natural classifications of all observations. We could also add regression into decision tree modeling to make numerical predictions.
+
+## Adding regression to trees
+
+Numeric prediction trees are built in the same way as classification trees. In [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html) we will show how data are partitioned first by a  *divide-and-conquer* strategy based on features. The homogeneity of the resulting classification trees is measured by various metrics, e.g., entropy. *In regression-tree prediction, node homogeneity (which is used to determine if a node needs to be split) is measured by various statistics such as variance, standard deviation, or absolute deviation from the mean*. A common splitting criterion for decision trees is the *standard deviation reduction (SDR)*.
+
+$$SDR=sd(T)-\sum_{i=1}^n \left | \frac{T_i}{T} \right | \times sd(T_i),$$
+
+where `sd(T)` is the standard deviation for the original data. After the summation of all segments, $|\frac{T_i}{T}|$ is the proportion of observations in the $i^{th}$ segment compared to total number of observations, and $sd(T_i)$ is the standard deviation for the $i^{th}$ segment.
+
+Let's look at a simple example
+
+$${\text{Original data}}:\{1, 2, 3, 3, 4, 5, 6, 6, 7, 8\}$$
+$${\text{Split method 1}}:\left \{\underbrace{1, 2, 3}_{T_1}\ |\ \underbrace{3, 4, 5, 6, 6, 7, 8}_{T_2}\right \}$$
+$${\text{Split method 2}}:\left \{\underbrace{1, 2, 3, 3, 4, 5}_{T_1'}\ | \ \underbrace{6, 6, 7, 8}_{T_2'}\right \}.$$
+
+In split method 1, $T_1=\{1, 2, 3\}$, $T_2=\{3, 4, 5, 6, 6, 7, 8\}$.
+In split method 2, $T_1'=\{1, 2, 3, 3, 4, 5\}$, $T_2'=\{6, 6, 7, 8\}$.
+
+```{r eval=T}
+ori<-c(1, 2, 3, 3, 4, 5, 6, 6, 7, 8)
+at1<-c(1, 2, 3)
+at2<-c(3, 4, 5, 6, 6, 7, 8)
+bt1<-c(1, 2, 3, 3, 4, 5)
+bt2<-c(6, 6, 7, 8)
+sdr_a<-sd(ori)-(length(at1)/length(ori)*sd(at1)+length(at2)/length(ori)*sd(at2))
+sdr_b<-sd(ori)-(length(bt1)/length(ori)*sd(bt1)+length(bt2)/length(ori)*sd(bt2))
+sdr_a
+sdr_b
+```
+
+The method `length()` is used above to get the number of elements in a specific vector.
+
+*Larger SDR indicates greater reduction in standard deviation after splitting*. Here we have split method 2 yielding greater SDR, so the tree splitting decision would prefer the *second method*, which is expected to produce more homogeneous subsets (children nodes), compared to *method 1*. 
+
+Now, the tree will be split under `bt1` and `bt2` following the same rules (greater SDR wins). Assume we cannot split further (`bt1` and `bt2` are terminal nodes). The observations classified into `bt1` will be predicted with $mean(bt1)=3$ and those classified as `bt2` with $mean(bt2)=6.75$.
+
+## Bayesian Additive Regression Trees (BART)
+
+Bayesian Additive Regression Trees (BART) represent sums of regression trees models that rely on boosting the constituent Bayesian regularized trees.
+
+The `R` packages `BayesTree` and `BART` provide computational implementation of fitting BART models to data. In supervised setting where $x$ and $y$ represent the predictors and the outcome, the BART model is mathematically represented as:
+
+$$y=f(x)+\epsilon = \sum_{j=1}^m{f_j(x)} +\epsilon.$$
+
+More specifically,
+
+$$y_i=f(x_i)+\epsilon = \sum_{j=1}^m{f_j(x_i)} +\epsilon,\  \forall 1\leq i\leq n.$$
+
+The residuals are typically assumed to be white noise, $\epsilon_i \sim N(o,\sigma^2), \ iid$.
+The function $f$ represents the boosted ensemble of weaker regression trees, $f_i=g( \cdot | T_j, M_j)$, where $T_j$ and $M_j$ represent the $j^{th}$ tree and the set of values, $\mu_{k,j}$,
+assigned to each terminal node $k$ in $T_j$, respectively.
+
+The BART model may be estimated via Gibbs sampling, e.g., Bayesian backfitting Markov Chain Monte Carlo (MCMC) algorithm. For instance, iteratively sampling $(T_j ,M_j)$ and $\sigma$, conditional on all other variables, $(x,y)$, for each $j$ until meeting a certain convergence criterion. Given $\sigma$, conditional sampling of $(T_j ,M_j)$ may be accomplished via the partial residual 
+
+$$\epsilon_{j_o} = \sum_{i=1}^n{\left (y_i - \sum_{j\not= j_o}^m{g( x_i | T_j, M_j)} \right )}.$$
+
+For prediction on *new data*, $X$, data-driven priors on $\sigma$ and the parameters defining $(T_j ,M_j)$ may be used to allow sampling a model from the posterior distribution:
+
+$$p\left (\sigma, \{(T_1 ,M_1), (T_2 ,M_2), \cdots, (T_2 ,M_2)\} | X, Y \right )=$$
+$$= p(\sigma) \prod_{(tree)j=1}^m{\left ( \left ( \prod_{(node)k} {p(\mu_{k,j}|T_j)} \right )p(T_j)   \right )}  .$$
+In this posterior factorization, model regularization is achieved by four criteria:
+
+ - Enforcing reasonable marginal probabilities, $p(T_j)$, to ensure that the probability of a depth $d$ node in the tree $T_j$ has children decreases as $d$ increases. That is, the probability a current bottom node, at depth $l$, is split into a left and right child nodes is $\frac{\alpha}{(1+l)^{\beta}}$, where the base ($\alpha$) and power ($\beta$) parameters are selected to optimize the fit (including regularization);
+ - For each interior (non-terminal) node, the distribution on the splitting variable assignments is uniform over the range of values taken by a variable;
+ - For each interior (non-terminal) node, the distribution on the splitting rule assignment, conditional on the splitting variable, is uniform over the discrete set of splitting values;
+ - All other priors are chosen as $p(\mu_{k,j} |T_j) = N(\mu_{k,j} |\mu, \sigma)$ and $p(\sigma)$ where $\sigma^2$ is inverse chi-square distributed. To facilitate the calculations, this introduces prior conjugate structure with the corresponding hyper-parameters estimated using the observed data.
+
+Using the BART model to forecast a response corresponding to newly observed data $x$ is achieved by using one individual (or ensembling/averaging multiple) prediction models near algorithmic convergence.
+
+The BART algorithm involves three steps:
+
+ - Initialize a prior on the model parameters $(f,\sigma)$, where $f=\{f_i=g( . | T_j, M_j)\}_i$,
+ - Run a Markov chain with state $(f,\sigma)$ where the stationary distribution is the posterior $p \left ((f,\sigma)|Data=\{(x_i,y_i)\}_{i=1}^n\right )$,
+ - Examine the draws as a representation of the full posterior. Even though $f$ is complex and changes its dimensional structure, for a given $x$, we can explore the marginals of $\sigma$ and $f(x)$ by selecting a set of data $\{x_j\}_{j}$ and computing $f(x_j)$. If $f_l$ represents the $l^{th}$ MCMC draw, then the homologous Bayesian tree structures at every draw will yield results of the same dimensions $\left ( f_l(x_i), f_l(x_2), \cdots\right )$.
+
+### 1D Simulation
+
+This example illustrates a simple 1D BART simulation, based on a simple analytical process model $h(x)=x^3\sin(x)$, where we can nicely track the performance of the BART classifier.
+
+```{r include=TRUE, echo=TRUE, warning=F, message=F}
+# simulate training data
+sig = 0.2  # sigma
+func = function(x) {
+  return (sin(x) * (x^(3)))
+}
+
+set.seed(1234)
+n = 300
+x = sort(2*runif(n)-1)        # define the input
+y = func(x) + sig * rnorm(n)  # define the output
+
+# xtest: values we want to estimate func(x) at; this is also our prior prediction for y.
+xtest = seq(-pi, pi, by=0.2)
+
+##plot simulated data
+# plot(x, y, cex=1.0, col="gray")
+# points(xtest, rep(0, length(xtest)), col="blue", pch=1, cex=1.5)
+# legend("top", legend=c("Data", "(Conjugate) Flat Prior"),
+#    col=c("gray", "blue"), lwd=c(2,2), lty=c(3,3), bty="n", cex=0.9, seg.len=3)
+
+plot_ly(x=x, y=y, type="scatter", mode="markers", name="data") %>%
+  add_trace(x=xtest, y=rep(0, length(xtest)), mode="markers", name="prior") %>%
+  layout(title='(Conjugate) Flat Prior',
+           xaxis = list(title="X", range = c(-1.3, 1.3)),
+           yaxis = list(title="Y", range = c(-0.6, 1.6)),
+           legend = list(orientation = 'h'))
+
+# run the weighted BART (BART::wbart) on the simulated data  
+# install.packages("BART")
+library(BART)
+set.seed(1234) # set seed for reproducibility of MCMC
+# nskip=Number of burn-in MCMC iterations; ndpost=number of posterior draws to return
+model_bart <- wbart(x.train=as.data.frame(x), y.train=y, x.test=as.data.frame(xtest), 
+                    nskip=300, ndpost=1000, printevery=1000) 
+# result is a list containing the BART run 
+
+# explore the BART model fit
+names(model_bart)
+dim(model_bart$yhat.test)
+
+# The (l,j) element of the matrix `yhat.test` represents the l^{th} draw of `func` evaluated at the j^{th} value of x.test
+# A matrix with ndpost rows and nrow(x.train) columns. Each row corresponds to a draw f* from the posterior of f
+# and each column corresponds to a row of x.train. The (i,j) value is f*(x) for the i^th kept draw of f 
+# and the j^th row of x.train
+
+# # plot the data, the BART Fit, and the uncertainty
+# plot(x, y, cex=1.2, cex.axis=0.8, cex.lab=0.8, mgp=c(1.3,.3,0), tcl=-0.2, col="gray")
+# lines(xtest, func(xtest), col="blue", lty=1, lwd=2)
+# lines(xtest, apply(model_bart$yhat.test, 2, mean), col="green", lwd=2, lty=2) # show the mean of f(x_j)
+# quant_marg = apply(model_bart$yhat.test, 2, quantile, probs=c(0.025, 0.975)) # plot the 2.5% and 97.5% quantiles
+# lines(xtest, quant_marg[1,], col="red", lty=1, lwd=2)
+# lines(xtest, quant_marg[2,], col="red", lty=1,lwd=2)
+# legend("top", legend=c("Data", "True Signal","Posterior Mean","95% CI"),
+#    col=c("black", "blue","green","red"), lwd=c(2, 2,2,2), lty=c(3, 1,1,1), bty="n", cex=0.9, seg.len=3)
+
+quant_marg = apply(model_bart$yhat.test, 2, quantile, probs=c(0.025, 0.975)) # plot the 2.5% and 97.5% quantiles
+plot_ly(x=x, y=y, type="scatter", mode="markers", name="Data") %>%
+  add_trace(x=xtest, y=func(xtest), mode="markers", name="True Signal") %>%
+  add_trace(x=xtest, y=apply(model_bart$yhat.test, 2, mean), mode="lines", name="Posterior Mean") %>%
+  add_trace(x=xtest, y=apply(model_bart$yhat.test, 2, quantile, probs=c(0.025, 0.975)),
+            mode="markers", name="95% CI") %>%
+  add_trace(x=xtest, y=quant_marg[1,], mode="lines", name="Lower Band") %>%
+  add_trace(x=xtest, y=quant_marg[2,], mode="lines", name="Upper Band") %>%
+  layout(title='BART Model  (n=300)',
+           xaxis = list(title="X", range = c(-1.3, 1.3)),
+           yaxis = list(title="Y", range = c(-0.6, 1.6)),
+           legend = list(orientation = 'h'))
+
+names(model_bart)
+dim(model_bart$yhat.train)
+summary(model_bart$yhat.train.mean-apply(model_bart$yhat.train, 2, mean))
+summary(model_bart$yhat.test.mean-apply(model_bart$yhat.test, 2, mean))
+# yhat.train(test).mean: Average the draws to get the estimate of the posterior mean of func(x)
+```
+
+If we increase the sample size, $n$, the computational complexity increases and the BART model bounds should get tighter.
+
+```{r include=TRUE, echo=TRUE, warning=F, message=F}
+n = 3000 # 300 --> 3,000
+set.seed(1234)
+x = sort(2*runif(n)-1)
+y = func(x) + sig*rnorm(n)
+
+model_bart_2 <- wbart(x.train=as.data.frame(x), y.train=y, x.test=as.data.frame(xtest), 
+                      nskip=300, ndpost=1000, printevery=1000)
+
+# plot(x, y, cex=1.2, cex.axis=0.8, cex.lab=0.8, mgp=c(1.3,.3,0), tcl=-0.2, col="gray")
+# lines(xtest, func(xtest), col="blue", lty=1, lwd=2)
+# lines(xtest, apply(model_bart_2$yhat.test, 2, mean), col="green", lwd=2, lty=2) # show the mean of f(x_j)
+# quant_marg = apply(model_bart_2$yhat.test, 2, quantile, probs=c(0.025, 0.975)) # plot the 2.5% and 97.5% CI
+# lines(xtest, quant_marg[1,], col="red", lty=1, lwd=2)
+# lines(xtest, quant_marg[2,], col="red", lty=1,lwd=2)
+# legend("top",legend=c("Data (n=3,000)", "True Signal", "Posterior Mean","95% CI"),
+#    col=c("gray", "blue","green","red"), lwd=c(2, 2,2,2), lty=c(3, 1,1,1), bty="n", cex=0.9, seg.len=3)
+
+quant_marg2 = apply(model_bart_2$yhat.test, 2, quantile, probs=c(0.025, 0.975)) # plot the 2.5% and 97.5% CI
+plot_ly(x=x, y=y, type="scatter", mode="markers", name="Data") %>%
+  add_trace(x=xtest, y=func(xtest), mode="markers", name="True Signal") %>%
+  add_trace(x=xtest, y=apply(model_bart_2$yhat.test, 2, mean), mode="lines", name="Posterior Mean") %>%
+  add_trace(x=xtest, y=apply(model_bart_2$yhat.test, 2, quantile, probs=c(0.025, 0.975)),
+            mode="markers", name="95% CI") %>%
+  add_trace(x=xtest, y=quant_marg2[1,], mode="lines", name="Lower Band") %>%
+  add_trace(x=xtest, y=quant_marg2[2,], mode="lines", name="Upper Band") %>%
+  layout(title='BART Model (n=3,000)',
+           xaxis = list(title="X", range = c(-1.3, 1.3)),
+           yaxis = list(title="Y", range = c(-0.6, 1.6)),
+           legend = list(orientation = 'h'))
+```
+
+### Higher-Dimensional Simulation
+
+In this second BART example, we will simulate $n=5,000$ cases with $p=20$ features.
+
+```{r include=TRUE, echo=TRUE, warning=F, message=F}
+# simulate data
+set.seed(1234)
+n=5000; p=20
+beta = 3*(1:p)/p
+sig=1.0
+X = matrix(rnorm(n*p), ncol=p) # design matrix)
+y = 10 + X %*% matrix(beta, ncol=1) + sig*rnorm(n) # outcome
+y=as.double(y)
+
+np=100000
+Xp = matrix(rnorm(np*p), ncol=p)
+set.seed(1234)
+t1 <- system.time(model_bart_MD <- 
+        wbart(x.train=as.data.frame(X), y.train=y, x.test=as.data.frame(Xp),
+        nkeeptrain=200, nkeeptest=100, nkeeptestmean=500, nkeeptreedraws=100, printevery=1000)
+      )
+
+dim(model_bart_MD$yhat.train)
+dim(model_bart_MD$yhat.test)
+names(model_bart_MD$treedraws)
+# str(model_bart_MD$treedraws$trees)
+
+# The trees are stored in a long character string and there are 100 draws each consisting of 200 trees.
+
+# To predict using the Multi-Dimensional BART model (MD)
+t2 <- system.time({pred_model_bart_MD2 <- predict(model_bart_MD, as.data.frame(Xp), mc.cores=6)})
+
+dim(pred_model_bart_MD2)
+t1
+t2
+
+# pred_model_bart_MD2 has row dimension equal to the number of kept tree draws (100) and
+# column dimension equal to the number of rows in Xp (100,000).  
+
+# Compare the BART predictions using 1K trees vs. 100 kept trees (very similar results)
+# plot(model_bart_MD$yhat.test.mean, apply(pred_model_bart_MD2, 2, mean),
+#       xlab="BART Prediction using 1,000 Trees", ylab="BART Prediction using 100 Kept Trees")
+# abline(0,1, col="red", lwd=2)
+
+plot_ly() %>%
+  add_trace(x = c(-30,50), y = c(-30,50), type="scatter", mode="lines",
+        line = list(width = 4), name="Consistent BART Prediction (1,000 vs. 100 Trees)") %>%
+  add_markers(x=model_bart_MD$yhat.test.mean, y=apply(pred_model_bart_MD2, 2, mean), 
+              name="BART Prediction Mean Estimates", type="scatter", mode="markers") %>%
+  layout(title='Scatter of BART Predictions (1,000 vs. 100 Trees)',
+           xaxis = list(title="BART Prediction (1,000 Trees)"),
+           yaxis = list(title="BART Prediction (100 Trees)"),
+           legend = list(orientation = 'h'))
+
+# Compare BART Prediction to a linear fit  
+lm_func = lm(y ~ ., data.frame(X,y))
+pred_lm = predict(lm_func, data.frame(Xp))
+
+# plot(pred_lm, model_bart_MD$yhat.test.mean, xlab="Linear Model Predictions", ylab="BART Predictions",
+#         cex=0.5, cex.axis=1.0, cex.lab=0.8, mgp=c(1.3,.3,0), tcl=-0.2)
+# abline(0,1, col="red", lwd=2)
+
+plot_ly() %>%
+  add_markers(x=pred_lm, y=model_bart_MD$yhat.test.mean, 
+              name="LM vs. BART Prediction", type="scatter", mode="markers") %>%
+  add_trace(x = c(-30,50), y = c(-30,50), type="scatter", mode="lines",
+        line = list(width = 4), name="Perfectly Consistent LM/BART Prediction") %>%
+  layout(title='Scatter of Linear Model vs. BART Predictions',
+           xaxis = list(title="Linear Model Prediction"),
+           yaxis = list(title="BART Prediction"),
+           legend = list(orientation = 'h'))
+```
+
+###  Heart Attack Hospitalization Case-Study
+
+Let's use BART to model the [heart attack dataset (CaseStudy12_ AdultsHeartAttack_Data.csv)](https://umich.instructure.com/courses/38100/files/folder/Case_Studies). The data includes about $150$ observations and $8$ features, including hospital charges (`CHARGES`), which will be used as a response variable.
+
+```{r include=TRUE, echo=TRUE, warning=F, message=F}
+heart_attack<-read.csv("https://umich.instructure.com/files/1644953/download?download_frd=1", 
+                       stringsAsFactors = F)
+str(heart_attack)
+
+# convert the CHARGES (independent variable) to numerical form. 
+# NA's are created so let's remain only the complete cases 
+heart_attack$CHARGES <- as.numeric(heart_attack$CHARGES)
+heart_attack <- heart_attack[complete.cases(heart_attack), ]
+heart_attack$gender <- ifelse(heart_attack$SEX=="F", 1, 0)
+heart_attack <- heart_attack[, -c(1,2,3)]
+dim(heart_attack); colnames(heart_attack)
+
+x.train <- as.matrix(heart_attack[ , -3]) # x training, excluding the charges (output)
+y.train = heart_attack$CHARGES # y=output for modeling (BART, lm, lasso, etc.)
+
+# Data should be standardized for all model-based predictions (e.g., lm, lasso/glmnet), but
+# this is not critical for BART
+
+# We'll just do some random train/test splits and report the out of sample performance of BART and lasso
+RMSE <- function(y, yhat) {
+  return(sqrt(mean((y-yhat)^2)))
+}
+
+nd <- 10 # number of train/test splits (ala CV validation)
+n <- length(y.train)
+ntrain <- floor(0.8*n) # 80:20 train:test split each time
+
+RMSE_BART <- rep(0, nd) # initialize BART and LASSO RMSE vectors 
+RMSE_LASSO <- rep(0, nd) 
+
+pred_BART <- matrix(0.0, n-ntrain,nd) # Initialize the BART and LASSO out-of-sample predictions
+pred_LASSO <- matrix(0.0, n-ntrain,nd) 
+```
+
+In [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html), we will learn more about *LASSO* regularized linear modeling. Now, let's use the `glmnet::glmnet()` method to fit a LASSO model and compare it to BART using the Heart Attack hospitalization case-study.
+
+```{r include=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+library(glmnet)
+for(i in 1:nd) {
+   set.seed(1234*i)  
+   # train/test split index
+   train_ind <- sample(1:n, ntrain)
+   
+   # Outcome (CHARGES)
+   yTrain <- y.train[train_ind]; yTest <- y.train[-train_ind]
+   
+   # Features for BART
+   xBTrain <- x.train[train_ind, ]; xBTest <- x.train[-train_ind, ]
+   
+   # Features for LASSO (scale)
+   xLTrain <- apply(x.train[train_ind, ], 2, scale)
+   xLTest <- apply(x.train[-train_ind, ], 2, scale)
+
+   # BART: parallel version of mc.wbart, same arguments as in wbart
+   # model_BART <- mc.wbart(xBTrain, yTrain, xBTest, mc.cores=6, keeptrainfits=FALSE)
+   model_BART <- wbart(xBTrain, yTrain, xBTest, printevery=1000)
+   
+   # LASSO
+   cv_LASSO <- cv.glmnet(xLTrain, yTrain, family="gaussian", standardize=TRUE)
+   best_lambda <- cv_LASSO$lambda.min
+   model_LASSO <- glmnet(xLTrain, yTrain, family="gaussian", lambda=c(best_lambda), standardize=TRUE)
+
+   #get predictions on testing data
+   pred_BART1 <- model_BART$yhat.test.mean
+   pred_LASSO1 <- predict(model_LASSO, xLTest, s=best_lambda, type="response")[, 1]
+  
+    #store results
+   RMSE_BART[i] <- RMSE(yTest, pred_BART1); pred_BART[, i] <- pred_BART1
+   RMSE_LASSO[i] <- RMSE(yTest, pred_LASSO1);   pred_LASSO[, i] <- pred_LASSO1; 
+}
+```
+
+Plot BART vs. LASSO predictions.
+
+```{r include=TRUE, warning=FALSE, message=FALSE}
+# compare the out of sample RMSE measures
+# qqplot(RMSE_BART, RMSE_LASSO)
+# abline(0, 1, col="red", lwd=2)
+
+plot_ly() %>%
+  add_markers(x=RMSE_BART, y=RMSE_LASSO, 
+              name="", type="scatter", mode="markers") %>%
+  add_trace(x = c(2800,4000), y = c(2800,4000), type="scatter", mode="lines",
+        line = list(width = 4), name="") %>%
+  layout(title='Scatter of Linear Model vs. BART RMSE',
+           xaxis = list(title="RMSE (BART)"),
+           yaxis = list(title="RMSE (Linear Model)"),
+           legend = list(orientation = 'h'))
+
+# Next compare the out of sample predictions
+model_lm <- lm(B ~ L, data.frame(B=as.double(pred_BART), L=as.double(pred_LASSO)))
+x1 <- c(2800,9000)
+y1 <- model_lm$coefficients[1] + model_lm$coefficients[2]*x1
+
+# plot(as.double(pred_BART), as.double(pred_LASSO),xlab="BART Predictions",ylab="LASSO Predictions", col="gray")
+# abline(0, 1, col="red", lwd=2)
+# abline(model_lm$coef, col="blue", lty=2, lwd=3)
+# legend("topleft",legend=c("Scatterplot Predictions (BART vs. LASSO)", "Ideal Agreement", "LM (BART~LASSO)"),
+#    col=c("gray", "red","blue"), lwd=c(2,2,2), lty=c(3,1,1), bty="n", cex=0.9, seg.len=3)
+
+plot_ly() %>%
+  add_markers(x=as.double(pred_BART), y=as.double(pred_LASSO), 
+              name="BART Predictions vs. Observed Scatter", type="scatter", mode="markers") %>%
+  add_trace(x = c(2800,9000), y = c(2800,9000), type="scatter", mode="lines",
+        line = list(width = 4), name="Ideal Agreement") %>%
+  add_trace(x = x1, y = y1, type="scatter", mode="lines",
+        line = list(width = 4), name="LM (BART ~ LASSO)") %>%
+  layout(title='Scatter Plot Predictions (BART vs. LASSO)',
+           xaxis = list(title="BART Predictions"),
+           yaxis = list(title="LASSO Predictions"),
+           legend = list(orientation = 'h'))
+```
+
+If the default prior estimate (`sigest` of the error variance ($\sigma^2$) is inverted chi-squared, i.e., using a standard conditionally conjugate prior) yields reasonable results, we can try longer BART runs (`ndpost=5000`). Mind the stable distribution of the $\hat{\sigma}^2$ ($y$-axis) with respect to the number of posterior draws ($x$-axis).
+
+```{r include=TRUE, warning=FALSE, message=FALSE}
+model_BART_long <- wbart(x.train, y.train, nskip=1000, ndpost=5000, printevery=5000) 
+
+# plot(model_BART_long$sigma, xlab="Number of Posterior Draws Returned")
+
+plot_ly() %>%
+  add_markers(x=c(1:length(model_BART_long$sigma)), y=model_BART_long$sigma, 
+              name="BART vs. LASSO Scatter", type="scatter", mode="markers") %>%
+  layout(title='Scatter Plot BART Sigma (post burn in draws of sigma)',
+           xaxis = list(title="Number of Posterior Draws Returned"),
+           yaxis = list(title="model_BART_long$sigma"),
+           legend = list(orientation = 'h'))
+
+# plot(model_BART_long$yhat.train.mean, y.train, xlab="BART Predicted Charges", ylab="Observed Charges",
+#      main=sprintf("Correlation (Observed,Predicted)=%f", 
+#                          round(cor(model_BART_long$yhat.train.mean, y.train), digits=2)))
+# abline(0, 1, col="red", lty=2)
+# legend("topleft",legend=c("BART Predictions", "LM (BART~LASSO)"),
+#    col=c("gray", "red","blue"), lwd=c(2,2,2), lty=c(3,1,1), bty="n", cex=0.9, seg.len=3)
+
+plot_ly() %>%
+  add_markers(x=model_BART_long$yhat.train.mean, y=y.train, 
+              name="BART vs. LASSO Scatter", type="scatter", mode="markers") %>%
+  add_trace(x = c(2800,9000), y = c(2800,9000), type="scatter", mode="lines",
+        line = list(width = 4), name="LM (BART~LASSO)") %>%
+  layout(title=sprintf("Observed vs. BART-Predicted Hospital Charges: Cor(BART,Observed)=%f", 
+                         round(cor(model_BART_long$yhat.train.mean, y.train), digits=2)),
+           xaxis = list(title="BART Predictions"),
+           yaxis = list(title="Observed Values"),
+           legend = list(orientation = 'h'))
+
+ind <- order(model_BART_long$yhat.train.mean)
+
+# boxplot(model_BART_long$yhat.train[ , ind], ylim=range(y.train), xlab="case", 
+#             ylab="BART Hospitalization Charge Prediction Range")
+
+caseIDs <- paste0("Case",rownames(heart_attack))
+rowIDs <- paste0("", c(1:dim(model_BART_long$yhat.train)[1]))
+colnames(model_BART_long$yhat.train) <- caseIDs
+rownames(model_BART_long$yhat.train) <- rowIDs
+
+df1 <- as.data.frame(model_BART_long$yhat.train[ , ind])
+df2_wide <- as.data.frame(cbind(index=c(1:dim(model_BART_long$yhat.train)[1]), df1))
+# colnames(df2_wide); dim(df2_wide)
+
+df_long <- tidyr::gather(df2_wide, case, measurement, Case138:Case8)
+# str(df_long )
+# 'data.frame':	74000 obs. of  3 variables:
+#  $ index      : int  1 2 3 4 5 6 7 8 9 10 ...
+#  $ case       : chr  "Case138" "Case138" "Case138" "Case138" ...
+#  $ measurement: num  5013 3958 4604 2602 2987 ...
+
+actualCharges <- as.data.frame(cbind(cases=caseIDs, value=y.train))
+
+plot_ly() %>%
+  add_trace(data=df_long, y = ~measurement, color = ~case, type = "box") %>%
+  add_trace(x=~actualCharges$cases, y=~actualCharges$value, type="scatter", mode="markers",
+            name="Observed Charge", marker=list(size=20, color='green', line=list(color='yellow', width=2))) %>%
+  layout(title="Box-and-whisker Plots across all 148 Cases (Highlighted True Charges)",
+           xaxis = list(title="Cases"),
+           yaxis = list(title="BART Hospitalization Charge Prediction Range"),
+           showlegend=F)
+```
+
+The BART model indicates there is quite a bit of uncertainty in predicting the outcome (`CHARGES`) for each of the 148 cases using the other covariate features in the heart attack hospitalization data (DRG, DIED, LOS, AGE, gender).
+
+## Another look at Case study 2: Baseball Players
+
+### Step 2 - exploring and preparing the data
+
+We will again use the [mlb dataset](https://umich.instructure.com/files/330381/download?download_frd=1) for this section. This dataset has $1,034$ observations which we will separate them into *training* and *testing* sets.
+
+```{r eval=T}
+set.seed(1234)
+train_index <- sample(seq_len(nrow(mlb)), size = 0.75*nrow(mlb))
+mlb_train <- mlb[train_index, ]
+mlb_test <- mlb[-train_index, ]
+```
+
+Here we use a randomized split ($75\%-25\%$) to divide the training and testing sets.
+
+### Step 3 - training a model on the data
+
+In `R`, the `rpart::rpart()` function provides an implementation for prediction using regression-tree modeling.
+
+**m <- rpart(dv~iv, data=mydata)**
+
+ - *dv*: dependent variable
+ - *iv*: independent variable
+ - *mydata*: training data containing `dv` and `iv`.
+
+We use two numerical features in the [mlb data (01a_data.txt)](https://umich.instructure.com/files/330381/download?download_frd=1) `Age` and `Height` as features.
+
+```{r eval=T, warning=F, message=F}
+#install.packages("rpart")
+library(rpart)
+mlb.rpart <- rpart(Weight~Height+Age, data=mlb_train)
+mlb.rpart
+```
+
+The output contains rich information. `split` indicates the method to split; `n` is the number of observations that falls in this segment; `yval` is the predicted value if the test data falls into the specific segment (tree node decision cluster).
+
+### Visualizing regression decision trees
+
+A useful way of displaying the `rpart` decision tree is by using the `rpart.plot()` function in the `rpart.plot` package.
+
+```{r eval=T, message=F, warning=F}
+# install.packages("rpart.plot")
+library(rpart.plot)
+rpart.plot(mlb.rpart, digits=3)
+```
+
+A more detailed graph can be obtained by specifying additional options in the function call.
+
+```{r  message=F, warning=F}
+rpart.plot(mlb.rpart, digits = 4, fallen.leaves = T, type=3, extra=101)
+```
+
+Also, you can use the `rattle::fancyRpartPlot()` method to display regression trees and explain the order and rules of node splits.
+
+```{r  message=F, warning=F}
+library(rattle)
+fancyRpartPlot(mlb.rpart, cex = 0.8)
+```
+
+### Step 4 - evaluating model performance
+
+Let's make predictions using the model prediction tree and the general `predict()` method.
+
+```{r eval=T}
+mlb.p <- predict(mlb.rpart, mlb_test)
+summary(mlb.p)
+summary(mlb_test$Weight)
+```
+
+We can compare the five-number statistics for the predicted estimates and the observed `Weight` values. Note that the model cannot precisely identify extreme cases, such as the maximum. However, within the IQR, the predictions are relatively accurate.  Correlation could also be used to measure the correspondence of two equal length numeric variables. Let's use `cor()` to examine the prediction accuracy.
+
+```{r eval=T}
+cor(mlb.p, mlb_test$Weight)
+```
+
+The predicted values ($Weights$) are moderately correlated with their true value counterparts. [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html) provides additional strategies for model quality assessment.
+
+### Measuring performance with mean absolute error
+
+To measure the distance between predicted value and the true value, we can use a measurement called *mean absolute error (MAE)*. MAE is calculated using the following formula
+
+$$MAE=\frac{1}{n}\sum_{i=1}^{n}|pred_i-obs_i|,$$
+where for each case $i$, `pred_i` and `obs_i` represent  the $i^{th}$ predicted value and the $i^{th}$ observed value. Let's manually construct a MAE function in `R` and evaluate our model performance.
+
+```{r eval=T}
+MAE <- function(obs, pred){
+  mean(abs(obs-pred))
+}
+MAE(mlb_test$Weight, mlb.p)
+```
+
+This implies that *on average*, the difference between the predicted value and the observed value is $15.1$. Considering that the range of the `Weight` variable in our test dataset is $[150, 260]$, the model performs well.
+
+For comparison, suppose we used the most primitive method for prediction - the **sample mean**. How much larger would the MAE be?
+
+```{r eval=T}
+mean(mlb_test$Weight)
+MAE(mlb_test$Weight, mean(mlb_test$Weight))   # 202.556
+```
+
+This example illustrates that the predictive decision tree is better than using the **over all mean** strategy to predict every observation in the test dataset. However, it is not dramatically better. There might be room for further improvement.
+
+### Step 5 - improving model performance
+
+To improve the performance of our regression-tree forecasting, we are going to use a model tree instead of a regression tree. The `RWeka::M5P()` function implements the `M5` algorithm and uses a similar syntax as `rpart::rpart()`.
+
+**m <- M5P(dv ~ iv, data=mydata)**
+
+```{r eval=T}
+#install.packages("RWeka")
+
+# Sometimes RWeka installations may be off a bit, see:
+# http://stackoverflow.com/questions/41878226/using-rweka-m5p-in-rstudio-yields-java-lang-noclassdeffounderror-no-uib-cipr-ma
+
+Sys.getenv("WEKA_HOME") # where does it point to? Maybe some obscure path? 
+# if yes, correct the variable:
+Sys.setenv(WEKA_HOME="C:\\MY\\PATH\\WEKA_WPM")
+library(RWeka)
+# WPM("list-packages", "installed")
+
+mlb.m5 <- M5P(Weight~Height+Age, data=mlb_train)
+mlb.m5
+```
+
+Instead of using segment averages to predict an outcome, the `M5` model uses a linear regression (`LM1`) as the terminal node. In some datasets with more variables, `M5P` could give us multiple linear models under different terminal nodes. Much like the general regression trees, `M5` builds tree-based models. The difference is that regression trees produce univariate forecasts (values) at each terminal node, whereas the `M5` model-based regression trees generate multivariate linear models at each node. These model-based forecasts represent piece-wise linear functional models that can be used to numerically estimate outcomes at every node based on very high dimensional data (feature-rich spaces).
+
+```{r eval=T}
+summary(mlb.m5)
+mlb.p.m5 <- predict(mlb.m5, mlb_test)
+summary(mlb.p.m5)
+cor(mlb.p.m5, mlb_test$Weight)
+MAE(mlb_test$Weight, mlb.p.m5)
+```
+
+We can use `summary(mlb.m5)` to report some rough diagnostic statistics for the model. Notice that the correlation and MAE for the `M5` model are better compared to the results of the previous `rpart()` model.
+
+## Practice Problem: Heart Attack Data
+
+Let's use the heart attack dataset as another example.
+
+```{r eval=T}
+heart_attack<-read.csv("https://umich.instructure.com/files/1644953/download?download_frd=1", stringsAsFactors = F)
+str(heart_attack)
+```
+
+To begin with, we need to convert the `CHARGES` (independent variable) to numerical form. NA's are created so let's remain only the complete cases as mentioned in the beginning of this chapter. Also, let's create a gender variable as an indicator for female patients using `ifelse()` and delete the previous `SEX` column.
+
+```{r eval=T, message=F, warning=F}
+heart_attack$CHARGES <- as.numeric(heart_attack$CHARGES)
+heart_attack <- heart_attack[complete.cases(heart_attack), ]
+heart_attack$gender <- ifelse(heart_attack$SEX=="F", 1, 0)
+heart_attack <- heart_attack[, -3]
+```
+
+Now we can build a model tree using `M5P()` with all the features in the model. As usual, we need to separate the `heart_attack` data into training and test datasets (use the 75%-25% way of separation).
+
+After using the model to predict `CHARGES` in the test dataset we can obtain the following correlation and MAE.
+
+```{r echo=F,  message=F, warning=F}
+set.seed(1234)
+train_index <- sample(seq_len(nrow(heart_attack)), size = 0.75*nrow(heart_attack))
+ha_train <- heart_attack[train_index, ]
+ha_test <- heart_attack[-train_index, ]
+
+ha.m5 <- M5P(CHARGES~., data=ha_train)
+ha.pred <- predict(ha.m5, ha_test)
+cor(ha.pred, ha_test$CHARGES)
+MAE(ha_test$CHARGES, ha.pred)
+```
+
+We can see that the predicted values and observed values are strongly correlated. In terms of MAE, it may seem very large at first glance.
+
+```{r eval=T,  message=F, warning=F}
+range(ha_test$CHARGES)
+# 17137- 815
+# 2867.884/16322
+```
+
+However, the test data itself has a wide range and the MAE is within 20% of the range. With only 148 observations, the model did a fairly good job in predicting the outcome. Can you reproduce or perhaps improve these results?
+
+Try to apply these techniques to [other data from the list of our Case-Studies](https://umich.instructure.com/courses/38100/files/).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number <img class="statcounter"
+								src="https://c.statcounter.com/5714596/0/038e9ac4/0/" 
+								alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->
+

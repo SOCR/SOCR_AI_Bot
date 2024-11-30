@@ -1,0 +1,606 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Appendix 7: Causality</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: ../SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+---
+
+This [DSPA Appendix](https://dspa2.predictive.space/) presents the foundations of causal inference in data science.
+
+```{r setup, echo=FALSE, warning=F, error=F, message=F}
+library(knitr)
+library(plotly)
+```
+
+# Introduction
+
+In previous [DPSA chapters](https://dspa2.predictive.space/), we introduced many alternative model-based and model-free methods for supervised and unsupervised regression, classification, clustering and forecasting. 
+
+In model-based supervised problems, linear regression and correlation analyses play important roles. However, establishing a correlation relation between a pair of features does not necessarily indicate that changes in one of the variables drives the behavior of the other, i.e., causation is not necessarily guaranteed by establishing correlation.
+
+Let's look at two simple examples.
+
+* *Example 1*: In children, shoe-size is heavily correlated with outcomes on math tests, however, an increase of neither variable causes the rise (or fall) of the other. Shoe-size and cognition move synchronously up and down without a direct causal effect of one on the other.
+
+* *Example 2*: Let's show a simulation of an explicit causal relation that is undetectable by correlation analysis. 
+
+```{r example2, error=F, message=F, warning=F}
+n <- 1024
+t <- seq(from=1, to=n, by=1)
+x1 <- t; x2 <- t; 
+
+for (i in 2:n) {
+  x1[i] <- 0.5*x1[i-1] + rnorm(1, mean = 0, sd = 1)
+  x2[i] <- 0.4*x1[i-1]*x1[i-1] + rnorm(1, mean = 0, sd = 1)
+}  
+
+x1_ord <- seq(from=min(x1), to=max(x1), length.out=n)
+x2_ord <- x1_ord
+x2_ord[1] <- (2/5)*x1_ord[1]*x1_ord[1]
+for (i in 2:n) {
+  x2_ord[i] <- (2/5)*x1_ord[i-1]*x1_ord[i-1]
+} 
+
+# plot(x1,x2)
+fig <- plot_ly(x=~x1, y=~x2, type="scatter",
+               name = 'data', mode='markers')
+fig <- fig %>% add_trace(
+  x=~x1_ord, y = ~x2_ord, name = 'model', 
+  mode = 'lines', line = list(color = 'red', 
+                        width = 2, dash = 'dash'))
+fig
+```
+
+The graph does not illustrate a clear $x_1$ to $x_2$ relationship - correlational or causal. At the same time, the apparent stochasticity in system hides the simple (quadratic) causal relationship defined by:
+
+$$x_1(n) = \frac{1}{2}x_1(n-1) + \epsilon_1; \ x_1(1)=1, \ 1\leq n \leq 1024,$$
+
+$$x_2(n) = \frac{2}{5}x_1^2(n-1) + \epsilon_2; \ \epsilon_1,\epsilon_2 \sim N(0,1).$$
+
+Using any (multivariate) observational data, we will showcase how to use computational statistics, data science, information theory, and causal inference to uncover such hidden causal relationships.
+
+# Causality
+
+*Causality* was introduced by [Granger](https://doi.org/10.2307/1912791), Wiener, and [Pearl](https://doi.org/10.1016/0004-3702(88)90015-X). A process $X$ is (Granger-)causally related to another process $Y$, when predicting prospective $Y$ realizations solely based on past $Y$ records can be improved based on the past information from the first process $X$ along with past knowledge about $Y$.
+
+## Prediction-based causality 
+
+Assume we have three time-varying processes indexed by time $t\geq 0$: 
+
+ - $\{Y_t\}$, the outcome process we are studying or forecasting,
+ - $\{X_t\}$, the (presumed) causal effect on the outcome $\{Y_t\}$, and
+ - Some side-information $\{Z_t\}$. Clearly, $Z_t$ may represent a number of different tangentially-related features.
+
+The complete information up to time $t$ for a random process will be denoted by $X^t=\cup_{s<t}{ \{X_s\}}$. Also, for time $t+1$, let's denote by:
+
+ - $E(W)$, the expectation of the random variable $W$,
+ - $\hat{Y}_{t+1}=f(X^t,Y^t,Z^t)$, the predicted outcome of the process $Y$,
+ - the corresponding error of the prediction by
+
+$$e_{t+1}= \underbrace{{Y}_{t+1}}_{actual}-
+\underbrace{\hat{Y}_{t+1}}_{predicted},$$
+ 
+ - $g(e)$, the loss function, typically a norm like $||\ ||_2$, $||\ ||_1$, or $||\ ||_p$,
+ - *Expected prediction errors*:
+
+$$\underbrace{R(Y^{t+1}| Y^t,Z^t)}_{given\ only\ Y^t}
+=E(g(e_{t+1}))=E(g({Y}_{t+1}-\hat{Y}_{t+1}))=E(g({Y}_{t+1}-f(Y^t,Z^t))),$$
+$$\underbrace{R(Y^{t+1}| X^t,Y^t,Z^t)}_{given\ both\ X^t\ and\ Y^t}
+=E(g(e_{t+1}))=E(g({Y}_{t+1}-\hat{Y}_{t+1}))=E(g({Y}_{t+1}-f(X^t,Y^t,Z^t))).$$
+
+As with other model-based techniques, e.g., linear models, the estimate $\hat{Y}_{t+1}=f(X^t,Y^t,Z^t)$ is computed by estimating (fitting) the function $f$ that optimizes (minimizes) the expected loss, $R(Y^{t+1}| Y^t,Z^t)$ or $R(Y^{t+1}| X^t,Y^t,Z^t)$.
+
+**Granger-causality**: The process $X$ is *not Granger-causal* to the process $Y$, relative to the side information $Z$, if and only if:
+$$\underbrace{R(Y^{t+1}| Y^t,Z^t)}_{independent\ of\ X^t} = R(Y^{t+1}| X^t,Y^t,Z^t).$$
+
+For example, a linear *vector-autoregressive model* function $f$ with a number of lags $l$ may look like:
+
+$$\hat{Y}(t)=\underbrace{f(Y^t)}_{independent\ of\ X^t}=\beta_o + \sum_{s=1}^l{\beta_s Y(t-s)+\epsilon_t}, \ \ \ \ (1)$$
+$$\tilde{Y}(t)=\underbrace{f(X^t,Y^t)}_{dependent\ on\ X^t}=\tilde{\beta}_o + \sum_{s=1}^l{\tilde{\beta}_s Y(t-s)+ \sum_{s=1}^l{\tilde\gamma}_s X(t-s) + \tilde{\epsilon}_t}.
+ \ \ \ \ (2)$$
+
+Similarly, one can choose alternative models to estimate the expected prediction errors based on deep learning, neural networks, support vector machines, random forest, or any other supervised technique to fit the model.
+
+In each situation, the variable $X$ does not Granger-cause $Y$ if and only if the expected prediction errors of $X$ in the restricted $\hat{Y}(t)$ and unrestricted $\tilde{Y}(t)$ models are equal.  In other words, the two models are statistically indistinguishable and any differences in prediction are only due to random factors (noise). 
+
+One parametric test for assessing a Granger-causality test is the one-way analysis of variance (one-way ANOVA) test to compare the residuals of the restricted and unrestricted models, i.e., compare the statistical differences of the residuals. When performing multiple such tests, e.g., in contrasting multiple $l$ lags, one needs to adjust the resulting p-values by correcting for multiple hypothesis tests, using false discovery rate (FDR), family-wise error rate (FWER), or Bonferroni correction.
+
+
+## Probabilistic-based causality 
+
+We can also formulate a more general probabilistic definition of causality using conditional probability, $p(. | .)$. This approach avoids the need to explicitly define a priori prediction function models in advance.
+
+Recall that $Y_{t+1}$ and $X^t$ are (statistically) independent given the past information $(X^t,Y^t)$ if and only if
+$$p(Y_{t+1}|X^t,Y^t, Z^t)=p(Y_{t+1}|Y^t, Z^t).$$
+In other words, knowing or ignoring past information, $X^t$, about the process $X$ does not affect the probability distribution of the future outcome, $Y_{t+1}$.
+
+**Probability-based Granger causality**: The process $X$ does not Granger-cause the process $Y$, relative to some side information $Z$, if and only if $Y_{t+1} \perp X^t\ |\ Y^t,Z^t$. That is, given the past information about $Y^t$ and $Z^t$, $Y_{t+1}$ is independent of (orthogonal to) $X^t$.
+
+
+
+## Causality and Transfer Entropy
+
+Probabilistic Granger causality does not require an explicit function model coupling the two processes $X$ and $Y$. However, it still requires a strategy to compute the conditional dependence of $Y_{t+1}$ on the other previously observed variables, $p(Y_{t+1}|X^t,Y^t, Z^t)$. 
+
+Now, we will connect Granger causality with information theory.
+
+### Entropy
+
+Reviewing some of the information theory details in the [DSPA Information Theory and Statistical Learning Appendix](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/DSPA_Appendix_02_InformationTheory_StatisticalLearning.html) may be useful before proceeding further in this section.
+
+For a bivariate process $W=(X,Y)$, let's denote the pair of marginal and the joint distribution functions by $p_X(x)$, $p_Y(y)$, and $p_{X,Y}(x,y)$. In the discrete and continuous cases, the joint (Shannon/Differential) **entropy** between the univariate processes $X$ and $Y$ is defined by:
+
+$$\underbrace{H(X,Y)}_{Shannon\ entropy}=-\sum_{x\in X}{\sum_{y\in Y}{p_{X,Y}(x,y)\log  ( p_{X,Y}(x,y)) }},$$
+
+$$\underbrace{h(X,Y)}_{Differential\ entropy}=-\int_{x\in \Omega_X}{\int_{y\in \Omega_Y}{p_{X,Y}(x,y)\log ( p_{X,Y}(x,y)) }}dxdy,$$
+
+The uncertainty of $Y$ given a specific realization $X$ is captured by the *conditional entropy* :
+
+$$H(Y|X) = H(X,Y) - H(X),$$
+
+where the entropy of the single variable $X$ is:
+
+$$H(X)=-\sum_{x\in X}{p_{X}(x)\log  ( p_{X}(x)) }.$$
+
+The Granger causality can be computed using *transfer entropy*, which detects directional and dynamical information without assuming any particular function modeling process interactions.
+
+### Transfer entropy
+
+*Transfer entropy* quantifies the amount of directed information transfer between the random processes $X$ and $Y$. As a non-parametric statistic, the transfer entropy measures the reduction of uncertainty in prospective values of $Y$ given the past values of $X$ and $Y$. 
+
+The *transfer entropy* is the following difference of conditional entropies:
+
+$$T_{X\rightarrow Y\ |\ Z}=H\left (\underbrace{Y_{t+1}}_{future}\ |\ \underbrace{Y^t, Z^t}_{past}\right ) - H\left (\underbrace{Y_{t+1}}_{future}\ |\ \underbrace{X^t, Y^t, Z^t}_{past}\right ),$$
+$$T_{X\rightarrow Y\ |\ Z}=\left (H(Y^t, X^t) - H(Y_{t+1},Y^t, X^t)\right )-
+\left (H(Y_{t+1}) - H(Y_{t+1},Y^t)\right ).$$
+
+where $H(X)$ is Shannon entropy of $X$. Transfer entropy can also be considered as conditional mutual information:
+
+$$T_{X\rightarrow Y\ |\ Z}=I(Y_{t+1}\ ;\ X^t\ |\ Y^t,Z^t),$$
+
+where
+
+$$I(Y_{t+1}\ ;\ X^t\ |\ Y^t,Z^t)=$$
+$$\sum_{(y^t,z^t)\in \Omega_Y^t\times \Omega_Z^t}{p_{(Y^t,Z^t)}(y^t,z^t)\sum_{x^t\in \Omega_X^t}{\sum_{y_{t+1}\in \Omega_Y^{t+1}}{
+\left (p_{(Y_{t+1},X^t|Y^t,Z^t)}(y_{t+1},x^t|y^t,z^t)
+\times \log\left ( \frac{p_{(Y_{t+1},X^t| Y^t,Z^t)}(y_{t+1},x^t|y^t,z^t)}
+{p_{(Y_{t+1}| Y^t,Z^t)}(y_{t+1}|y^t,z^t)\times
+p_{(X^t| Y^t,Z^t)}(x^t|y^t,z^t)} \right )
+\right )
+}}}=$$
+
+$$\sum_{(y^t,z^t)\in \Omega_Y^t\times \Omega_Z^t}{\sum_{x^t\in \Omega_X^t}{\sum_{y_{t+1}\in \Omega_Y^{t+1}}{
+\left (p_{(Y_{t+1},X^t,Y^t,Z^t)}(y_{t+1},x^t,y^t,z^t)
+\times \log\left ( \frac{p_{(Y^t,Z^t)}(y^t,z^t)\times p_{(Y_{t+1},X^t,Y^t,Z^t)}(y_{t+1},x^t,y^t,z^t)}
+{p_{(Y_{t+1}, Y^t,Z^t)}(y_{t+1},y^t,z^t)\times
+p_{(X^t,Y^t,Z^t)}(x^t,y^t,z^t)} \right )
+\right )
+}}}.$$
+
+In terms of *transfer entropy*, $X$ does not cause $Y$, relative to side information $Z$, if and only
+if $T_{X\rightarrow Y, Z^t}=0.$, i.e.,
+
+$$H(Y_{t+1}\ |\ Y^t, Z^t)=H(Y_{t+1}\ |\ X^t,Y^t, Z^t).$$
+
+### Net information flow
+
+As the *transfer entropy* is not a symmetric function, $T_{X\rightarrow Y\ |\ Z}\not=T_{Y\rightarrow X\ |\ Z}$, it allows us to infer directionality of the information flow, i.e., causality. More specifically, we can define the **net information flow measure**, $F_{X\rightarrow Y\ |\ Z}$, as:
+
+$$F_{X\rightarrow Y\ |\ Z}=T_{X\rightarrow Y\ |\ Z}-T_{Y\rightarrow X\ |\ Z}.$$
+
+The symmetrized net information flow measure, $F_{X\rightarrow Y\ |\ Z}$, quantifies the dominant direction of the information flow; positive values indicate a dominant information flow from $X\longrightarrow Y$, rather than the opposite direction, and similarly, negative values indicate a reversed dominant information flow from $Y\longrightarrow X$. Hence, it suggests which process yields more predictive information about the other.
+
+In the special case of exploring vector auto-regressive processes, such as the ones we showed in equations (1) and (2) above, the transfer entropy reduces to Granger causality, see [this reference](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.103.238701). Using the classical $g=||.||_{2}$ norm as the loss function and based on the linear  *vector-autoregressive model* function $f$, see equations (1) and (2), Granger-causality of a bivariate process can be expressed as:
+
+$$GrangerCausality_{\{X\rightarrow Y\}}=\log \left ( \frac{Var(\epsilon_t)}{Var(\hat{\epsilon}_t)}\right ).$$
+
+This explicit connection between the transfer entropy and the linear Granger-causality facilitates the estimation of the transfer entropy, $T_{X\rightarrow Y\ |\ Z}$, and the net information flow metric, $F_{X\rightarrow Y\ |\ Z}$.
+
+
+
+
+# Simulation Examples
+
+Let's look at a pair of linear and non-linear synthetic data examples.
+
+## Synthetic linear relationships
+
+```{r linSimEx, warning=F, error=F, message=F}
+# initialization (Gaussian noise)
+n <- 10000
+x1 <- x2 <- x3 <- x4 <- x5 <- x6 <- rep(0, n + 1)
+
+# instantiation (linear relationships)
+for (i in 2:(n + 1)) {
+  x1[i] <- 0.8 * sqrt(3)* x1[i-1] - 0.8*x1[i-1] + rnorm(1, mean=0, sd=1)
+  x2[i] <- 0.5*x1[i-1] + rnorm(1, mean=0, sd=1)
+  x3[i] <- -0.3*x1[i-1] + rnorm(1, mean=0, sd=1)
+  x4[i] <- -0.6*x1[i-1] + 0.3*sqrt(3)*x4[i-1] + 0.2*sqrt(3)*x5[i-1] + rnorm(1, mean=0, sd=1)
+  x5[i] <- -0.2*sqrt(3)*x4[i-1] + 0.2*sqrt(3)*x5[i-1] + rnorm(1, mean=0, sd=1)
+  x6[i] <- 0.3*sqrt(5)*x3[i-1] + 0.4*sqrt(3)*x4[i-1] + rnorm(1, mean=0, sd=1)
+}
+
+x1 <- x1[-1]; x2 <- x2[-1]; x3 <- x3[-1]
+x4 <- x4[-1]; x5 <- x5[-1]; x6 <- x6[-1]
+lin.system <- data.frame(x1, x2, x3, x4, x5, x6)
+
+library(igraph)
+g<-graph(c(1,1, 1,2, 1,3, 1,4, 4,4, 5,4, 4,5, 5,5, 3,6, 4,6), n=6)
+plot(g, main="Simulated linear dependencies")
+```
+
+According to the definition above, 
+$linearGC_{\{X\rightarrow Y\}}=\log \left ( \frac{Var(\epsilon_t)}{Var(\hat{\epsilon}_t)}\right )$, we define a function, `linearGC()`, to compute the linear Granger-causality for a bivariate process $(X,Y)$.
+
+```{r linGC, warning=F, error=F, message=F}
+linearGC <- function(X, Y){
+  n<-length(X)
+  X.past <- X[1:(n-1)]
+  Y.past <- Y[1:(n-1)]
+  Y.future <- Y[2:n]
+
+  regression.uni <- lm(Y.future ~ Y.past)
+  regression.mult <- lm(Y.future ~ Y.past + X.past)
+  var.eps.uni <- (summary(regression.uni)$sigma)^2
+  var.eps.mult <- (summary(regression.mult)$sigma)^2
+  linGC <- log(var.eps.uni/var.eps.mult)
+  return(linGC)
+}
+```
+
+Next we employ the function `RTransferEntropy::calc_te()` to estimate the pairwise information flow among the 6-variate synthetic data process $(X_1, \cdots,X_6)$.
+
+```{r estim_GC_TE, warning=F, error=F, message=F}
+# install.packages('RTransferEntropy')
+library(future)
+library(RTransferEntropy)
+
+## Enable multi-core parallel computing
+plan(multicore)
+
+## Estimate the Granger-causality and the transfer entropy, based on linearGC()
+n = seq(1:ncol(lin.system))
+# apply the GC and TE estimating functions to all possible pairs of columns in the DF
+ff.GC.value <- function(a, b) linearGC(lin.system[,a], lin.system[,b])
+GC.matrix <- outer(n, n, Vectorize(ff.GC.value))
+ff.TE.value <- function(a, b) calc_te(lin.system[,a], lin.system[,b])
+TE.matrix <- outer(n, n, Vectorize(ff.TE.value))
+
+str(TE.matrix)
+
+rownames(TE.matrix) <-
+  colnames(TE.matrix)<-var.names<-c("x1", "x2", "x3", "x4", "x5", "x6")
+rownames(GC.matrix) <- colnames(GC.matrix) <- var.names
+```
+
+Finally, compare and contrast the Granger-causality and Transfer Entropy for this 6-variate simulation. The resulting $6\times 6$ cells presents the information flow from a (row) variable $Y$ to a (column) variable $X$. Note that the linear Granger-causality and the non-linear transfer entropy show similar results. Thus, both techniques capture analogous dependencies of the 6-variate process. This congruence is natural due to the simple linear associations between the variables in this simulation.
+
+```{r plot_GC_TE, warning=F, error=F, message=F}
+# 6*6 Granger-Causality and Transfer Entropy matrices for 6-variate simulation
+library(corrplot)
+corrplot(GC.matrix, method = "circle", title = 
+           "Granger Causality (linear model)", 
+         tl.cex = 0.9, tl.col = 'black', mar=c(1, 1, 1, 1))
+# note the boost *10 for TE.matrix to artificially enhance the plot (not required)
+corrplot(10*TE.matrix, method = "circle", title = 
+           "Transfer Entropy (linear model)", 
+         tl.cex = 0.9, tl.col = 'black', mar=c(1, 1, 1, 1))
+```
+
+
+## Non-linear synthetic relationships
+
+Next we will introduce non-linear (quadratic) relations in the 6-variate process we considered earlier.
+
+```{r nonlinSimEx, warning=F, error=F, message=F}
+# initialization (Gaussian noise)
+n <- 10000
+x1 <- x2 <- x3 <- x4 <- x5 <- x6 <- rep(0, n + 1)
+
+# instantiation (linear relationships)
+for (i in 2:(n + 1)) {
+  x1[i] <- 0.8 * sqrt(3)* x1[i-1] -0.9*x1[i-1] + rnorm(1, mean=0, sd=1)
+  x2[i] <- 0.5*x1[i-1]^2 + rnorm(1, mean=0, sd=1)
+  x3[i] <- -0.5*x1[i-1] + rnorm(1, mean=0, sd=1)
+  x4[i] <- -0.5*x1[i-1]^2 + 0.3*sqrt(3)*x4[i-1] + 0.3*sqrt(2)*x5[i - 1] +
+    rnorm(1, mean=0, sd=1)
+  x5[i]<- -0.3*sqrt(3)*x4[i-1] + 0.3*sqrt(3)*x5[i-1] + rnorm(1, mean=0, sd=1)
+  x6[i]<- 0.3*sqrt(3)*x4[i-1]^2 + 0.25*sqrt(3)*x5[i-1]^2 + rnorm(1, mean=0, sd=1)
+}
+
+x1 <- x1[-1]; x2 <- x2[-1]; x3 <- x3[-1]
+x4 <- x4[-1]; x5 <- x5[-1]; x6 <- x6[-1]; 
+nl.system <- data.frame(x1, x2, x3, x4, x5, x6)
+
+# library(igraph)
+g <- make_empty_graph(n = 6) %>%
+  # Linear relations in gray
+  add_edges(c(1,1, 1,3, 4,4,  5,4, 4,5, 5,5)) %>%
+  set_edge_attr("color", value = "gray") %>%
+  # (Quadratic) non-linear relations in green
+  add_edges(c(1,2, 1,4, 4,6, 5,6), color = "green")
+# E(g)[[]]
+plot(g, main=paste("Simulated 6-variate process", "linear (gray) and Nonlinear (green) relations", sep="\n"))
+```
+
+Similarly to the linear case, we can compute and display the Granger-causality and the transfer entropy measures for this 6-variate nonlinear simulated process.
+
+```{r nonlinear_GC_TE, warning=F, error=F, message=F}
+#library(future)
+#library(RTransferEntropy)
+
+## Enable multi-core parallel computing
+#plan(multicore)
+
+## Estimate the Granger-causality and the transfer entropy, based on linearGC()
+n = seq(1:ncol(nl.system))
+# apply the GC and TE estimating functions to all possible pairs of columns in the DF
+nl.ff.GC.value <- function(a, b) linearGC(nl.system[,a], nl.system[,b])
+nl.GC.matrix <- outer(n, n, Vectorize(nl.ff.GC.value))
+nl.ff.TE.value <- function(a, b) calc_te(nl.system[,a], nl.system[,b])
+nl.TE.matrix <- outer(n, n, Vectorize(nl.ff.TE.value))
+
+rownames(TE.matrix) <-
+  colnames(TE.matrix)<-var.names<-c("x1", "x2", "x3", "x4", "x5", "x6")
+rownames(GC.matrix) <- colnames(GC.matrix) <- var.names
+
+corrplot(nl.GC.matrix, method = "circle", title = "Granger (non-lin model)",
+         tl.cex = 0.9, tl.col = 'black', mar=c(1, 1, 1, 1))
+# note the boost *5 for TE.matrix to artificially enhance the plot (not required)
+corrplot(5*nl.TE.matrix, method = "circle", title = "Transfer Entropy (non-lin model)", 
+         tl.cex = 0.9, tl.col = 'black', mar=c(1, 1, 1, 1))
+```
+
+
+# Macroeconomic Market Forecasting Example
+
+Let's use the complete monthly [SOCR Macroecon Market Data for the US (1979 - 2020)](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/34_US_MacroEconMarketData_CompleteMonthly_1979_2020) to illustrate causality.
+
+We will begin by loading and plotting the longitudinal dataset along with some [DJIA](https://www.spglobal.com/spdji/en/indices/equity/dow-jones-industrial-average) and [NASDAQ](https://www.nasdaq.com) (linear) models.
+
+```{r warning=F, error=F, message=F}
+# install.packages(magrittr)
+library(magrittr)
+
+# load SOCR data
+# install.packages("xlsx")
+library(xlsx)
+US_data <- read.csv("https://umich.instructure.com/files/20026184/download?download_frd=1", header = TRUE) # Complete sheet=2
+
+# order dates chronologically; as dates is in string format, 
+US_data_ord <- 
+  US_data[
+    order(as.Date(US_data$Date, format = "%m/%d/%Y")), ]
+
+US_data_ord$Date <- as.Date(US_data$Date, format = "%m/%d/%Y")
+str(US_data_ord) 
+# dim(US_data_ord) # 499  16
+attach(US_data_ord)
+
+# MODEL the data
+# mod <- nls(US_data_ord$DJIA ~ exp(a + b * time_index), start = list(a = 0, b = 0))
+# exp_model_fit <- predict(mod, time_index)
+
+# Fit and plot linear models according to specified predictors and outcomes
+fitPlot_LM_Model <- function (Y, X) {   
+    # Y= outcome column name, e.g., Y=c(DJIA_3m_Shift, NASDAQ_3m_Shift)
+    # X=vector of predictor column names, e.g., 
+    # X=c(US_Debt_B, US_GDP_B, Debt2GDP_Pct, US_CapacityUtilizationRate, Jobless_Claims,
+    #        Industrial_Production, Total_Reserves_B, Monetary_Base_B, CoincidentEcon_ActivityInd, UMCSENT)
+    # fitPlot_LM_Model(Y=c(DJIA_3m_Shift, NASDAQ_3m_Shift), X=c(US_Debt_B, US_GDP_B, Debt2GDP_Pct,
+    #  US_CapacityUtilizationRate, Jobless_Claims, Industrial_Production, Total_Reserves_B, Monetary_Base_B,
+    #  CoincidentEcon_ActivityInd, UMCSENT))
+    
+    nX <- length(X)
+    nY <- length(Y)
+    b <- array(dim=nX)  # DJIA model coefficients
+    c <- array(dim=nX)  # NASDAQ model coefficients
+    
+    if (nX < 1 || nY != 2) return ("Error 1")
+    if (nX == 1) {
+      formulaDJIA <- paste0(Y[1], " ~ ", X[1], collapse = " ")
+      formulaNASDAQ <- paste0(Y[2], " ~ ", X[1], collapse = " ")
+    }
+    if (nX > 1) {
+      formulaDJIA <- paste0(Y[1], " ~ ", X[1], paste0(" +", X[-1], collapse = " "))
+      formulaNASDAQ <- paste0(Y[2], " ~ ", X[1], paste0(" +", X[-1], collapse = " "))
+    }
+    
+    ### Y[1]: DJIA  
+    print(paste0("Fitting LM: ", formulaDJIA))
+    # DJIA_3m_Shift ~ US_Debt_B + US_GDP_B + Debt2GDP_Pct + US_CapacityUtilizationRate +
+    # Jobless_Claims + Industrial_Production + Total_Reserves_B+ Monetary_Base_B +
+    # CoincidentEcon_ActivityInd + UMCSENT,
+    modDJIA <- lm(formula = formulaDJIA, data = US_data_ord)
+    summary(modDJIA)
+    coef(modDJIA)
+    
+    # Y[2]: NASDAQ
+    print(paste0("Fitting LM: ", formulaNASDAQ))
+    modNASDAQ <- lm(formula = formulaNASDAQ, data = US_data_ord)
+      # lm(NASDAQ_3m_Shift ~ US_Debt_B + US_GDP_B + Debt2GDP_Pct + 
+      #               US_CapacityUtilizationRate + Jobless_Claims + Industrial_Production +
+      #               Total_Reserves_B+ Monetary_Base_B + CoincidentEcon_ActivityInd + UMCSENT, 
+      #            data = US_data_ord)
+    
+    summary(modNASDAQ)
+    coef(modNASDAQ)
+    
+    for (i in 1:(nX+1)) {
+      b[i] <- round(coef(modDJIA)[i], 2)
+      c[i] <- round(coef(modNASDAQ)[i], 2)
+    }
+    
+    # define the string for the DJIA LM
+    modDJIA_label   <- paste0("DJIA ~ ", b[1], paste0(" +", b[-1], "*", X, collapse = " "), "\n\n")
+    modNASDAQ_label <- paste0("NASDAQ ~ ", c[1], paste0(" +", c[-1], "*", X, collapse = " "))
+   
+    modDJIA_NASDAQ_label <- paste0(modDJIA_label, modNASDAQ_label)
+    modDJIA_NASDAQ_label
+    
+    library(plotly)
+    myPlot <- US_data_ord %>% 
+      plot_ly(x = ~Date) %>% 
+      add_markers(y = ~DJIA, name="DJIA Data", 
+                  marker = list(color = "blue",
+                                line = list(color = "blue", width = 1))) %>% 
+      add_trace(x = ~Date, y = fitted(modDJIA), name="DJIA Model", type = "scatter", # DJIA
+                mode='lines+markers', marker = list(color = "orange",
+                                line = list(color = "orange", width = 2))) %>%
+      add_markers(y = ~NASDAQ, name="NASDAQ Data", marker = list(color = "green",
+                                line = list(color = "green", width = 1))) %>% 
+      add_trace(x = ~Date, y = fitted(modNASDAQ), name="NASDAQ Model", type = "scatter", # NASDAQ
+                mode='lines+markers', marker = list(color = "red",
+                                line = list(color = "red", width = 1))) %>%
+      add_trace(x = ~Date, y = ~Recession*30000, type = 'bar',                         # recessions
+                marker = list(color='gray', line = list(color='gray', width=4)),
+                opacity=0.2, name="Recessions", text = "Recessions", hoverinfo = 'recessions') %>%
+      layout(title=modDJIA_NASDAQ_label, font=list(size=8))
+    
+    return (myPlot)
+}
+
+#### Run the Full model-fitting and plotting function
+myPlot <- fitPlot_LM_Model(Y=c("DJIA_3m_Shift", "NASDAQ_3m_Shift"), 
+                 X=c("US_Debt_B", "US_GDP_B", "Debt2GDP_Pct", "US_CapacityUtilizationRate", "Jobless_Claims",
+                     "Industrial_Production", "Total_Reserves_B", "Monetary_Base_B", 
+                     "CoincidentEcon_ActivityInd", "UMCSENT"))
+
+myPlot
+
+#### Run a Smaller model-fitting and plotting function
+myPlot1 <- fitPlot_LM_Model(Y=c("DJIA_3m_Shift", "NASDAQ_3m_Shift"), 
+                 X=c("Debt2GDP_Pct", "Jobless_Claims", "Monetary_Base_B", "UMCSENT"))
+
+myPlot1
+```
+
+The DJIA and NASDAQ markets represent complex dynamic processes that are linked across many socioeconomic, cyclical, psychological, technological, and other factors. The multiple types and effects and their dynamic nature lead to highly complex interactions; some causal, some correlational, and some random. Clearly, it is vital to understand the mechanistic effects of different observable processes on macro- and micro-economic indices.
+
+Let's employ the *transfer entropy* to examine the dependency relations among various factors in this dataset (tensor of dimensions $499\times 17$). Specifically, we can display the resulting $17\times 17$ matrix of normalized transfer entropy values. This normalization can be accomplished in many different ways. We'll divide each cell value by the maximum value in the matrix to ensure all values are between 0 and 1. The graph shows the pairs of features that are highly interconnected in the period 1979-2020. These are the cell values with the highest information flow going from one economic index to another, along with the direction of the information flow; this may suggest causal mechanistic dependence.
+
+```{r macroeconEx, warning=F, error=F, message=F}
+# initialization (Gaussian noise)
+lin.system <- US_data_ord[,-1]  # remove date as non-numeric
+
+library(igraph)
+# g<-graph(c(1,13, 1,14, 2,13, 2,14, 3,13, 3,14, 4,13, 4,14,
+#            5,13, 5,14, 6,13, 6,14, 7,13, 7,14, 8,13, 8,14,
+#            9,13, 9,14, 10,13, 10,14, 11,13, 11,14, 12,13, 12,14,
+#            2,10, 5,4, 7,8, 9,4, 13,3, 11,10, 10,10, 7,7), n=17)
+# plot(g, main="Exemplary Causal Relations (suggestive)")
+
+g <- make_empty_graph(n = 17) %>%
+  # Linear relations in gray
+  add_edges(c(1,13, 1,14, 2,13, 2,14, 3,13, 3,14, 4,13, 4,14,
+           5,13, 5,14, 6,13, 6,14, 7,13, 7,14, 8,13, 8,14,
+           9,13, 9,14, 10,13, 10,14, 11,13, 11,14, 12,13, 12,14,
+           2,10, 5,4, 7,8, 9,4, 13,3, 11,10, 10,10, 7,7)) %>%
+  set_edge_attr("color", value = "gray") %>%
+  # (Quadratic) non-linear relations in green
+  add_edges(c(5,10, 5,6, 4,6, 5,6, 17,1, 16,5, 15,13), color = "green")
+# E(g)[[]]
+# V(g)$label <- colnames(US_data_ord); V(g)[[]]
+# node names
+V(g)$label <- colnames(US_data_ord); V(g)[[]]
+plot.igraph(g, main=paste("Exemplary (suggested) Economic Causal Relations", 
+                   "linear (gray) and Nonlinear (green) relations", sep="\n"),
+     layout=layout_with_kk, vertex.label=V(g)$names, edge.arrow.size=0.5,
+     vertex.label.color = "black", vertex.size=10)
+
+## Enable multi-core parallel computing
+plan(multicore)
+
+## Estimate the Granger-causality and the transfer entropy, based on linearGC()
+n = seq(1:ncol(lin.system))
+
+# apply the GC and TE estimating functions to all possible pairs of columns in the DF
+ff.GC.value <- function(a, b) linearGC(lin.system[,a], lin.system[,b])
+GC.matrix <- outer(n, n, Vectorize(ff.GC.value))
+ff.TE.value <- function(a, b) calc_te(lin.system[,a], lin.system[,b])
+TE.matrix <- outer(n, n, Vectorize(ff.TE.value))
+
+str(TE.matrix)
+
+rownames(TE.matrix) <-
+  colnames(TE.matrix)<-var.names<-colnames(US_data_ord)[-1]
+rownames(GC.matrix) <- colnames(GC.matrix) <- var.names
+
+# Plot the pairwise causal relations 
+# Mind artificial boosting (*2 and *10) to stress paired causal effects
+corrplot(2*GC.matrix, method = "circle", title = "Granger (MacroEcon lin model)",
+         tl.cex = 0.9, tl.col = 'black', mar=c(1, 1, 1, 1))
+# note the boost *5 for TE.matrix to artificially enhance the plot (not required)
+corrplot(10*TE.matrix, method = "circle", title = "Transfer Entropy (MacroEcon lin model)", 
+         tl.cex = 0.9, tl.col = 'black', mar=c(1, 1, 1, 1))
+```
+
+Note the different patterns in the paired causal matrix plots above (linear Granger causality vs. the non-linear transfer entropy).
+
+
+# Discussion
+
+Uncovering directional cause effects is generally difficult and requires a number of assumptions. Data science and statistical inference strategies can assist with discriminating simple linear associations (correlations) from mechanistic effects (causal relations). In this DSPA appendix, we explored some information-theoretic approaches to Granger-causality under the assumptions of the linear vector-autoregressive modeling framework. 
+
+In addition, causality may be estimated via the transfer entropy metric to estimate statistical causal-relations in non-linear multivariate processes. We used synthetic simulations of linear and non-linear multivariate processes to demonstrate that linear Granger-causality may fail to detect explicit non-linear (quadratic) causal patterns, which can be untangled by transfer entropy estimation. The demonstration of calculating paired causal effects in multivariate processes using US macroeconomic data showed how transfer entropy quantifies causal effects of DJIA and NASDAQ equity indices.
+
+
+# References
+
+ - [DSPA](https://dspa.predictive.space/)
+ - [Granger](https://doi.org/10.2307/1912791)
+ - [Wiener](https://doi.org/10.7551/mitpress/2946.001.0001)
+ - [Pearl](https://doi.org/10.1016/0004-3702(88)90015-X)
+ - [DSPA Information Theory and Statistical Learning Appendix](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/DSPA_Appendix_02_InformationTheory_StatisticalLearning.html)
+ - [Transfer entropy, Shannon information, and mutual information](https://www.frontiersin.org/articles/10.3389/fncom.2020.00045/full)
+ - [Critiques of transfer and causal entropy - examples of causal entropy overestimating information flow or underestimating influence](https://arxiv.org/pdf/1512.06479.pdf).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

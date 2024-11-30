@@ -1,0 +1,161 @@
+{
+  "metadata": {
+    "created_at": "2024-11-30T13:46:17.397337",
+    "total_sections": 9,
+    "total_code_chunks": 18,
+    "total_tables": 1,
+    "r_libraries": [
+      "dplyr",
+      "httr",
+      "jsonlite",
+      "plotly",
+      "tidyr"
+    ]
+  },
+  "sections": [
+    {
+      "title": "Main",
+      "content": "---\ntitle: \"DSPA2: Data Science and Predictive Analytics (UMich HS650)\"\nsubtitle: \"<u>Appendix 14: Medical Data Exchange between FHIR/HL-7 and CSV flatfile format</u>\"\nauthor: \"SOCR/GR (Simeone Marino, Ivo Dinov and SOCR)\"\ndate: \"`r format(Sys.time(), '%B %d, %Y')`\"\ntags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] \noutput:\n  html_document:\n    theme: spacelab\n    highlight: tango\n    includes:\n      before_body: SOCR_header.html\n    toc: true\n    number_sections: true\n    toc_depth: 3\n    toc_float:\n      collapsed: false\n      smooth_scroll: true\n    code_folding: show\t\nThis [DSPA Appendix](https://dspa2.predictive.space/) examines solutions to the bidirectional transformation between [FHIR/HL7 medical data](https://www.hl7.org/fhir) and [CSV flat files](https://en.wikipedia.org/wiki/Flat-file_database).\nSpecifically, we will generate a general, complete, and self-contained Rmd protocol for bidirectional mapping of FHIR/HL-7 medical data into flat CSV files, and vice-versa. It's important to obtain transformation that are invertible to ensure utility, energy, and content preservation. This transformation is inherently difficult as it effectively involves mapping a general tree-graph structure (FHIR/HL-7 data) into a data frame (tensor) format (flat CSV file).",
+      "word_count": 147
+    },
+    {
+      "title": "Introduction",
+      "content": "This protocol demonstrates a bidirectional transformation between FHIR/HL7 medical data and flat CSV files using `R`. The transformation accounts for the tree-graph structure of FHIR/HL7 data and ensures invertibility, allowing data to be transformed back and forth without loss of information.\n\nWe will use the following `R` packages.\n\n\nLet's generate a sample FHIR Patient resource dataset in JSON format to make this protocol completely self-contained.",
+      "word_count": 65
+    },
+    {
+      "title": "Transforming FHIR Data to CSV",
+      "content": "## Reading and Flattening the JSON Data\n\nWe read the JSON data into R and flatten it to convert nested structures into a flat format suitable for CSV.\n\n\n## Saving to CSV\n\nWe save the flattened data frame to a CSV file.",
+      "word_count": 42
+    },
+    {
+      "title": "Transforming CSV Back to FHIR Data",
+      "content": "## Reading the CSV File\n\nWe read the CSV file back into R.\n\n\n## Reconstructing the Nested Structure\n\nWe reconstruct the original nested list structure from the flat data frame.\n\n\n## Verification of Invertibility\n\nWe verify that the original JSON data and the reconstructed JSON data are equivalent.",
+      "word_count": 48
+    },
+    {
+      "title": "Notes",
+      "content": "- **Custom Flattening:** We used a custom flattening function to preserve array indices in field names.\n - **Array Reconstruction:** The reconstruction function correctly parses array indices and rebuilds arrays in the nested structure.\n - **Data Types:** We ensured that data types are preserved during the transformation.\n - **Verification:** Always verify the data after transformation to ensure accuracy.\n\n**Expected Outcome:** The reported `patient_data_reconstructed` should contain the nested data structure that matches the `original data`. This verification step should confirm that the transformation is *invertible*. If there are differences between the two structures, inspect to determine if any differences are minimal and acceptable. Some minor differences might still exist due to attributes or the order of elements in lists. You can set `check.attributes = FALSE` in `all.equal()` to focus on the data content.\nIf `all.equal()` reports differences, inspect them to ensure they're not significant.\n\nThis example demonstrates a bidirectional transformation between FHIR/HL7 data and flat CSV files using `R`. This non-trivial transformation requires careful handling of nested structures and list columns. This ensures we achieve an invertible transformation that accounts for the complex tree-graph structure of FHIR/HL7 data.\n\nThis transformation handles simple nested structures. For more complex FHIR resources, additional handling may be required. Also, we must ensure that list columns are properly managed when saving to and reading from CSV to maintain data integrity during the transformation.\n\nCertainly! Let's focus on using Plotly in R to visualize FHIR (Fast Healthcare Interoperability Resources) JSON data. Plotly is a powerful library for creating interactive and dynamic visualizations, which can be extremely useful for exploring complex hierarchical data like FHIR resources.",
+      "word_count": 267
+    },
+    {
+      "title": "FHIR/JSON Data Visualization",
+      "content": "Since FHIR data is hierarchical, we'll need to flatten the JSON structure and transform it into a tabular format suitable for `plotly` visualizations.\n\n## Flatten the JSON Data\n\n\n**Note:** The `labels` are the values, and the `parents` are the hierarchical paths. Adjust `maxdepth` as needed.\n\n## Treemap\n\nA treemap can also represent hierarchical data.\n\n\n## Customizing JSON Data Visualization\n\nTo customize the visualization we can adjusting the labels, colors, and layout.\n\n\n## Handling Complex FHIR Data\n\nFor more complex FHIR resources, e.g., deeply nested structures, ensure that all nested lists and objects are properly flattened and unnested. When dealing with very large datasets, consider sampling or focusing on specific parts of the data to keep the visualization manageable. For more data privacy, ensure that any patient data is de-identified and that you have the necessary permissions to use it.",
+      "word_count": 139
+    },
+    {
+      "title": "Remaining Challenges",
+      "content": "- Identify some complex (deep and broad) FHIR/HL7/JSON datasets that we can use to test with and ensure that these solutions scale well and are practically effective. \n - Perform scalability and algorithmic optimization to ensure solutions to real problems are realistic\n - Explore scalable visualizations of these hierarchical (nested) graph structures.",
+      "word_count": 51
+    },
+    {
+      "title": "Public FHIR Test Data",
+      "content": "Several public FHIR servers provide synthetic or de-identified data that you can use for testing purposes. One such resource is the [HAPI FHIR Public Test Server](http://hapi.fhir.org/baseR4), which hosts a variety of FHIR resources accessible via RESTful API endpoints.\n\nThe data provided by public FHIR test servers is typically synthetic or de-identified and intended for testing and educational purposes. Always ensure that you comply with the terms of use of the server you're accessing. Do not use any data that contains personal or sensitive information.\nThe *HAPI FHIR Public Test Server* provides access to a wide range of FHIR resources. You can retrieve data using standard HTTP requests.\n\n*Resource Types* include: Patient, Observation, Encounter, Condition, Medication, and more.\nWe can use the `httr` and `jsonlite` packages in `R` to fetch data from the server and parse it into `R` objects.\n\n\nFor demonstration purposes, let's fetch multiple Patient resources.\n\n\nTo fetching the data, we send a GET request to the FHIR server to retrieve Patient resources. The `_count` parameter specifies the number of resources to fetch. The retrieved response is in JSON format and can be parsed it using `fromJSON()` without flattening to preserve the hierarchical structure.\n\n\nThe FHIR server returns a Bundle resource, which contains multiple entries of the requested resource type.\n\n\nInspect one or more Patient resources from the entries to visualize.\n\n\nUsing the previous code to process multiple resources.\n\n#### **Define the Recursive Function**\n\n\nProcess and display multiple Patient resources.\n\n\nFor handling larger datasets, we can adjust the `_count` parameter and the number of patients in the loop.\n\n\nProcessing a very large number of complex hierarchical structures (nested FHIR data) may consume significant memory and processing time.",
+      "word_count": 278
+    },
+    {
+      "title": "References",
+      "content": "- **Plotly R Documentation:** [https://plotly.com/r/](https://plotly.com/r/)\n - **jsonlite Package Documentation:** [https://cran.r-project.org/web/packages/jsonlite/jsonlite.pdf](https://cran.r-project.org/web/packages/jsonlite/jsonlite.pdf)\n - **FHIR Specification:** [https://www.hl7.org/fhir/](https://www.hl7.org/fhir/)\n\n<!--html_preserve-->\n<div>\n    \t<footer><center>\n\t\t\t<a href=\"https://www.socr.umich.edu/\">SOCR Resource</a>\n\t\t\t\tVisitor number \n\t\t\t\t<img class=\"statcounter\" src=\"https://c.statcounter.com/5714596/0/038e9ac4/0/\" alt=\"Web Analytics\" align=\"middle\" border=\"0\">\n\t\t\t\t<script type=\"text/javascript\">\n\t\t\t\t\tvar d = new Date();\n\t\t\t\t\tdocument.write(\" | \" + d.getFullYear() + \" | \");\n\t\t\t\t</script> \n\t\t\t\t<a href=\"https://socr.umich.edu/img/SOCR_Email.png\"><img alt=\"SOCR Email\"\n\t \t\t\ttitle=\"SOCR Email\" src=\"https://socr.umich.edu/img/SOCR_Email.png\"\n\t \t\t\tstyle=\"border: 0px solid ;\"></a>\n\t \t\t </center>\n\t \t</footer>\n\n\t<!-- Start of StatCounter Code -->\n\t\t<script type=\"text/javascript\">\n\t\t\tvar sc_project=5714596; \n\t\t\tvar sc_invisible=1; \n\t\t\tvar sc_partition=71; \n\t\t\tvar sc_click_stat=1; \n\t\t\tvar sc_security=\"038e9ac4\"; \n\t\t</script>\n\t\t\n\t\t<script type=\"text/javascript\" src=\"https://www.statcounter.com/counter/counter.js\"></script>\n\t<!-- End of StatCounter Code -->\n\t\n\t<!-- GoogleAnalytics -->\n\t\t<script src=\"https://www.google-analytics.com/urchin.js\" type=\"text/javascript\"> </script>\n\t\t<script type=\"text/javascript\"> _uacct = \"UA-676559-1\"; urchinTracker(); </script>\n\t<!-- End of GoogleAnalytics Code -->\n</div>\n<!--/html_preserve-->",
+      "word_count": 109
+    }
+  ],
+  "tables": [
+    {
+      "section": "Main",
+      "content": "    self_contained: yes\t\n---",
+      "row_count": 2
+    }
+  ],
+  "r_code": [
+    {
+      "section": "Introduction",
+      "code": "# Install required packages if not already installed\nrequired_packages <- c(\"jsonlite\", \"tidyr\", \"dplyr\")\nnew_packages <- required_packages[!(required_packages %in% installed.packages()[,\"Package\"])]\nif(length(new_packages)) install.packages(new_packages)\n\n# Load packages\nlibrary(jsonlite)\nlibrary(tidyr)\nlibrary(dplyr)",
+      "line_count": 9
+    },
+    {
+      "section": "Introduction",
+      "code": "# Define sample FHIR Patient resource as a JSON string\njson_data <- '\n{\n  \"resourceType\": \"Patient\",\n  \"id\": \"example\",\n  \"text\": {\n    \"status\": \"generated\",\n    \"div\": \"<div xmlns=\\\\\"http://www.w3.org/1999/xhtml\\\\\">A summary of the patient information</div>\"\n  },\n  \"identifier\": [\n    {\n      \"use\": \"usual\",\n      \"type\": {\n        \"coding\": [\n          {\n            \"system\": \"http://hl7.org/fhir/v2/0203\",\n            \"code\": \"MR\"\n          }\n        ]\n      },\n      \"system\": \"http://hospital.smarthealthit.org\",\n      \"value\": \"123456\"\n    }\n  ],\n  \"active\": true,\n  \"name\": [\n    {\n      \"use\": \"official\",\n      \"family\": \"Chalmers\",\n      \"given\": [\n        \"Peter\",\n        \"James\"\n      ]\n    }\n  ],\n  \"gender\": \"male\",\n  \"birthDate\": \"1974-12-25\"\n}\n'",
+      "line_count": 39
+    },
+    {
+      "section": "Transforming FHIR Data to CSV",
+      "code": "# Read the JSON data\npatient_data <- fromJSON(json_data)\n\n# Custom function to flatten JSON data with array indices\nflatten_json <- function(x, name = NULL) {\n  if (is.atomic(x) || is.null(x)) {\n    setNames(list(x), name)\n  } else if (is.list(x)) {\n    result <- list()\n    for (i in seq_along(x)) {\n      item <- x[[i]]\n      item_name <- names(x)[i]\n      if (is.null(item_name) || item_name == \"\") {\n        # For arrays, include the index\n        item_name <- if (is.null(name)) paste0(\"[\", i, \"]\") else paste0(name, \"[\", i, \"]\")\n      } else if (!is.null(name)) {\n        item_name <- paste0(name, \".\", item_name)\n      } else {\n        item_name <- item_name\n      }\n      result <- c(result, flatten_json(item, item_name))\n    }\n    result\n  } else {\n    stop(\"Unsupported data type\")\n  }\n}\n\n# Flatten the data\npatient_flat <- flatten_json(patient_data)\n\n# Convert to data frame\npatient_df <- as.data.frame(patient_flat, stringsAsFactors = FALSE)\n\n# Display the flattened data frame\nprint(patient_df)",
+      "line_count": 36
+    },
+    {
+      "section": "Transforming FHIR Data to CSV",
+      "code": "# Save data frame to CSV\nwrite.csv(patient_df, \"patient_data.csv\", row.names = FALSE)",
+      "line_count": 2
+    },
+    {
+      "section": "Transforming CSV Back to FHIR Data",
+      "code": "# Read CSV file\npatient_df_read <- read.csv(\"patient_data.csv\", stringsAsFactors = FALSE)\n\n# Display the data frame read from CSV\nprint(patient_df_read)",
+      "line_count": 5
+    },
+    {
+      "section": "Transforming CSV Back to FHIR Data",
+      "code": "# Function to check if a string is numeric\nis_numeric_string <- function(x) {\n  grepl(\"^[-+]?[0-9]*\\\\.?[0-9]+([eE][-+]?[0-9]+)?$\", x)\n}\n\n# Helper function to set a value in a nested list or array\nset_nested_value <- function(lst, path, value) {\n  if (length(path) == 0) {\n    return(value)\n  }\n  \n  key <- path[1]\n  rest <- path[-1]\n  \n  # Check if key is an array index\n  array_index <- regmatches(key, regexpr(\"\\\\[(\\\\d+)\\\\]$\", key))\n  if (length(array_index) > 0) {\n    # Extract base name and index\n    base_name <- sub(\"\\\\[(\\\\d+)\\\\]$\", \"\", key)\n    index <- as.integer(sub(\".*\\\\[(\\\\d+)\\\\]$\", \"\\\\1\", key))\n    \n    if (base_name == \"\") {\n      # The list itself is an array\n      if (is.null(lst)) lst <- list()\n      lst[[index]] <- set_nested_value(lst[[index]], rest, value)\n    } else {\n      if (is.null(lst[[base_name]]) || !is.list(lst[[base_name]])) {\n        lst[[base_name]] <- list()\n      }\n      lst[[base_name]][[index]] <- set_nested_value(lst[[base_name]][[index]], rest, value)\n    }\n  } else {\n    if (is.null(lst[[key]])) {\n      lst[[key]] <- list()\n    }\n    lst[[key]] <- set_nested_value(lst[[key]], rest, value)\n  }\n  \n  lst\n}\n\n# Function to reconstruct nested list from flat data\nreconstruct_list <- function(flat_data) {\n  result <- list()\n  for (name in names(flat_data)) {\n    value <- flat_data[[name]]\n    value_char <- as.character(value)\n    \n    if (!is.na(value_char) && nzchar(value_char)) {\n      if (startsWith(value_char, \"{\") || startsWith(value_char, \"[\")) {\n        # Parse JSON strings back into lists\n        value <- fromJSON(value_char)\n      } else if (tolower(value_char) %in% c(\"true\", \"false\")) {\n        value <- as.logical(tolower(value_char))\n      } else if (is_numeric_string(value_char)) {\n        value <- as.numeric(value_char)\n      } else {\n        value <- value_char\n      }\n    } else {\n      value <- NULL\n    }\n    \n    # Split the name on dots, preserving array indices\n    parts <- unlist(strsplit(name, \"\\\\.\"))\n    result <- set_nested_value(result, parts, value)\n  }\n  return(result)\n}\n\n# Reconstruct the data\npatient_data_reconstructed <- reconstruct_list(patient_df_read[1, ])\n\n# Display the Structure of the reconstructed data and print the 1st patient\nstr(patient_data_reconstructed)\n\nprint(patient_data_reconstructed)",
+      "line_count": 77
+    },
+    {
+      "section": "Transforming CSV Back to FHIR Data",
+      "code": "# Read the original JSON data into R\noriginal_data <- fromJSON(json_data)\n\n# Compare original and reconstructed JSON\nidentical_json <- all.equal(\n  original_data,\n  patient_data_reconstructed,\n  check.attributes = FALSE\n)\n\n# Display verification result\nif (isTRUE(identical_json)) {\n  cat(\"The transformation is invertible. The original and reconstructed data are identical.\")\n} else {\n  cat(\"The transformation is not perfectly invertible. Differences:\\n\", identical_json)\n}\n\n# Display the original and reconstructed hierarchical data as JSON/FHIR\njson_output <- \n  toJSON(json_data , pretty = TRUE, auto_unbox = TRUE)\njson_output\nrecon_json_output <- \n  toJSON(patient_data_reconstructed , pretty = TRUE, auto_unbox = TRUE)\nrecon_json_output",
+      "line_count": 24
+    },
+    {
+      "section": "FHIR/JSON Data Visualization",
+      "code": "library(plotly)\nlibrary(dplyr)\nlibrary(tidyr)\n\n# Install and load required packages\n# install.packages(\"jsonlite\")\n# install.packages(\"plotly\")\nlibrary(jsonlite)\nlibrary(plotly)\n\n# # Sample FHIR Patient resource as a JSON string\n# json_data <- '\n# {\n#   \"resourceType\": \"Patient\",\n#   \"id\": \"example\",\n#   \"text\": {\n#     \"status\": \"generated\",\n#     \"div\": \"<div xmlns=\\\\\"http://www.w3.org/1999/xhtml\\\\\">A summary of the patient information</div>\"\n#   },\n#   \"identifier\": [\n#     {\n#       \"use\": \"usual\",\n#       \"system\": \"http://hospital.smarthealthit.org\",\n#       \"value\": \"123456\"\n#     }\n#   ],\n#   \"active\": true,\n#   \"name\": [\n#     {\n#       \"use\": \"official\",\n#       \"family\": \"Doe\",\n#       \"given\": [\"John\", \"A.\"]\n#     }\n#   ],\n#   \"gender\": \"male\",\n#   \"birthDate\": \"1974-12-25\",\n#   \"address\": [\n#     {\n#       \"use\": \"home\",\n#       \"line\": [\"123 Main St\"],\n#       \"city\": \"Anytown\",\n#       \"state\": \"Anystate\",\n#       \"postalCode\": \"12345\"\n#     }\n#   ]\n# }\n# '\n\n# Parse the JSON data without flattening\npatient_data <- fromJSON(json_data, simplifyDataFrame = FALSE)\n\n# Define a recursive function to traverse the JSON and build the hierarchy\nflatten_json_for_sunburst <- function(x, parent = NA, name = NULL) {\n  res <- data.frame()\n  \n  # Determine the current node's label\n  if (is.null(name)) {\n    current_label <- \"Root\"\n  } else {\n    current_label <- as.character(name)\n  }\n  \n  # Create an ID for the current node\n  current_id <- ifelse(is.na(parent), current_label, paste0(parent, \"/\", current_label))\n  \n  # Initialize the result with the current node\n  res <- data.frame(\n    id = current_id,\n    label = current_label,\n    parent = parent,\n    stringsAsFactors = FALSE\n  )\n  \n  # Recursively process child nodes\n  if (is.list(x) && length(x) > 0) {\n    if (is.null(names(x))) {\n      # Handle unnamed lists (arrays)\n      for (i in seq_along(x)) {\n        child <- x[[i]]\n        child_name <- paste0(\"[\", i, \"]\")\n        child_res <- flatten_json_for_sunburst(child, current_id, child_name)\n        res <- rbind(res, child_res)\n      }\n    } else {\n      # Handle named lists (objects)\n      for (nm in names(x)) {\n        child <- x[[nm]]\n        child_res <- flatten_json_for_sunburst(child, current_id, nm)\n        res <- rbind(res, child_res)\n      }\n    }\n  } else if (is.atomic(x)) {\n    # Handle leaf nodes\n    leaf_label <- as.character(x)\n    leaf_id <- paste0(current_id, \"/\", leaf_label)\n    leaf_res <- data.frame(\n      id = leaf_id,\n      label = leaf_label,\n      parent = current_id,\n      stringsAsFactors = FALSE\n    )\n    res <- rbind(res, leaf_res)\n  }\n  \n  return(res)\n}\n\n# Use the function to flatten the JSON data\nsunburst_data <- flatten_json_for_sunburst(patient_data)\n\n# Remove any duplicate rows\nsunburst_data <- unique(sunburst_data)\n\n# Remove rows where label is NA or empty\nsunburst_data <- sunburst_data[!is.na(sunburst_data$label) & sunburst_data$label != \"\", ]\n\n# Replace any NA parents with an empty string (Plotly expects strings)\nsunburst_data$parent[is.na(sunburst_data$parent)] <- \"\"\n\n# Create the sunburst chart\nfig_sunburst <- plot_ly(\n  data = sunburst_data,\n  labels = ~label,\n  ids = ~id,\n  parents = ~parent,\n  type = 'sunburst',\n  branchvalues = 'total'\n) %>%\n  layout(\n    title = \"FHIR Patient Data Sunburst Chart\",\n    margin = list(t = 50, l = 0, r = 0, b = 0)\n  )\n\n# Display the chart\nfig_sunburst",
+      "line_count": 135
+    },
+    {
+      "section": "FHIR/JSON Data Visualization",
+      "code": "fig_treemap <- plot_ly(\n  data = sunburst_data,\n  labels = ~label,\n  ids = ~id,\n  parents = ~parent,\n  type = 'treemap',\n  branchvalues = 'total'\n) %>%\n  layout(\n    title = \"FHIR Patient Data Treemap Chart\",\n    margin = list(t = 50, l = 0, r = 0, b = 0)\n  )\n# Display the treemap\nfig_treemap",
+      "line_count": 14
+    },
+    {
+      "section": "FHIR/JSON Data Visualization",
+      "code": "# Customize the sunburst chart\nfig_sunburst <- fig_sunburst %>%\n  layout(\n    title = \"FHIR Patient Data Sunburst Chart\",\n    sunburstcolorway = c(\"#636efa\",\"#ef553b\",\"#00cc96\"),\n    extendsunburstcolors = TRUE\n  )\n\n# Display the customized chart\nfig_sunburst",
+      "line_count": 10
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Install required packages if not already installed\n# install.packages(\"httr\")\n# install.packages(\"jsonlite\")\n# install.packages(\"plotly\")\nlibrary(httr)\nlibrary(jsonlite)\nlibrary(plotly)",
+      "line_count": 7
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Define the base URL of the FHIR server\nbase_url <- \"http://hapi.fhir.org/baseR4\"\n\n# Define the resource type and parameters\nresource_type <- \"Patient\"\nparameters <- \"?_count=100\"  # Fetch 1000 Patient resources\n\n# Construct the full URL\nfull_url <- paste0(base_url, \"/\", resource_type, parameters)\n\n# Send GET request to fetch the data\nresponse <- GET(full_url)\n\n# Check if the request was successful\nif (status_code(response) == 200) {\n  # Parse the response content\n  content_text <- content(response, \"text\", encoding = \"UTF-8\")\n  fhir_data <- fromJSON(content_text, simplifyDataFrame = FALSE)\n} else { stop(\"Failed to fetch data from the FHIR server.\") }",
+      "line_count": 19
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Check the structure of the retrieved data\n# str(fhir_data)",
+      "line_count": 2
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Extract the entries from the Bundle\nentries <- fhir_data$entry\n\n# Check the number of entries\nlength(entries)",
+      "line_count": 5
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Let's take the first Patient resource\npatient_resource <- entries[[1]]$resource\n\n# Alternatively, combine multiple resources\n# For demonstration, we'll process the first 5 patients\npatient_resources <- lapply(entries[1:5], function(entry) entry$resource)",
+      "line_count": 6
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Define the recursive function (same as before)\nflatten_json_for_chart <- function(x, parent = NA, name = NULL) {\n  res <- data.frame()\n  \n  # Determine the current node's label\n  current_label <- ifelse(is.null(name), \"Root\", as.character(name))\n  \n  # Create an ID for the current node\n  current_id <- ifelse(is.na(parent), current_label, paste0(parent, \"/\", current_label))\n  \n  # Initialize the result with the current node\n  res <- data.frame(\n    id = current_id,\n    label = current_label,\n    parent = parent,\n    stringsAsFactors = FALSE\n  )\n  \n  # Recursively process child nodes\n  if (is.list(x) && length(x) > 0) {\n    if (is.null(names(x))) {\n      # Handle unnamed lists (arrays)\n      for (i in seq_along(x)) {\n        child <- x[[i]]\n        child_name <- paste0(\"[\", i, \"]\")\n        child_res <- flatten_json_for_chart(child, current_id, child_name)\n        res <- rbind(res, child_res)\n      }\n    } else {\n      # Handle named lists (objects)\n      for (nm in names(x)) {\n        child <- x[[nm]]\n        child_res <- flatten_json_for_chart(child, current_id, nm)\n        res <- rbind(res, child_res)\n      }\n    }\n  } else if (is.atomic(x) || is.null(x)) {\n    # Handle leaf nodes\n    leaf_label <- as.character(x)\n    leaf_id <- paste0(current_id, \"/\", leaf_label)\n    leaf_res <- data.frame(\n      id = leaf_id,\n      label = leaf_label,\n      parent = current_id,\n      stringsAsFactors = FALSE\n    )\n    res <- rbind(res, leaf_res)\n  }\n  \n  return(res)\n}",
+      "line_count": 51
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Function to process and visualize a single patient resource\nvisualize_patient <- function(patient_data, patient_number) {\n  # Flatten the patient data\n  chart_data <- flatten_json_for_chart(patient_data)\n  \n  # Remove duplicates and clean data\n  chart_data <- unique(chart_data)\n  chart_data <- chart_data[!is.na(chart_data$label) & chart_data$label != \"\", ]\n  chart_data$parent[is.na(chart_data$parent)] <- \"\"\n  \n  # Create the sunburst chart\n  fig <- plot_ly(\n    data = chart_data,\n    labels = ~label,\n    ids = ~id,\n    parents = ~parent,\n    type = 'sunburst',\n    branchvalues = 'total'\n  ) %>%\n    layout(\n      title = paste(\"FHIR Patient Data Sunburst Chart - Patient\",\n                    patient_number),\n      margin = list(t = 50, l = 0, r = 0, b = 0)\n    )\n  \n  # Display the chart\n  fig\n}\n\n# Visualize the first 5 Patient resources\nfor (i in seq_along(patient_resources)) {\n  print(visualize_patient(patient_resources[[i]], i))\n}\n\n# Initialize an empty list to store the figures\nfig_list <- list()\n\n# Collect the Plotly figures for each patient\nfor (i in seq_along(patient_resources)) {\n  fig_list[[i]] <- visualize_patient(patient_resources[[i]], i)\n}\n\nfig_list[[1]]\n\n# Determine the number of patients\nn_patients <- length(fig_list)\n\n# Set the number of columns (e.g., 2)\nncols <- 2\n\n# Calculate the number of rows needed\nnrows <- ceiling(n_patients / ncols)\n\nfig_combined <- subplot(fig_list)\n    \n    \nvisualize_patient <- function(patient_data, patient_number) {\n  # Flatten the patient data\n  chart_data <- flatten_json_for_chart(patient_data)\n  \n  # Remove duplicates and clean data\n  chart_data <- unique(chart_data)\n  chart_data <- chart_data[!is.na(chart_data$label) & chart_data$label != \"\", ]\n  chart_data$parent[is.na(chart_data$parent)] <- \"\"\n  \n  # Create the sunburst chart without individual titles\n  fig <- plot_ly(\n    data = chart_data,\n    labels = ~label,\n    ids = ~id,\n    parents = ~parent,\n    type = 'sunburst',\n    branchvalues = 'total'\n  ) %>%\n    layout(\n      # Remove individual titles\n      title = list(text = paste(\"Patient\", patient_number), x = 0.5, y = 0.95),\n      margin = list(t = 20, l = 0, r = 0, b = 0)\n    )\n  \n  return(fig)\n}\n\nfig_combined <- fig_combined %>%\n  layout(\n    width = 1000,  # Set the width in pixels\n    height = 800   # Set the height in pixels\n  )",
+      "line_count": 88
+    },
+    {
+      "section": "Public FHIR Test Data",
+      "code": "# Adjust the number of patients to process\nnumber_of_patients <- 10  # For example, process 10 patients\n\n# Ensure we don't exceed the available entries\nnumber_of_patients <- min(number_of_patients, length(entries))\n\n# Extract the patient resources\npatient_resources <- lapply(entries[1:number_of_patients], function(entry) entry$resource)\n\n# Visualize each patient\nfor (i in seq_along(patient_resources)) {\n  print(visualize_patient(patient_resources[[i]], i))\n}",
+      "line_count": 13
+    }
+  ]
+}

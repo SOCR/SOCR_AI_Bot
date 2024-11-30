@@ -1,0 +1,939 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Appendix 5: Database SQL Queries</u></h2>"
+author: "<h3>SOCR/MIDAS (Jared Tianyi Chai, I Hun Chan, Brandon Cummings, Ziyuan Sun, Alan Tran, Emily Wall, Jessica Wild, Vanessa Yuzhe You, Audrey Zhang, and Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: ../SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+In this [DSPA Appendix](https://dspa2.predictive.space/), we will present some common strategies to interact with relational databases.
+
+The [Structured Query Language (SQL)](https://en.wikipedia.org/wiki/SQL) is used to communicate with complex databases (DBs)that include large, structured, and relational information. SQL is the *de facto* standard language for managing, storing, and retrieval of information from relational database management systems. *SQL statements* may be used to update data elements in a database, retrieve data from a database, or query the meta-data in the system. Many relational database management systems like Oracle, Sybase, Microsoft SQL Server, Access, Ingres, and so on provide SQL [application programming interfaces (API's)](https://en.wikipedia.org/wiki/Application_programming_interface). There are also [no-SQL database systems](https://en.wikipedia.org/wiki/NoSQL), e.g., [MongoDB](https://www.mongodb.com/nosql-explained), that provide more flexibility by relaxing the *relational* requirement of SQL systems. In many situations, relational SQL DBs are impractical for large amounts of heterogeneous, incongruent, and rapidly-changing data that blends structured, semi-structured, unstructured, and polymorphic data elements. We will predominantly focus on the [standard SQL commands](https://www.w3schools.com/sql/sql_syntax.asp), such as `Select`, `Insert`, `Update`, `Delete`, `Create`, and `Drop` to interact with external databases. The [MongoDB noSQL tutorial](https://docs.mongodb.com/manual/reference/command/) provides information on interacting with noSQL DBs. In this module, we mostly focus on *data import* from SQL Databases.
+
+Let's start by exploring `R`-based data-import from SQL databases. First, we need to install and load the [RODBC(R Open Database Connectivity) package](https://cran.r-project.org/web/packages/RODBC/index.html).  
+
+```{r eval=F, warning = FALSE}
+# install.packages("RODBC", repos = "http://cran.us.r-project.org")
+library(RODBC)
+```
+
+Then, we will open a connection to the SQL server database with Data Source Name (DSN), using Microsoft Access. More details are provided in the [Microsoft documentaiton](https://technet.microsoft.com/en-us/library/cc879308%28v=sql.105%29.aspx) and in the [RODBC documentaiton](https://cran.r-project.org/web/packages/RODBC/vignettes/RODBC.pdf).
+
+# Connections to SQL Database
+
+## Set a connection
+
+As a demonstration, we will be connecting with username "genome" to a MySQL database **hg19** hosted by [genome.ucsc.edu server](https://genome.ucsc.edu). 
+
+```{r eval=F, warning = FALSE}
+# install.packages("RMySQL"); 
+library(RMySQL)
+# install.packages("RODBC"); 
+library(RODBC)
+# install.packages("DBI"); 
+library(DBI)
+
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+```
+
+The RODBC library also allows connecting to other Relational Databases such as [SQL Server](https://en.wikipedia.org/wiki/Microsoft_SQL_Server) or Database-like platforms such as [Dremio](https://www.dremio.com/tutorials/). In order to connect to each of these data sources, the specific driver for that data source needs to be downloaded and installed in R. 
+
+If connecting to multiple SQL data sources simultaneously within one R project is desired, establish multiple connections in fashion similar to above.
+
+## Managing and closing existing connections
+
+After all needed jobs are done on the database, it is important to disconnect from the database, because the connection isn't automatically closed and there can be a limit to how many connections can be set up at the same time in R.
+
+Here we will demonstrate how to see all active connections and how to close connections.
+
+```{r, warning = FALSE}
+# install.packages("DBI"); 
+library(DBI)
+# install.packages("RMySQL"); 
+library(RMySQL)
+# install.packages("RODBC"); 
+library(RODBC)
+
+
+#display all current connections to MySQL databases
+dbListConnections(MySQL())
+
+#close connection [1] to MySQL database
+#dbDisconnect(dbListConnections(dbDriver(drv="MySQL"))[[1]])
+
+#list and close all connections to MySQL databases
+lapply(dbListConnections(MySQL()), dbDisconnect)
+
+#setup connection
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+
+#disconnect current session from the database
+dbDisconnect(ucscGenomeConn)
+```
+
+# Basic Functions in RODBC
+
+There are several other important functions in RODBC besides *dbConnect*, *dbDisconnect* and *dbListConnections* that can be useful for database users. These functions are demonstrated below.
+
+```{r, warning = FALSE}
+# install.packages("RMySQL"); 
+library(RMySQL)
+# install.packages("RODBC"); 
+library(RODBC)
+#setup connection
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+#Store the names of all the tables in the database into 'allTables' and display the total number of tables in the database
+allTables <- dbListTables(ucscGenomeConn); length(allTables)
+
+#List the fields in the table "affyU133Plus2"
+dbListFields(ucscGenomeConn, "affyU133Plus2")
+
+#Read the table "affyU133Plus2" into "affyData" and display the first few lines
+affyData <- dbReadTable(ucscGenomeConn, "affyU133Plus2");head(affyData)
+```
+
+The function `dbReadTable()` is equivalent to the SQL command `SELECT * FROM affyU133Plus2`.
+
+# Querying with SQL
+
+After establishing the connection to a SQL data-source, you can then pass SQL commands in string formats to the database. Here we will demonstrate such interactions with several basic SQL commands.
+
+```{r, warning = FALSE}
+# set up connection
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+
+# select the top 10 rows of the genoName column from table rmsk with dbSendQuery and dbClearResult.
+rs <- dbSendQuery(ucscGenomeConn,'select genoName from rmsk limit 10')
+dbClearResult(rs)
+
+
+# select the top 10 rows of genoName column from table rmsk with dbGetQuery
+df <- dbGetQuery(ucscGenomeConn,'select genoName from rmsk limit 10')
+
+#disconnect from database
+dbDisconnect(ucscGenomeConn)
+```
+
+The difference between dbSendQuery and dbGetQuery is the following:
+
+ - *dbSendQuery* sends a query to the database and doesn't retrieve any data until being fetched, while dbGetQuery retrieves data back from the server and can be written directly into a data structure.
+ - *dbSendQuery* needs to be used with `dbClearResult()` to close the query activity before any other interaction with the server, while dbGetQuery closes the query activity on the database automatically.
+
+As a result, dbGetQuery is more suitable for running quick queries on the server and retrieving data immediately, while *dbSendQuery* is more useful when running queries on larger datasets and when immediate results are not required.
+
+Both of these two functions are intended for data users only, so only `SELECT` statements are intended to be sent through them. If the user has higher access to the database and intend to manipulate data, *dbExecute* is needed. This is demonstrated (but not executed) below.
+
+```{r, warning = FALSE}
+# create a new empty table named newTable using dbExecute
+#dbExecute(ucscGenomeConn,'create table newTable')
+```
+
+# Fetching Results
+
+When using *dbGetQuery*, data is automatically retrieved, or "fetched" from the server. However, this is not always intended. If the demand is to query first and fetch at a later time, a combination of *dbSendQuery* and fetch. Here is an example.
+
+```{r, warning = FALSE}
+# set up connection
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+
+# select the top 10 rows of the genoName column from table rmsk with deSendQuery and fetch.
+rs <- dbSendQuery(ucscGenomeConn,'select genoName from rmsk limit 10')
+fetch(rs)
+dbClearResult(rs)
+
+#disconnect from database
+dbDisconnect(ucscGenomeConn)
+```
+
+Regardless which function is used to query on the database, the results from the query must be fetched into R if analysis with R is intended.
+
+# Important SQL clauses
+
+Here are a few important SQL commands that can be used when working with databases.
+
+## Basic SELECT 
+
+"SELECT (...) FROM (...)" selects all rows (unless further specified) of specific columns of data from a table in the database. It can be used in combination with these following clauses:
+ - "DISTINCT" selects data where replicated rows with the same values for all specified columns are removed.
+ - "WHERE" selects data where values at specified columns meet conditions defined after this clause
+ - "AND/OR/NOT" logic operators that allow setting complex requirement for the WHERE clause
+ - "GROUP BY" separates the table into groups by values in a specified column. The number of groups created is equal to the number of distinct values in the column specified.
+ - "AS" renames a column or the results yielded from operations on it to another specified name
+ - "HAVING" works similar to WHERE class in terms of serving the purpose of qualification of values, but HAVING is different in that it allows conditioning on aggregate functions like COUNT() and works best with GROUP BY
+ - "ORDER BY" rearrange the rows by specified orders on values of specified column(s)
+ - "LIMIT" sets the limit to how many rows of data are selected, useful when working with large datasets
+These clauses are shown below.
+
+```{r, warning = FALSE}
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+#The tables we will be working with: pseudoYale60 and pseudoYale60Class from the hg19 database:
+dbListFields(ucscGenomeConn, "pseudoYale60")
+dbListFields(ucscGenomeConn, "pseudoYale60Class")
+
+
+# select the top 10 rows of all columns from table pseudoYale60Class.
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class limit 10')
+
+# select the top 10 rows of the class column from table pseudoYale60Class.
+dbGetQuery(ucscGenomeConn,'select class from pseudoYale60Class limit 10')
+
+# select the top 10 distinct rows of the class column from table pseudoYale60Class.
+dbGetQuery(ucscGenomeConn,'select distinct class from pseudoYale60Class limit 10')
+
+# select the top 10 rows of name and class columns from table pseudoYale60Class where class is 'Ambiguous'.
+dbGetQuery(ucscGenomeConn,'select name, class from pseudoYale60Class WHERE class = \'Ambiguous\' limit 10')
+
+# select the top 10 rows of all columns from table pseudoYale60Class where class is 'Ambiguous' and owner is 'Yale'.
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE class = \'Ambiguous\' AND owner = \'Yale\' limit 10')
+
+# select the top 10 rows of all columns from table pseudoYale60Class where class is 'Ambiguous' or owner is 'Yale'.
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE class = \'Ambiguous\' OR owner = \'Yale\' limit 10')
+
+# select the top 10 rows of all columns from table pseudoYale60Class where class is \'Ambiguous\' or \'Processed\'.
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE class = \'Ambiguous\' OR class = \'Processed\' limit 10')
+
+# select the top 10 rows of all columns from table pseudoYale60Class where class is not \'Ambiguous\'.
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE NOT class = \'Ambiguous\' limit 10')
+
+# select class and how many names in the class from pseudoYale60Class
+dbGetQuery(ucscGenomeConn,'select count(name) as number_of_names, class from pseudoYale60Class GROUP BY class')
+
+# select class and how many names in the class from pseudoYale60Class if the number of names in the class is greater than 4000
+dbGetQuery(ucscGenomeConn,'select count(name) as number_of_names, class from pseudoYale60Class group by class having count(name) > 4000')
+
+#disconnect from database
+dbDisconnect(ucscGenomeConn)
+```
+
+## SELECT from multiple tables
+
+Let's now show several clauses that will be useful to work across multiple tables
+
+Working with *Multiple Tables*:
+ - "JOIN/LEFT JOIN/RIGHT JOIN/INNER JOIN/" JOIN functions combine two tables together where they have one or more columns sharing the same type of data.
+ - "USING" can be an alternative to the ON clause in JOINs. It allows joining with columns of the same name while with ON you can specify and join columns with different names. 
+ - "UNION" appends one table to another where the columns of the two tables have the same data types, replicates are removed.
+ - "UNION ALL"  appends one table to another where the columns of the two tables have the same data types without removing replicates.
+
+```{r warning = FALSE}
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+#The tables we will be working with: pseudoYale60 and pseudoYale60Class from the hg19 database
+
+#joins the pseudoYale60 table with pseudoYale60Class table, where each row is matched on the name column
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60 join pseudoYale60Class on pseudoYale60.name = pseudoYale60Class.name limit 10')
+
+#alternatively using USING Clause
+dbGetQuery(ucscGenomeConn,'select * from pseudoYale60 join pseudoYale60Class USING (name) limit 10')
+
+#Append the first 10 names from pseudoYale60Class to the first 10 names of pseudoYale60, and the replicated rows are removed
+dbGetQuery(ucscGenomeConn,'(select name from pseudoYale60 limit 10) union (select name from pseudoYale60Class limit 10)')
+
+#Append the first 10 names from pseudoYale60Class to the first 10 names of pseudoYale60
+dbGetQuery(ucscGenomeConn,'(select name from pseudoYale60 limit 10) union all (select name from pseudoYale60Class limit 10)')
+
+
+#disconnect from database
+dbDisconnect(ucscGenomeConn)
+```
+
+As demonstrated, the `USING` clause eliminates the repeated name column, while the `ON` clause version of `JOIN` keeps both columns from both tables.
+
+The difference between `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `INNER JOIN`, and `FULL` join will be explained later.
+
+Here are a few other multi-table operators that can be useful:
+
+ - "EXCEPT" selects rows in one table that are not present in another table. 
+    - SELECT columnA FROM Table1 EXCEPT SELECT columnA FROM Table2
+
+ - "INTERSECT" selects rows that are present in both tables. 
+    - SELECT columnA FROM Table1 INTERSECT SELECT columnA FROM Table2
+
+We will be demonstrating these two operators later with the JOINS.
+
+# Connecting to Google `BigQuery`
+
+RODBC can also connect to PaaS providers such as [Google Cloud Platform](https://cloud.google.com) and use it as a data-source. Utilizing it will allow faster query executions and minimize usage of local memory.
+
+## Navigating Google `BigQuery`
+
+Similar to querying from a Database, running queries on Google `BigQuery` requires data sources on the platform first. These sources could be from open libraries (as we will demonstrate in Case Study I), credentialed libraries (as in Case Study II), or others that the user defines. These data sources, like any other relational database, have multiple layers of structures.
+
+The bottom layer of `BigQuery` are `tables`, where data are stored, viewed, and queried from. When executing SQL statements, these tables are the sources of data in each statement. Tables have columns and rows, similar to other relational databases.
+
+Multiple tables can make up a `dataset`. Datasets are an intermediate layer for users to categorize and group tables of different purposes. This layer is required to be defined before tables, as tables can only be defined as a member of a specific dataset.
+
+Multiple datasets then make up a `project`. A project can be started by anyone registered on Google `BigQuery`, and registered users can also start multiple projects. However, the power of Google `BigQuery` allows users to share projects with others and gain access to projects defined by other users. These different access types include viewing data, running queries,  modifying data, and other operations on data in specific projects. These accesses and permissions are monitored by the project owners in their `IAM & Admin` page of their GCP console.
+
+As a result of the structure described above, whenever we try to access a specific table, we need to specify its path like [ProjectName.DatasetName.TableName].
+
+## Billing in Google `BigQuery`
+
+With smaller scale querying operations, `BigQuery` is free for public use, but it charges a fee for heavy usage. That's why it's important to specify billing information when querying.
+
+Fees for `BigQuery` are billed on a per-project basis, and when supplying billing information, just provide the project that should be billed for. When you are not an eligible member of the project with the permission to bill the project, billing that project will be declined.
+
+For many public libraries and projects, they make their data publicly available, but they don't allow the public to bill these projects. That means, users who want to query data from a public library will need to additionally provide another project that Google can bill.
+
+## Case Study I: Open Library in `BigQuery`
+
+Here we will connect to a [sample dataset](https://cloud.google.com/bigquery/public-data/) in [Google Cloud Platform](https://cloud.google.com)'s list of open libraries and query from it.
+
+### Set up `BigQuery` on GCP
+
+In order to use BigQuery functionalities, a Google Cloud Platform account is needed
+
+ 1. Go to [Google Cloud Platform](https://cloud.google.com) and register a GCP account with your email. New members to GCP are given 12-months of free trials and $300 credits.
+ 2. [HS 650 DSPA Studests](https://predictive.space/) will receive $50 GCP credit (from the Instructor)
+ 3. In Google Cloud Platform, start a new project.
+ 4. After starting a new project, on GCP, go to [IAM & Admin](https://console.cloud.google.com/iam-admin) tab.
+ 5. On this tab, you will see a list of members of the project. You can add new members and assign each member specific role(s).
+ 6. Edit and make sure all members (including yourself) who need to access BigQuery functionalities from R are assigned the role of `BigQuery Admin` or similar ones that have the permission to create jobs remotely on BigQuery.
+ 7. After assigning roles and permissions, go to GCP [BigQuery User Interface](https://console.cloud.google.com/bigquery)
+
+This is the primary interface for setting up data sources. We will come to this tab only when needed to add new data sources and datasets and the remaining of the time we only need R to access data and query from GCP.
+
+
+### Connecting to Dataset
+
+We will now demonstrate connecting to your project and the `bigquery-public-data.samples.shakespeare`.
+
+```{r warning=F, error=F, message=F}
+#install.packages("bigrquery")
+library(DBI)
+library(RODBC)
+library(bigrquery)
+```
+
+```{r echo=F, comment="private"}
+## Before you build these notes: RMD -> HTML, you have to browser authenticate
+## Run this RMD command in console
+#  > bq_auth()
+## enter your credentials
+## change the email below, and finally run this command.
+
+#Specify the project that you want to connect to
+billing <- 'golden-agency-258816' #'noble-sun-253320','golden-agency-258816'
+#Connect using a pre-authorized email account for the project
+bq_auth(email = 'dinov@umich.edu', path = NULL,
+  scopes = c("https://www.googleapis.com/auth/bigquery",
+  "https://www.googleapis.com/auth/cloud-platform"),
+  cache = gargle::gargle_oauth_cache(),
+  use_oob = gargle::gargle_oob_default(), token = NULL)#change email to pre-authorized email
+```
+
+```{r message=F, warning=F}
+#set 'billing' to the project that will be billed
+
+#Connect to the project
+con <- dbConnect(bigquery(),
+                 project = "bigquery-public-data",
+                 billing = billing
+)
+
+#list first few lines of shakespeare table
+sql <- "SELECT * FROM [bigquery-public-data.samples.shakespeare] LIMIT 5"
+result <- query_exec(sql, project=billing)
+
+############## https://github.com/r-dbi/bigrquery/issues/421
+
+# tb <- bq_project_query(billing, sql)
+# df <- bq_table_download(tb, page_size = 100000)
+
+result
+#disconnect from Google BigQuery
+dbDisconnect(con)
+
+###############################################
+tb <- bq_project_query(
+  bq_test_project(),
+  "SELECT count(*) FROM p[bigquery-public-data.samples.shakespeare] LIMIT 5"
+)
+```
+
+
+## Case Study II: MIMIC-III Intro
+
+Here, we will demonstrate how to connect to a [MIMIC-III dataset](https://mimic.physionet.org) through [Google Cloud's BigQuery platform](https://cloud.google.com/bigquery/) and query some data.
+
+### Setting Up MIMIC III on `BigQuery`
+
+Similar to in Case Study I, MIMIC III is a project available on `BigQuery` so we will need to pin this project to the `BigQuery` interface. However, since this project is not in the public library, we will need to gain access to this project first then pin it.
+
+#### Getting Access to MIMIC III
+
+The access to MIMIC III is granted on a per-email basis. Follow these steps to gain access to MIMIC III for the email address registered for the project owner:
+
+ 1. MIMIC II data is initially stored on [PhysioNet](https://physionet.org/content/mimiciii/1.4/#files), and this is also the site for gaining access to MIMIC III.
+ 2. Go to [PhysioNet Registration](https://physionet.org/register/), where you will then register an account with the email address that you desire to gain access for.
+ 3. Confirm the registration after receiving an email, then log back into PhysioNet.
+ 4. Go the page for [MIMIC II Data](https://physionet.org/content/mimiciii/1.4/#files), scroll to the bottom and click on `credentialed user`.
+ 5. In the `Credentialing` tab of the page, click on "apply for access".
+ 6. You will then be directed to the application page for accessing MIMIC III.
+ 7. Complete the application, which involves completing an online course: CITI Program in "Data or Specimens Only Research", and listing your faculty supervisor as a reference.
+
+#### Adding MIMICIII to BigQuery
+
+After gaining access to MIMIC II data (it may take up to 2 weeks to process application), follow these steps to add the MIMIC III project to `BigQuery`:
+
+ 1. Go to GCP [BigQuery User Interface](https://console.cloud.google.com/bigquery)
+ 2. On the `Resources` Tab, click on `ADD DATA` then `Pin a project`.
+ 3. Type in "physionet-data", which will pin the MIMIC III dataset to your `BigQuery` Resources tab.
+
+After these steps are done, you can now query directly from the MIMICIII dataset from R. However, you first need to link the physionet and the BigQuery accounts by:
+
+ 1. Going to [Physionet MIMIC II Dataset](https://physionet.org/content/mimiciii/1.4/)
+ 2. Scroll down to Files, Access Files, where you will see lots of CSV.gz files
+ 3. Click the `Request access using Google BigQuery`.
+
+### Simple Demonstration
+
+```{r warning=F, error=F, message=F}
+#install.packages("bigrquery")
+library(DBI)
+library(RODBC)
+library(bigrquery)
+```
+
+```{r}
+#Connect to the MIMIC III database, eciu_crd_demo dataset
+con <- dbConnect(bigquery(),
+                 project = "physionet-data",
+                 dataset = "eicu_crd_demo",
+                 billing = billing
+)
+
+#list tables in eciu_crd_demo
+dbListTables(con)
+
+#list fields in table infusiondrug
+dbListFields(con,"infusiondrug")
+#list fields in table medication
+dbListFields(con,"medication")
+
+#query from table infusiondrug
+sql <- "SELECT drugname FROM [physionet-data.eicu_crd_demo.infusiondrug] group by drugname limit 10"
+result <- query_exec(sql, project=billing)
+result
+
+#disconnect from Google BigQuery
+dbDisconnect(con)
+```
+
+## Case Study III: MIMIC III & Acute HF
+
+### Introduction
+
+The following section of R-codes are developed by the University of Michigan SOCR Data Analytics - MIMICIII team and posted on [GitHub](https://github.com/SOCR/MIMIC-Analytics/blob/master/AcuteHeartFailure.Rmd). The following are excerpts from the project:
+
+Heart failure (HF) is a "multifactorial, systemic disease" in which a network of autoprotective mechanisms activated after cardiac injury cause significant problems with heart function ([Tanai & Frantz, 2015](https://www.ncbi.nlm.nih.gov/pubmed/26673558)). HF is one of the largest contributing factors to mortality in the United States, playing a role in 1 in 9 deaths and accounting for more than $30 billion in annual healthcare expenditures ([CDC.gov](https://www.cdc.gov/dhdsp/data_statistics/fact_sheets/fs_heart_failure.htm), [Mozaffarian et. al](https://www.ncbi.nlm.nih.gov/pubmed/26673558)). In addition to the estimated 5.7 million Americans living with HF, an additional 915,000 are newly diagnosed each year (Mozaffarian et. al). Despite recent advancements in the treatment of underlying risk factors, long-term mortality remains high with less than half of those newly diagnosed patients surviving for five years (Mozaffarian et. al).
+
+Risk stratification systems have become an important part of patient management, and have the potential to "improve clinical outcome and resource allocation" by "avoiding the overtreatment of low-risk subjects or the early, inappropriate discharge of high-risk patients" ([Passantino et. al, 2015](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4691817/)). In their comprehensive 2015 publication, Andrea Passantino and colleagues review a collection of the "most relevant" risk stratification systems targeted at acute heart failure (AHF) including EFFECT, OPTIMIZE-HF, APACHE-HF, and ESCAPE, among others. Passantino and her team describe the wide array of data sources and techniques used by the original authors to validate these scoring systems, including "public registries, clinical trials, and retrospective data" ([Passantino et. al, 2015](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4691817/)). The heterogeneity of these data sources makes direct performance comparisons difficult.
+
+In this document, we aim to extend the work contributed by Passantino and colleagues and provide a direct comparison of the performance of these AHF risk stratification metrics on a single, unified dataset. To this end, we leverage the Medical Information Mart for Intensive Care ([MIMIC-III](https://mimic.physionet.org/)), a dataset developed by the Massachusetts Institute of Technology Lab for Computational Physiology (MIT-LCP) which contains de-identified health data for more than 40,000 intensive care unit (ICU) patients over the years 2001-2012 ([Johnson et. al, 2012](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4878278/)). It includes much of the same data commonly found in electronic health records (EHR), including demographic information, diagnosis codes, procedures, laboratory values, vital signs, free-text clinical notes, and admission, discharge, and mortality information. Moreover, it is large and comprehensive enough to serve as a proving ground for each of the individual risk stratification systems, allowing a level playing field from which to make direct comparisons of the efficacy and performance of each proposed metric.
+
+In the spirit of [SOCR's](http://www.socr.umich.edu) [open science](https://en.wikipedia.org/wiki/Open_science) initiative, this document and it's parent repository contain the complete end-to-end computational protocol, results, and validation procedures. It is subdivided into the following partitions:
+
+ 1. *Cohort selection*: criteria for inclusion into the study are codified and explained.
+ 2. *Data extraction*: specific data points are extracted from the larger dataset and transformed for further analysis.
+
+### Cohort Selection
+
+```{r warning=F, error=F, message=F}
+#install.packages("bigrquery")
+library(DBI)
+library(RODBC)
+library(bigrquery)
+#install.packages("knitr")
+#install.packages("kableExtra")
+#install.packages("ggplot2")
+#install.packages("ggpubr")
+#install.packages("magrittr")
+library("magrittr")
+library('knitr')         # Make knitted tables ("kables")
+library('kableExtra')    # Extra kable formatting options
+library('ggplot2')       # Plotting library
+library('ggpubr')
+```
+
+As the MIMIC-III dataset contains a wide variety of patients, those suitable for our particular analysis must first be isolated. Based on the manuscripts cited in [Passantino et. al's review](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4691817/), we developed a set of inclusion criteria to select such a cohort. These criteria include:
+
+1. Patients diagnosed with acute heart failure, excluding those with existing chronic heart failure.
+2. Patients who survived to ICU discharge, preferring to instead focus on out-of-hospital mortality.
+3. Patients who stayed in the ICU between 24 hours and 45 days, yielding enough time to facilitate a number of test results while excluding the few ultra-long term ICU stays present in the dataset.
+4. Patients who are between 18 and 89 years of age (inclusive).
+
+These criteria were inspired by the inclusion criteria schema described in the following references:
+
+ 1. [Auble et. al, A Prediction Rule to Identify Low-risk Patients with Heart Failure. *Academic Emergency Medicine*, 2005.](https://onlinelibrary.wiley.com/doi/pdf/10.1197/j.aem.2004.11.026)  
+ 2. [Abraham et. al, Predictors of In-Hospital Mortality in Patients Hospitalized for Heart Failure: Insights From the Organized Program to Initiate Lifesaving Treatment in Hospitalized Patients With Heart Failure (OPTIMIZE-HF). *Journal of the American College of Cardiology*, 2008.](https://www.sciencedirect.com/science/article/pii/S0735109708016720)  
+ 3. [Peterson et. al, A Validated Risk Score for In-Hospital Mortality in Patients With Heart Failure From the American Heart Association Get With the Guidelines Program. *Circulation*, 2009.](https://www.ahajournals.org/doi/pdf/10.1161/CIRCOUTCOMES.109.854877)  
+ 4. [Lee et. al, Prediction of Heart Failure Mortality in Emergent Care: A Cohort Study. *Annals of Internal Medicine*, 2012.](https://annals.org/aim/article-abstract/1170879/prediction-heart-failure-mortality-emergent-care-cohort-study)   
+ 5. [Okazaki et. al, New scoring system (APACHE-HF) for predicting adverse outcomes in patients with acute heart failure: Evaluation of the APACHE II and Modified APACHE II scoring systems. *Journal of Cardiology*, 2014](https://www.sciencedirect.com/science/article/pii/S0914508714000951?via%3Dihub)  
+ 6. [Salah et. al, A novel discharge risk model for patients hospitalised for acute decompensated heart failure incorporating N-terminal pro-B-type natriuretic peptide levels: a European coLlaboration on Acute decompeNsated Heart Failure: ÉLAN-HF Score. *Heart*, 2013](https://heart.bmj.com/content/100/2/115.long)  
+ 7. [Lee et. al, Predicting Mortality Among Patients Hospitalized for Heart Failure. *JAMA*, 2003](https://jamanetwork.com/journals/jama/fullarticle/197670)  
+ 8. [O'Connor, et. al, Triage After Hospitalization With Advanced Heart Failure: The ESCAPE (Evaluation Study of Congestive Heart Failure and Pulmonary Artery Catheterization Effectiveness) Risk Model and Discharge Score, *Journal of the American College of Cardiology*, 2010](https://www.sciencedirect.com/science/article/pii/S0735109709040595?via%3Dihub)
+
+#### Criteria 1: Patients diagnosed with acute heart failure
+
+To select patients with acute heart failure, we first constructed a cohort of all heart failure patients, denoted by the ICD9 code `4280`, then subtracted those that had an additional chronic heart failure diagnosis (codes `42822, 42823, 42832, 42833, 42842 & 42843`).
+
+*Note*: To successfully run the [MIMIC-III data](https://mimic.physionet.org/) analytics example below, you need to have a [credentialed PhysioNet account](https://mimic.physionet.org/gettingstarted/access/). If you don't have [CITI certification](https://www.citiprogram.org) and/or [Physionet access](https://physionet.org), you can just check the [MIMIC-III BigQuery description/meta-data](https://mimic.physionet.org/tutorials/intro-to-mimic-iii-bq/) and skill over this example.
+
+```{r message=F, warning=F}
+#Connect to the MIMIC III database, eciu_crd_demo dataset
+con <- dbConnect(bigquery(),
+                 project = "physionet-data",
+                 dataset = "eicu_crd_demo",
+                 billing = billing #set billing to Project id
+)
+
+sql <- "SELECT *
+        FROM [physionet-data.mimiciii_clinical.diagnoses_icd]
+        WHERE icd9_code IN ('4280')
+        AND hadm_id NOT IN (
+            SELECT hadm_id
+            FROM [physionet-data.mimiciii_clinical.diagnoses_icd]
+            WHERE icd9_code IN ('42822', '42823', '42832', '42833', '42842', '42843') 
+            GROUP BY hadm_id
+        )"
+cohort <- query_exec(sql, project=billing)
+```
+
+#### Criteria 2: Subject survived to ICU discharge
+
+As our target is predicting out-of-hospital mortality due to acute heart failure, we exclude patients who expired in the hospital.
+
+```{r message=F, warning=F}
+adm.tbl <- query_exec(
+  sprintf( "SELECT HADM_ID, DISCHTIME, DEATHTIME
+        FROM [physionet-data.mimiciii_clinical.admissions] 
+        WHERE hadm_id IN (%s)",
+      paste(cohort$HADM_ID, collapse=", ")),
+  project=billing, max_pages = Inf)
+# Merge with cohort object
+cohort <- merge(cohort, adm.tbl, by="HADM_ID")
+# Remove subjects with in hospital date of death (aka they have a deathtime in admissions table)
+cohort <- cohort[is.na(cohort$DEATHTIME), ]
+```
+
+#### Criteria 3: Length of stay between 24-hours and 45 days
+
+```{r message=F, warning=F}
+admissions.tbl <- query_exec(
+  sprintf( "SELECT *
+            FROM [physionet-data.mimiciii_clinical.admissions] 
+            WHERE hadm_id IN (%s)", 
+          paste(cohort$HADM_ID, collapse=", ")),
+  project=billing, max_pages = Inf)
+# Calculate length of stay
+admissions.tbl$LOS <- difftime(admissions.tbl$DISCHTIME, admissions.tbl$ADMITTIME, unit='days')
+# Merge with cohort object
+cohort <- merge(cohort, admissions.tbl[, c('SUBJECT_ID', 'HADM_ID', 'DISCHTIME', 'ADMITTIME', 'LOS')], by=c('SUBJECT_ID', 'HADM_ID'))
+# Plot length of stay before removal
+fig <- ggplot(cohort, aes(x=LOS)) +
+  geom_histogram() + 
+  ggtitle('Length of Stay') + xlab('Days')
+print(fig)
+# Remove encounters where LOS falls outside bounds
+cohort <- cohort[cohort$LOS > 1 & cohort$LOS <= 45, ]
+cohorttemp <- cohort
+```
+
+#### Criteria 4: Patients 18 years or older 
+
+To select patients 18 or older, first we join the patients table and the admissions table to get the admissions ID and the date of birth. DOB is the date of birth of the given patient. All dates in the database have been shifted to protect patient confidentiality. Dates are internally consistent for the same patient, but randomly distributed in the future. Dates of birth which occur in the present time are not true dates of birth. Furthermore, dates of birth which occur before the year 1900 occur if the patient is older than 89. In these cases, the patient's age at their first admission has been fixed to 300 to obscure their age and comply with HIPAA. The shift process was as follows: the patient's age at their first admission was determined. The date of birth was then set to exactly 300 years before their first admission. Therefore, we also extract the first admission time so we can calculate the age of the patient at the time of first admission. Finally, we exclude those younger than 18 at the time of first admission.
+
+```{r message=F, warning=F}
+sql <- sprintf(
+       "SELECT admissions.HADM_ID as admissions_HADM_ID, admissions.ADMITTIME as admissions_ADMITTIME, patients.DOD as DOD, patients.DOD_HOSP as DOD_HOSP, patients.DOD_SSN as DOD_SSN, patients.DOB as patients_DOB
+        FROM [physionet-data.mimiciii_clinical.admissions] AS admissions
+        JOIN [physionet-data.mimiciii_clinical.patients] AS patients
+        ON admissions.subject_id = patients.subject_id
+        WHERE admissions.hadm_id IN (%s)",
+        paste(cohort$HADM_ID, collapse = ", "))
+age.tbl <- query_exec(sql, project=billing)
+age.tbl$age <- difftime(age.tbl$admissions_ADMITTIME, age.tbl$patients_DOB, units='days')
+age.tbl <- data.frame(age.tbl[, c('admissions_HADM_ID', 'age', 'DOD', 'DOD_HOSP', 'DOD_SSN')])
+colnames(age.tbl) <- c('HADM_ID', 'AGE', 'DOD', 'DOD_HOSP', 'DOD_SSN')
+cohort <- merge(cohort, age.tbl, by="HADM_ID")
+cohort$AGE <- as.numeric(cohort$AGE) / 365
+cohort <- cohort[cohort$AGE < 90 & cohort$AGE >= 18, ]
+# Plot length of stay before removal
+fig <- ggplot(cohort, aes(x=AGE)) +
+  geom_histogram() + 
+  ggtitle('Subject Age') + xlab('Years')
+print(fig)
+```
+
+### Data extraction
+
+```{r message=F, warning=F}
+pull.last.event <- function(hadm_id, itemcodes, return.fields, table, project, max_pages=Inf) {
+  sql <- sprintf("
+                 SELECT *
+                 FROM [physionet-data.mimiciii_clinical.%s] AS table1
+                 INNER JOIN (
+                   SELECT hadm_id, MAX(charttime), MAX(row_id)
+                   FROM [physionet-data.mimiciii_clinical.%s]
+                   WHERE itemid IN (%s)
+                   AND hadm_id IN (%s)
+                   GROUP BY hadm_id
+                 ) AS table2
+                 ON table1.row_id = table2.f1_",
+                 table, table, 
+                 paste(itemcodes, collapse=", "),
+                 paste(hadm_id, collapse=", ")
+  )
+  
+  data <- query_exec(sql, project=project, max_pages=max_pages)
+  colnames(data) <- gsub('table[0-9]_', '', colnames(data))
+  return(data[ , return.fields])
+}
+```
+
+#### Systolic Blood Pressure
+
+```{r message=F, warning=F}
+sbp.itemcodes <- c( 6, 51, 442, 3313, 3315, 3317, 3321, 3323, 3325, 6701, 228152, 224167, 227243, 220050, 220179, 225309 )
+return.fields <- c('SUBJECT_ID', 'HADM_ID', 'ITEMID', 'CHARTTIME', 'VALUENUM', 'VALUEUOM')
+data.sbp <- pull.last.event(cohort$HADM_ID, sbp.itemcodes, return.fields, 'chartevents', billing, max_pages=1)
+
+#disconnect from Google BigQuery
+dbDisconnect(con)
+```
+
+# Additional Applications
+
+There are several additional applications of RODBC that may be useful.
+
+## Cross-Data-Source Projects
+
+You can connect to multiple databases simultaneously and query from them at the same time in one project. You can thereby transfer data across platforms utilizing R as an intermediary.These databases include local databases, which can also be created through R.
+
+Here we demonstrate how we can create a local SQL Database in your RAM and connect to it at the same time as the UCSC Genome database. We will attempt to copy some data from the Genome database into the local database.
+
+```{r,warning=FALSE}
+#Create an ephemeral in-memory RSQLite database connect to it through RODBC
+# install.packages("RSQLite")
+#remove.packages("devtools")
+#install.packages("devtools", repos="http://cran.rstudio.com/", dependencies=TRUE)
+#remove.packages("RSQLite")
+#install.packages("RSQLite", repos="http://cran.rstudio.com/", dependencies=TRUE)
+#install.packages("rlang", repos="http://cran.rstudio.com/", dependencies=TRUE)
+#install.packages("usethis", repos="http://cran.rstudio.com/", dependencies=TRUE)
+library(devtools)
+library("RSQLite")
+library(RODBC)
+LocalConnection <- dbConnect(RSQLite::SQLite(), ":memory:")
+
+#Connect to UCSC Genome database
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+#Copy data from database into dataframe
+df_selected <- dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE class = \'Ambiguous\' AND owner = \'Yale\' limit 10')
+df_selected
+
+#Write dataframe into local database
+dbWriteTable(LocalConnection,"UCSC",df_selected)
+dbListTables(LocalConnection)
+dbGetQuery(LocalConnection,'select * from UCSC')
+
+#Disconnect and cleanup
+dbDisconnect(LocalConnection)
+dbDisconnect(ucscGenomeConn)
+```
+
+## JOINs, EXCEPT, INTERSECT
+
+Structured Query Language [`join`s are SQL instructions](https://en.wikipedia.org/wiki/Join_(SQL)) combining data from two or more datasets or relational tables. Let's examine the main differences between the different JOINs.
+
+ - Inner Join/Join
+    + Select all rows from both tables as long as the conditions are met.
+    + Similar to finding the intersection of two sets
+ - Left Join
+    + Select all rows in the first table and the matching rows in the second table.
+    + The size of the joined table has the same number of rows as the first table.
+ - Right Join
+    + Similar to Left Join, but all rows of the second tables are selected instead
+ - Full Join
+    + Select all rows from both tables
+    + Similar to finding the union of two sets.
+    
+We will also be demonstrating the EXCEPT and INTERSECT operators from the previous section:
+
+ - "EXCEPT" selects rows in one table that are not present in another table. 
+    + SELECT columnA FROM Table1 EXCEPT SELECT columnA FROM Table2
+
+ - "INTERSECT" selects rows that are present in both tables. 
+    + SELECT columnA FROM Table1 INTERSECT SELECT columnA FROM Table2
+    
+These will be demonstrated with the [pseudoYale60](https://hpcwebapps.cit.nih.gov/eyebrowse/cgi-bin/hgTables?db=mm9&hgta_group=genes&hgta_track=pseudoYale60&hgta_table=pseudoYale60) dataset here:
+
+```{r warning = FALSE}
+library("RSQLite")
+library(RODBC)
+LocalConnection <- dbConnect(RSQLite::SQLite(), ":memory:")
+
+#Connect to UCSC Genome database
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+#Copy data from database into local database. Since the two tables have been pre-matched, we delete some rows so that we can artificially create differences between the two tables' keys
+df_selected <- dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class limit 12345')
+dbWriteTable(LocalConnection,"Class",df_selected)
+df_selected <- dbGetQuery(ucscGenomeConn,'select * from pseudoYale60 limit 10000')
+dbWriteTable(LocalConnection,"Yale",df_selected)
+
+#Display columns of table 'Class'
+dbListFields(LocalConnection,'Class')
+#Display number of rows of table 'Class'
+nrow(dbGetQuery(LocalConnection,'select * from Class'))
+#Display columns of table 'Yale'
+dbListFields(LocalConnection,'Yale')
+#Display number of rows of table 'Yale'
+nrow(dbGetQuery(LocalConnection,'select * from Yale'))
+
+#Inner join the two tables on 'name' column
+InnerJoin <- dbGetQuery(LocalConnection, 'select Class.*, Yale.chrom, Yale.strand from Class INNER JOIN Yale on Class.name = Yale.name')
+#Display number of rows of the resulting table. It's smaller than both original tables
+nrow(InnerJoin)
+
+#Left join the two tables whereas the 'Class' tables is the left table on 'name' column
+LeftJoin <- dbGetQuery(LocalConnection, 'select Class.*, Yale.chrom, Yale.strand from Class LEFT JOIN Yale on Class.name = Yale.name')
+#Display number of rows of the resulting table. It's the same size as the left table 'Class'
+nrow(LeftJoin)
+
+#Left join the two tables whereas the 'Yale' tables is the left table on 'name' column
+LeftJoin <- dbGetQuery(LocalConnection, 'select Class.*, Yale.chrom, Yale.strand from Yale LEFT JOIN Class on Class.name = Yale.name')
+#Display number of rows of the resulting table. It's the same size as the left table 'Yale'
+nrow(LeftJoin)
+
+#Use except to select names from Yale that are not in Class
+EXCEPT1 <- dbGetQuery(LocalConnection, "select name from Yale except select name from Class")
+nrow(EXCEPT1)
+
+#Use except to select names from Class that are not in Yale
+EXCEPT2 <- dbGetQuery(LocalConnection, "select name from Class except select name from Yale")
+nrow(EXCEPT2)
+
+#Use intersect to select names that are in both Class and Yale
+INTERSECT <- dbGetQuery(LocalConnection, "select name from Yale intersect select name from Class")
+nrow(INTERSECT)
+
+#The number of rows in Yale that is not in Class and the number of rows in both Yale and Class add up to the total number of rows in Yale
+nrow(EXCEPT1)+nrow(INTERSECT)
+
+#The number of rows in Class that is not in Yale and the number of rows in both Yale and Class add up to the total number of rows in Class
+nrow(EXCEPT2)+nrow(INTERSECT)
+
+#As right join and Full Join are not supported on SQLite, we will display the syntax here and demonstrate later with BigQuery.
+#RightJoin <- dbGetQuery(LocalConnection, 'select Class.*, Yale.chrom, Yale.strand from Class RIGHT JOIN Yale on Class.name = Yale.name')
+#nrow(RightJoin)
+#FullJoin <- dbGetQuery(LocalConnection, 'select Class.*, Yale.chrom, Yale.strand from Class FULL JOIN Yale on Class.name = Yale.name')
+#nrow(FullJoin)
+
+#Disconnect and cleanup
+dbDisconnect(LocalConnection)
+dbDisconnect(ucscGenomeConn)
+```
+
+
+## Database Management with SQL  
+
+The access of the user on the database limits the types of queries one can send. However, when having administrator access, there are a few more important SQL clauses that are important to remember:
+
+ - "CREATE TABLE (...)" generates a new table and requires definition of the table's schema
+    + CREATE TABLE (...) AS SELECT * FROM (...) LIMIT 0 copies the schema of an existing table
+ - "INSERT INTO (...) SELECT (...) FROM (...)" takes data from one table and puts it into an existing table with known schema and structure. This requires the data to be inserted to have the same structure.
+    + "INSERT INTO (table_name) (column1, column2, column3, ...) VALUES (value1, value2, value3, ...) appends rows to table directly without selection from another table.
+ - "UPDATE(...)SET(...)" changes values in a table
+ - "ALTER TABLE (...) ADD/DROP/ALTER COLUMN (...)" changes the schema of a table
+ - "DROP TABLE (...)" removes a table and data within from a database
+
+These statements will be demonstrated below utilizing ephemeral local SQLite database, where initial data is copied from UCSC Genome database (similar to what we did earlier). Keep in mind that dbExecute() is needed for these administrator level commands.
+
+```{r,warning=FALSE}
+#Create an ephemeral in-memory RSQLite database connect to it through RODBC
+# install.packages("RSQLite")
+library("RSQLite")
+library(RODBC)
+LocalConnection <- dbConnect(RSQLite::SQLite(), ":memory:")
+
+#Connect to UCSC Genome database
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+
+#Copy data from database into dataframe
+df_selected <- dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE class = \'Ambiguous\' AND owner = \'Yale\' limit 10')
+
+#Write dataframe into local database
+dbWriteTable(LocalConnection,"UCSC",df_selected)
+dbListTables(LocalConnection)
+
+#Alternatively, creates a table UCSC_Insert that has the same schema as UCSC
+fb <- dbExecute(LocalConnection,'CREATE TABLE UCSC_Insert AS SELECT * FROM UCSC LIMIT 0')
+dbListTables(LocalConnection)
+dbListFields(LocalConnection,'UCSC_Insert')
+
+#Copy the table from table 'UCSC' into the new table UCSC_Insert.
+fb <- dbExecute(LocalConnection,'INSERT INTO UCSC_Insert SELECT * FROM UCSC LIMIT 4')
+dbGetQuery(LocalConnection,'SELECT * FROM UCSC_Insert')
+
+#Append a new row to table UCSC_Insert.
+fb <- dbExecute(LocalConnection,"INSERT INTO UCSC_Insert (name,class,owner) VALUES ('123','456','789')")
+dbGetQuery(LocalConnection,'SELECT * FROM UCSC_Insert')
+
+#Update one row of table UCSC_Insert's 'owner' column to be 'ELAY
+fb <- dbExecute(LocalConnection,"UPDATE UCSC_Insert SET owner = 'ELAY' WHERE name = 'PGOHUM00000232568'")
+dbGetQuery(LocalConnection,'SELECT * FROM UCSC_Insert')
+
+#change name of table UCSC_Insert to 'UCSC_Insert2'
+fb <- dbExecute(LocalConnection,"ALTER TABLE UCSC_Insert RENAME TO UCSC_Insert2")
+dbListTables(LocalConnection)
+
+#add new column to table UCSC_Insert2 named 'newOwner', with string as its datatype
+fb <- dbExecute(LocalConnection,"ALTER TABLE UCSC_Insert2 ADD COLUMN newOwner string")
+dbGetQuery(LocalConnection,'SELECT * FROM UCSC_Insert2')
+
+#remove table UCSC_Insert2
+fb <- dbExecute(LocalConnection,"DROP TABLE UCSC_Insert2")
+dbListTables(LocalConnection)
+
+#Disconnect and cleanup
+fb <- dbDisconnect(LocalConnection)
+fb <- dbDisconnect(ucscGenomeConn)
+```
+
+## Querying Automation
+
+As SQL doesn't have the power to automate its execution, R can be used as an automation tool as well as an user interface. User can write SQL in either R script as string or separate *.sql* files. R can then take the string or input file, parse them appropriately, then pass the SQL commands into databases one after another. This allows users to change SQL lines at one place while avoiding the risk of being able to fetch data only after the entire SQL command has been executed.
+
+Let's demonstrated this with an example.
+
+```{r, warning = FALSE}
+#Setup connections 
+#install.packages("RSQLite")
+library(devtools)
+library(RODBC)
+library("RSQLite")
+LocalConnection <- dbConnect(RSQLite::SQLite(), ":memory:")
+
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.soe.ucsc.edu')
+
+#and move relevant tables into an ephemeral in-memory SQLite database
+df_selected <- dbGetQuery(ucscGenomeConn,'select * from pseudoYale60Class WHERE class = \'Ambiguous\' AND owner = \'Yale\' limit 10')
+dbWriteTable(LocalConnection,"UCSC",df_selected)
+dbListTables(LocalConnection)
+
+#Keep all SQL Statements at one place
+#Here they are stored in string format in a vector, but you can Write them outside of the R Script in csv, txt, sql, or other formats, and take them in as input
+SQLString <- c("CREATE TABLE UCSC_Insert AS SELECT * FROM UCSC LIMIT 0",
+               "INSERT INTO UCSC_Insert SELECT * FROM UCSC LIMIT 4",
+               "INSERT INTO UCSC_Insert (name,class,owner) VALUES ('123','456','789')",
+               "UPDATE UCSC_Insert    owner = 'ELAY' WHERE name = 'PGOHUM00000232568'",
+               "ALTER TABLE UCSC_Insert RENAME TO UCSC_Insert2",
+               "ALTER TABLE UCSC_Insert2 ADD COLUMN newOwner string")
+
+#Use for-loop to automate the execution of these sql statements
+for (i in 1:length(SQLString)) {
+   possibleError <- tryCatch({fb <- dbExecute(LocalConnection,SQLString[i])},
+                             error = function(e) {print(c('error at SQL Line # ', i))}
+                             )
+ if(inherits(possibleError, "error")){
+    next
+  }
+}
+
+#Check the result of these statements
+dbListTables(LocalConnection)
+dbListFields(LocalConnection, 'UCSC_Insert2')
+
+#Store the data into a dataframe in R
+#Data can also be exported out of R in formats that you define
+result <- dbGetQuery(LocalConnection,'SELECT * FROM UCSC_Insert2')
+result
+
+#Disconnect and clean up
+fb <- dbDisconnect(LocalConnection)
+fb <- dbDisconnect(ucscGenomeConn)
+```
+
+In the codes above, we used a for-loop to execute the SQL commands. We used the try-catch function so that when an error occurs in execution, throw an error message and keep the remaining SQL codes running. This is especially useful if the dataset is large and the SQL commands don't depend on each other, then you can run a large dataset and multiple lines of SQL over a long period of time(e.g. overnight) without the concern of stopping in the middle.
+
+In the example above, we intentionally made the fourth line of SQL command wrong in syntax, and the try-catch function successfully detected this error and continued executing SQL commands after throwing the error message.
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

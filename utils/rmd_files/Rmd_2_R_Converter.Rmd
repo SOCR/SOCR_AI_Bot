@@ -1,0 +1,108 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Convert Rmd to R</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+      after_body: SOCR_footer_tracker.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+This section shows the process of converting Rmd to pure R by prefixing all markup text with comments (#) and removing the R *starting* and *ending* delimeters.
+
+Invocation protocol is:
+
+`rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\01_Introduction.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\01_Introduction.R")`
+
+```{r}
+rmd2rscript <- function(infile, outfile){
+  # read the file
+  flIn <- readLines(infile)
+  
+  # double-check
+  print(paste("Input File: ", infile, " Output File: ", outfile)) 
+  print(paste("Line 4: ", flIn[4]))
+  
+  print("identify the start of code blocks")
+  cdStrt <- which(grepl(flIn, pattern = "```{r*", perl = TRUE))
+  
+  print("identify the end of code blocks")
+  cdEnd <- sapply(cdStrt, function(x){
+    preidx <- which(grepl(flIn[-(1:x)], pattern = "```", perl = TRUE))[1]
+    return(preidx + x)
+  })
+  
+  print("define an expansion function")
+  print("strip code block indacators")
+  flIn[c(cdStrt, cdEnd)] <- ""
+  expFun <- function(strt, End){
+    strt <- strt+1
+    End <- End-1
+    return(strt:End)
+  }
+  
+  idx <- unlist(mapply(FUN = expFun, strt = cdStrt, End = cdEnd, 
+                SIMPLIFY = FALSE))
+  
+  print("add comments to all lines except code blocks")
+  comIdx <- 1:length(flIn)
+  comIdx <- comIdx[-idx]
+  for(i in comIdx){
+    flIn[i] <- paste("#' ", flIn[i], sep = "")
+  }
+  
+  print("create an output file")
+  nm <- strsplit(infile, split = "//.")[[1]][1]
+  flOut <- file(outfile, "w")
+  
+  for(i in 1:length(flIn)){
+    cat(flIn[i], "\n", file = flOut, sep = "\t")
+  }
+  
+  print(paste("Output File (", outfile, ") ", "Line 4: ", flIn[4]))
+  
+  close(flOut) 
+}
+```
+
+<!-- Run these commands in the R console (shell).... -->
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\01_Introduction.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\01_Introduction.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\02_Visualization.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\02_Visualization.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\03_LinearAlgebraMatrixComputingRegression.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\03_LinearAlgebraMatrixComputingRegression.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\04_DimensionalityReduction.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\04_DimensionalityReduction.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\05_SupervisedClassification.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\05_SupervisedClassification.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\06_ML_NN_SVM_RF_Class.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\06_ML_NN_SVM_RF_Class.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\07_NLP_TM_QualLearning_AprioriAssocRuleLearning.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\07_NLP_TM_QualLearning_AprioriAssocRuleLearning.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\08_Unsupervised_Clustering.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\08_Unsupervised_Clustering.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\09_ModelEvalImprovement.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\09_ModelEvalImprovement.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\10_SpecializedML_FormatsOptimization.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\10_SpecializedML_FormatsOptimization.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\11_FeatureSelection.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\11_FeatureSelection.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\12_LongitudinalDataAnalysis.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\12_LongitudinalDataAnalysis.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\13_FunctionOptimization.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\13_FunctionOptimization.R")
+
+rmd2rscript("C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\14_DeepLearning.Rmd", "C:\\Users\\dinov\\Desktop\\Ivo.dir\\Research\\UMichigan\\Publications_Books\\2023\\DSPA_Springer_2nd_Edition_2023\\Rmd_HTML\\R_code\\14_DeepLearning.R")
+

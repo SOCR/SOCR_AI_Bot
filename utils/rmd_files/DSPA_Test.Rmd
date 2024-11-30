@@ -1,0 +1,154 @@
+---
+title: "TEST Data Science and Predictive Analytics"
+subtitle: "<h2><u>Introduction</u></h2>"
+author: "<h3>Ivo Dinov</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    dev: svg
+
+output:
+  word_document:
+    toc: true
+    toc_depth: 2
+    dev: 'svg'
+
+# This Demo is just a DSPA to PDF, HTML, and DOCX Testing of *SVG* Dynamic Content!
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=8, fig.height=8, dev = 'svg') # set output device to svg
+```
+
+## Table test
+
+Statistical Software |             Advantages              | Disadvantages
+---------------------|-------------------------------------|--------------
+R	|	R is actively maintained ($\ge 100,000$ developers, $\ge 15K$ packages). Excellent connectivity to various types of data and other systems. Versatile for solving problems in many domains. It's free, open-source code. Anybody can access/review/extend the source code. R is very stable and reliable. If you change or redistribute the R source code, you have to make those changes available for anybody else to use. R runs anywhere (platform agnostic). Extensibility: R supports extensions, e.g., for data manipulation, statistical modeling, and graphics. Active and engaged community supports R. Unparalleled question-and-answer (Q&A) websites. R connects with other languages (Java/C/JavaScript/Python/Fortran) & database systems, and other programs, SAS, SPSS, etc. Other packages have add-ons to connect with R. SPSS has incorporated a link to R, and SAS has protocols to move data and graphics between the two packages.  | Mostly scripting language. Steeper learning curve
+SAS | Large datasets. Commonly used in business & Government  | Expensive. Somewhat dated programming language. Expensive/proprietary 
+Stata |  Easy statistical analyses  | Mostly classical stats
+SPSS  | Appropriate for beginners Simple interfaces | Weak in more cutting edge statistical procedures lacking in robust methods and survey methods
+
+There exist substantial differences between different types of computational environments for data wrangling, preprocessing, analytics, visualization and interpretation. The table below provides some rough comparisons between some of the most popular data computational platforms. With the exception of *ComputeTime*, higher scores represent better performance within the specific category. Note that these are just estimates and the scales are not normalized between categories. 
+
+Language  | OpenSource  | Speed  | ComputeTime  | LibraryExtent  | EaseOfEntry  | Costs  | Interoperability
+----------|-------------|--------|-----------|-------|-------|--------| -----
+Python  | Yes  | 16  | 62  | 80  | 85  | 10  | 90
+Julia  | Yes  | 2941  | 0.34  | 100  | 30  | 10  | 90
+R  | Yes  | 1  | 745  | 100  | 80  | 15  | 90
+IDL  | No  | 67  | 14.77  | 50  | 88  | 100  | 20
+Matlab  | No  | 147  | 6.8  | 75  | 95  | 100  | 20
+Scala  | Yes  | 1428  | 0.7  | 50  | 30  | 20  | 40
+C  | Yes  | 1818  | 0.55  | 100  | 30  | 10  | 99
+Fortran  | Yes  | 1315  | 0.76  | 95  | 25  | 15  | 95 
+
+### Link/Bullets tests
+
+ *	[UCLA Stats Software Comparison](http://stats.idre.ucla.edu/other/mult-pkg/whatstat/)
+ *	[Wikipedia Stats Software Comparison](https://en.wikipedia.org/wiki/Comparison_of_statistical_packages)
+ * [NASA Comparison of Python, Julia, R, Matlab and IDL](https://modelingguru.nasa.gov/docs/DOC-2625).
+
+
+## 2D SVG Graph
+
+```{r 2D_graph, eval=TRUE, warning=F, message=F, dev = "svg", dpi=300}    
+# engine='tikz', fig.ext = 'svg'
+# library(ggplot2)
+# library(reshape2)
+library(ggplot2)
+library(reshape2)
+library(plotly)
+
+rmarkdown::pandoc_version()
+
+Data_R_SAS_SPSS_Pubs <- 
+  read.csv('https://umich.instructure.com/files/2361245/download?download_frd=1', header=T)
+df <- data.frame(Data_R_SAS_SPSS_Pubs) 
+# convert to long format (http://www.cookbook-r.com/Manipulating_data/Converting_data_between_wide_and_long_format/) 
+# df <- melt(df ,  id.vars = 'Year', variable.name = 'Software') 
+# ggplot(data=df, aes(x=Year, y=value, color=Software, group = Software)) + 
+#   geom_line(size=4) + labs(x='Year', y='Paper Software Citations') +
+#   ggtitle("Manuscript Citations of Software Use (1995-2015)") +
+#   theme(legend.position=c(0.1,0.8), 
+#         legend.direction="vertical",
+#         axis.text.x = element_text(angle = 45, hjust = 1),
+#         plot.title = element_text(hjust = 0.5))
+
+plot_ly(df, x = ~Year)  %>%
+  add_trace(y = ~R, name = 'R', mode = 'lines+markers') %>%
+  add_trace(y = ~SAS, name = 'SAS', mode = 'lines+markers') %>%
+  add_trace(y = ~SPSS, name = 'SPSS', mode = 'lines+markers') %>% 
+  layout(title="Manuscript Citations of Software Use (1995-2015)", legend = list(orientation = 'h'))
+```
+
+
+## 2D SVG Image
+
+```{r 2D_image, message=F, error=F, warning=F, dpi=300}
+library(brainR)
+#load the sMRI data (same as in Problem 1)
+# 3D sMRI data: http://socr.umich.edu/HTML5/BrainViewer/data/ABIDE_MRI_MPRAGE_peds_defaced.nii.gz
+brainURL <- "http://socr.umich.edu/HTML5/BrainViewer/data/ABIDE_MRI_MPRAGE_peds_defaced.nii.gz"
+brainFile <- file.path(tempdir(), "ABIDE_MRI_MPRAGE_peds_defaced.nii.gz")
+download.file(brainURL, dest=brainFile, quiet=TRUE)
+brainVolume <- readNIfTI(brainFile, reorient=FALSE)
+
+brainVolDims <- dim(brainVolume); brainVolDims
+
+# get the mid-axial slice index
+midZ = brainVolDims[3] / 2; midZ
+
+# plot 2D sMRI slice
+image(brainVolume[,, midZ], asp=1, col = hcl.colors(12, "YlOrRd", rev = TRUE)) # Hot-metal
+```
+
+## 2.5D SVG Ortographic Plot
+
+```{r 2.5D_Ortho, message=F, error=F, warning=F, dpi=300}
+##### 3D   , fig.retina = 2
+## install.packages("cubelyr")
+orthographic(brainVolume, xyz=c(95,108,115))  # , zlim=range(brainVolume)*0.9) # 3D
+```
+
+## 3D SVG Scene
+
+(not rendered to reduce file-size!)
+
+```{r 3D_Scene, message=F, error=F, warning=F, fig.ext = 'svg'}
+library(cubelyr)
+library(dplyr)
+library(plotly)
+# subsample the large 3D volume
+smallBrainVolume <- brainVolume[
+  seq.int(from=1,to=dim(brainVolume)[1], length.out=dim(brainVolume)[1]/10), # X
+  seq.int(from=1,to=dim(brainVolume)[2], length.out=dim(brainVolume)[2]/10), # Y
+  seq.int(from=1,to=dim(brainVolume)[3], length.out=dim(brainVolume)[3]/10)] # Z
+
+# convert volume to 3D array with named dimensions, so we can use cubelyr::as.tbl_cube()
+dimnames(smallBrainVolume) <- list("X" = sprintf("%d", 1:dim(smallBrainVolume)[1]),
+  "Y" = sprintf("%d", 1:dim(smallBrainVolume)[2]),
+  "Z" = sprintf("%d", 1:dim(smallBrainVolume)[3]))
+brain3D_cube <- as.tbl_cube(smallBrainVolume)
+brain2D_df <- as_tibble(brain3D_cube)
+   
+plot_ly(data=brain2D_df, x=~X, y=~Y, z=~Z, color=~smallBrainVolume,
+        type="scatter3d", mode="markers", opacity=0.05, name=~paste0("Intensity=",smallBrainVolume)) %>%
+  layout(title="MRI Brain 3D Volume (coarse resolution)",
+         scene = list(xaxis=list(title="x"), yaxis=list(title="y"), zaxis=list(title="z"))) %>% hide_colorbar()
+```
+
+

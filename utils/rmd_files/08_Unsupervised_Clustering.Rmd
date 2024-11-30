@@ -1,0 +1,1276 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Unsupervised Clustering</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+# Unsupervised Clustering
+
+As we learned in [Chapters 3-6](https://dspa2.predictive.space), supervised regression and classification techniques facilitate explicit forecasting and prediction using prospective observations. However, these approaches typically require *a priori* human supervised class labels or predefined outcomes. In many situations, e.g., exploratory data analytics or open-ended study paradigms, such explicit outcomes may not be readily available, may not be desirable, or could require additional time and resources to define, derive, or generate.
+
+*Clustering* can help us conduct complex data-driven studies where automated segregation of participants, grouping of cases, or cohort clustering may be beneficial for capturing similar traits, characterizing common behaviors, or phenotype categorization of heterogeneous phenomena. Each derived group category can be subsequently interpreted in terms of the observed data features. Complementary to various confirmatory analytic methods used in supervised strategies for predicting specific outcomes, clustering may be used for exploratory data analytics and *unsupervised learning*.
+
+In this chapter, we will (1) present clustering as a machine learning task, (2) review the *silhouette* plots for assessing the reliability of clustering, (3) discuss the *k-Means* clustering algorithm and how to tune it, (4) show examples of several interesting case-studies, including Divorce and Consequences on Young Adults, Pediatric Trauma, and Youth Development, and (5) demonstrate hierarchical, spectral, and Gaussian mixture-model clustering approaches.
+    
+
+## ML Clustering
+
+As we mentioned earlier, clustering is a machine learning technique that bundles unlabeled cases and outcome-free data into distinct groups. Scatter plots we saw in previous chapters represent a simple visual illustration of the clustering process. Let's start with a simple [hotdogs example](https://wiki.socr.umich.edu/index.php/SOCR_012708_ID_Data_HotDogs). Assume we don't know much about the ingredients of frankfurters (hotdogs) and we look at the following graph.
+
+```{r echo=F, fig.height=7, fig.width=10, message=F, warning=F, error=FALSE}
+# install.packages("rvest")
+library(plotly)
+library(rvest)
+wiki_url <- read_html("https://wiki.socr.umich.edu/index.php/SOCR_012708_ID_Data_HotDogs")
+# html_nodes(wiki_url, "#content")
+hotdog <- html_table(html_nodes(wiki_url, "table")[[1]])
+# plot(hotdog$Calories, hotdog$Sodium, main = "Hotdogs", xlab="Calories", ylab="Sodium")
+# segments(120, 280, 120, 570, lty=2)
+# segments(120, 280, 30, 280, lty=2)
+# segments(120, 570, 30, 570, lty=2)
+# segments(125, 250, 125, 600, lty=2)
+# segments(125, 250, 165, 250, lty=2)
+# segments(165, 250, 165, 600, lty=2)
+# segments(125, 600, 165, 600, lty=2)
+# segments(170, 400, 170, 700, lty=2)
+# segments(170, 400, 250, 400, lty=2)
+# text(100, 220, "cluster 1")
+# text(140, 200, "cluster 2")
+# text(185, 350, "cluster 3")
+# # install.packages("calibrate")
+# # library(calibrate)
+
+modelLabels <- c('cluster 1', 'cluster 2', 'cluster 3')
+modelLabels.x <- c(100, 145, 185)
+modelLabels.y <- c(220, 200, 350)
+modelLabels.col <- c("blue", "red", "green")
+rect.x <- c(120, 80, 165, 125, 200, 170)
+rect.y <- c(130, 570, 250, 600, 400, 700)
+
+plot_ly(hotdog, x = ~Calories, y = ~Sodium,  type="scatter",
+        mode="markers", symbol = "na", symbols = "circle-open") %>%
+  layout(title="2D Hotdogs Scatterplot (Calories vs. Sodium)",
+         xaxis=list(title="Calories"),     # , scaleanchor="y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Sodium"),     # , scaleanchor  = "x"), 
+         legend = list(title=list(text='<b> Meat Type</b>'), orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, textangle=c(90,90,90),
+                            font=list(size=15, color=modelLabels.col), showarrow=FALSE),
+         shapes = list(   # draw the rectangular boxes
+               list(type="rect", fillcolor="lightblue", line=list(color="blue"), opacity=0.2,
+                    x0=rect.x[1], x1=rect.x[2], xref="x", y0=rect.y[1], y1=rect.y[2], yref="y"),
+               list(type="rect", fillcolor= "lightgreen", line=list(color="green"), opacity=0.2,
+                 x0=rect.x[3], x1=rect.x[4], xref="x", y0=rect.y[3], y1=rect.y[4], yref = "y"),
+               list(type="rect", fillcolor= "lightgray", line=list(color="orange"), opacity=0.2,
+                 x0=rect.x[5], x1=rect.x[6], xref="x", y0=rect.y[5], y1=rect.y[6], yref = "y"))
+         )
+```
+
+In terms of their *calories* and *sodium* content, these hotdogs appear to be separated into three different clusters. *Cluster 1* has hotdogs of low calories and medium sodium content; *Cluster 2* has both calorie and sodium at medium levels; *Cluster 3* has both sodium and calories at high levels. We can make a bold guess about the ingredients used in the hotdogs in these three clusters. For cluster 1, it could be mostly *chicken* meat since it has low calories. The second cluster might be *beef* and the third one is likely to be *pork*, because beef hotdogs have considerably less calories and salt than pork hotdogs. However, this is just guessing. Some hotdogs have a mixture of two or three types of meat. The real situation is resembling somewhat our initial guess, however with some random noise, especially in cluster 2.
+
+The following plot shows a more nuanced scatter of the primary type of meat used for each hotdog designated by color and glyph-symbol for meat-type.
+
+```{r echo=F, fig.height=7, fig.width=10, message=F, warning=F}
+# plot(hotdog$Calories, hotdog$Sodium)
+# text(hotdog$Calories, hotdog$Sodium, labels=hotdog$Type, pos=3)
+# 
+# library(ggplot2)
+# gg1_plot = ggplot(hotdog, aes(x=Calories, y=Sodium)) + geom_point(aes(color=Type, shape = Type, stroke = 5),alpha=1) + theme_bw(base_size=15) +
+# guides(colour = guide_legend(override.aes = list(size=5))) +
+# theme(legend.position="top")
+# gg1_plot
+
+plot_ly(hotdog, x = ~Calories, y = ~Sodium, color=~Type, type="scatter",
+        mode="markers", name=~Type, symbol=~Type, marker = list(size = 15)) %>%
+  layout(title="2D Hotdogs Scatterplot (Calories vs. Sodium)",
+         xaxis=list(title="Calories"),     # , scaleanchor="y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Sodium"),     # , scaleanchor  = "x"), 
+         legend = list(title=list(text='<b> Meat Type</b>'), orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, textangle=c(90,90,90),
+                            font=list(size=15, color=modelLabels.col), showarrow=FALSE),
+         shapes = list(   # draw the rectangular boxes
+               list(type="rect", fillcolor="lightblue", line=list(color="blue"), opacity=0.2,
+                    x0=rect.x[1], x1=rect.x[2], xref="x", y0=rect.y[1], y1=rect.y[2], yref="y"),
+               list(type="rect", fillcolor= "lightgreen", line=list(color="green"), opacity=0.2,
+                 x0=rect.x[3], x1=rect.x[4], xref="x", y0=rect.y[3], y1=rect.y[4], yref = "y"),
+               list(type="rect", fillcolor= "lightgray", line=list(color="orange"), opacity=0.2,
+                 x0=rect.x[5], x1=rect.x[6], xref="x", y0=rect.y[5], y1=rect.y[6], yref = "y"))
+         )
+```
+
+## Silhouette plots
+
+[Silhouette plots](https://en.wikipedia.org/wiki/Silhouette_(clustering)) represent graphical depictions of the individual data points and their corresponding cluster-wide silhouette values, which are useful for interpretation of the performance and validation of the consistency of various clustering algorithms. The silhouette value, $sil \in [-1,1]$, measures the similarity (cohesion) of a data point to its cluster relative to other clusters (separation). Silhouette plots rely on a distance metric, e.g., the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), [Manhattan distance](https://en.wikipedia.org/wiki/Manhattan_distance), [Minkowski distance](https://en.wikipedia.org/wiki/Minkowski_distance), etc. The qualitative mapping between silhouette values and their interpretations is summarized below.
+
+ - A high silhouette value suggests that the data matches its own cluster well.
+ - A clustering algorithm performs well when most Silhouette values are high.
+ - A low silhouette value indicates poor matching within the neighboring cluster. 
+ - Poor clustering may imply that the algorithm configuration may have too many or too few clusters.
+
+Suppose a clustering method groups all data points (objects), $\{X_i\}_i$, into $k$ clusters. For each object, we can define the following pair of similarity measures to track its within-cluster and between-cluster similarity.
+
+ - $d_i$ as the *average dissimilarity* of $X_i$ with all other data points within its cluster. internal dissimilarity $d_i$ captures the quality of the assignment of $X_i$ to its current class label. Smaller or larger $d_i$ values suggest better or worse overall assignment for $X_i$ to its cluster, respectively.  The average dissimilarity of $X_i$ to a cluster $C$ is the average distance between $X_i$ and all points in the cluster of points labeled $C$.
+ - $l_i$ as the *lowest average dissimilarity* of $X_i$ to any other cluster that $X_i$ is not a member of. The cluster corresponding to $l_i$, the lowest average dissimilarity, is called the $X_i$ **neighboring cluster**, as it is the next best fit cluster for $X_i$. 
+
+Then, the **silhouette** (value) of each object $X_i$ is defined by:
+
+$$-1 \leq s_i = \frac{l_i - d_i}{\max\{l_i,  d_i\}}
+\equiv \begin{cases}
+  1-\frac{d_i}{l_i}, & \mbox{if } d_i < l_i \\
+  0,  & \mbox{if } d_i = l_i \\
+  \frac{l_i}{d_i}-1, & \mbox{if } d_i > l_i \\
+\end{cases} \leq 1 .$$
+
+Note that:
+
+ - $-1\leq s_i \leq 1$,
+ - $s_i \longrightarrow 1$ when $d_i \ll l_i$, i.e., the dissimilarity of $X_i$ to its cluster $C$ is much lower relative to its dissimilarity to other clusters, indicating a good (cluster assignment) match. Thus, high Silhouette values imply the data is appropriately clustered.
+ - Conversely, $-1 \longleftarrow s_i$ when $l_i \ll d_i$, $d_i$ is large, implying a poor match of $X_i$ with its current cluster $C$, relative to neighboring clusters. $X_i$ may be more appropriately clustered in its neighboring cluster. 
+ - $s_i \sim 0$ means that the $X_i$ may lie on the border between two natural clusters.
+ 
+Cluster-wide silhouette values represent the overall averages of the corresponding point-based silhouette values for all members of each class.
+
+
+## The k-Means Clustering Algorithm
+
+The *K-means* algorithm is one of the most commonly used ML clustering algorithms. It has resemblance to the familiar *k-nearest neighbors (kNN)* presented in [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html). The distinction is that in clustering, we don't have a priori pre-determined labels, and the k-means algorithm is trying to deduce the missing intrinsic groupings in the data.
+
+Similar to kNN, most of the times, k-means relies on the Euclidean distance ($|\cdot |_2$ norm), however Manhattan distance ($|\cdot |_1$ norm), the more general Minkowski distance ($(\sum_{i=1}^n{|p_i - q_i|^c})^{\frac{1}{c}}$), Mahalanobis distance (for $x,y\in \mathbb{R}$ and a given a nonsingular covariance matrix $S$, $d(x,y)={\sqrt {(x-y)^t S^{-1}(x-y)}}$), or other distance functions may also be used. For $c=2$, the Minkowski distance represents the classical Euclidean distance, which is commonly used in k-means clustering
+
+$$dist(x, y)=\sqrt{\sum_{n=1}^n(x_i-y_i)^2}.$$
+
+### Pseudocode
+
+Given a specific distance function, we can group neighbors of observations into separate clusters according to their paired distances. Suppose we are trying to use k-means clustering to group a set of observations $\{x_1, x_2, \cdots, x_n\},\ x_i\in\mathbb{R}^d$, into $k\leq n$ classes $S = \{S_1, S_2, \cdots, S_k\}$. Effectively, the algorithm aims to *minimize* the within-cluster sum of squares, i.e., enforce lower intraclass variance. Let $\mu_i$ be the mean of all points in the group $S_i$. Then the k-means optimizes the following objective function
+
+$$\arg\min_{S} {\sum_{i=1}^{k} \sum_{x \in S_i} {|x - \mu_i |^2}}=
+\arg\min_{S} {\sum_{i=1}^{k}|S_i| Var(S_i)} \approx
+\arg\min_{S} {\sum_{i=1}^k {\frac{1}{|S_{i}|} \sum_{x,y \in S_i} { |x-y|^2}}}.$$
+
+Since, $|S_i|\sum_{x \in S_i} {|x -\mu_i|^2 =\sum_{x \neq y \in S_i} |x - y|^2}$, the left and right hand side optimization problems yield equivalent solutions. Also, as the total variance remains unchanged, this *within-group minimization* problem is equivalent to a corresponding *between clusters (dual) maximization* problem involving the sum squared deviations *between* points in different clusters. 
+
+The **k-means protocol** is as follows:
+
+ - *Initiation*: First, define *k* points as cluster centers. Often these points are *k* random points from the dataset. For example, if *k=3* we choose 3 random points in the dataset as cluster centers.
+ - *Assignment*: Second, determine the maximum extent of the cluster boundaries by computing the distances between each point and the current cluster centers. For each point, we assign the cluster label based on its shortest distance to a cluster center. Now the data are separated into *k* initial clusters.  The assignment of each observation to a cluster is based on computing the least within-cluster sum of squares (i.e., dissimilarities) according to the chosen distance. Mathematically, this is equivalent to [Voronoi tessellation](https://en.wikipedia.org/wiki/Centroidal_Voronoi_tessellation) of the space of the observations according to their mean distances. Voronoi partitioning of the observations can be accomplished by assigning each point $x_p$ to a single class $S^{(t)}$, where at each iteration $i$, $m_i^{(t)}$ denotes the group means of $S_i^{(t)}$.
+
+$$S_i^{(t)}=\left\{x_p : \left \|x_p-m_i^{(t)}\right \|^2\leq \left \|x_p-m_j^{(t)}\right \|^2,\ 1\leq j\leq k\right\}.$$
+
+ - *Update*: Third, update the centers of the current clusters to the new *means* of all points in the current cluster vicinity (based on the shortest distances from current centroid locations). This updating phase is the essence of the *k-means* algorithm. The updating step recomputes the new centroids for each cluster using
+
+$$m_i^{(t+1)} = \frac{1}{|S_i^{(t)}|}\sum_{x_j\in S_i^{(t)}} {x_j}.$$
+
+Although there is no guarantee that the *k-means* algorithm converges to a global optimum, in practice, the algorithm tends to converge, i.e., the assignments of objects into groups stabilizes to a local minimum represented by one of only a finite number of such Voronoi partitionings. The following [SOCR 2D Interactive Voronoi Tessellation App](https://socr.umich.edu/HTML5/others/Voronoi_App/) provides an interactive demonstration of this iterative parcellation process where we can use parameters to manually control the dynamics of the iterative process.
+
+### Choosing the appropriate number of clusters
+
+In principle, neither a large nor a small number of clusters are desirable. If the number of clusters is too large, the induced object grouping may be too specific to be meaningfully interpreted. On the other hand, having too few groups might be overly broad or excessively general to be useful. As we mentioned in [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html), $k=\sqrt{\frac{n}{2}}$ may be a good place to start. However, it might generate too many cluster groups. 
+
+Again, the elbow method may be used to determine the relationship between the number of clusters $k$ and the homogeneity of the observations within each cluster.
+
+Graphing the within-group homogeneity against $k$ identifies if there exists a clearly defined "elbow point" suggesting a minimum number $k$ corresponding to relatively large within-group homogeneity.
+
+```{r echo=T, fig.width=7, fig.height=6, message=F, warning=F}
+library(graphics)
+x <- c(30, 200, 500, 1096.663, 3000, 5000, 7000, 10000)
+y <- function(x){
+  y=log(x)
+}
+# curve(log(x), 30, 10000, xlab="k", ylab="Within-group Homogeneity", axes=F, main="Elbow Method")
+# Axis(side=1, at=c(0, 2000, 4000, 6000, 8000, 10000), labels = c(rep("", 6)))
+# Axis(side=2, at=4:9, labels = c(rep("", 6)))
+# points(x, y(x))
+# text(1000, 8, "elbow point")
+# segments(1096.663, 7.3, 1000, 7.7)
+
+elbowAnnot <- list(x = x[4], y = y(x[4]), text = "Elbow Point", xref = "x", yref = "y",
+                   showarrow = TRUE, arrowhead = 1)
+plot_ly(x = ~x, y = ~y(x), type = 'scatter', mode = 'markers+lines', marker=list(size=15)) %>%
+    # add_annotation(x=1, y=7, text="Elbow Point", showarrow=True, arrowhead=1) %>%
+    layout(title="Elbow Method", annotations = elbowAnnot,
+           xaxis=list(title="Number of clusters (k)"),
+           yaxis = list(title="Within-group Homogeneity"))
+```
+
+This graph shows that homogeneity barely increases above the "elbow point". There are various ways to measure homogeneity within a cluster. Further details about these choices are provided in this paper [On clustering validation techniques, Journal of Intelligent Information Systems Vol. 17, pp. 107-145, by M. Halkidi, Y. Batistakis, and M. Vazirgiannis (2001)](http://dx.doi.org/10.1023/A:1012801612483).
+
+Let's try to develop a new method `drawElbowGraph()` that automatically identifies an optimal *elbow* point and determines an appropriate value for the number of clusters $k$.
+
+```{r echo=T, fig.width=7, fig.height=6, message=F, warning=F, error=F}
+# Estimate Elbow point
+estimateElbowPoint <- function(xValues, yValues) {
+  # Determine the extreme values to create line
+  max_x_x <- max(xValues)
+  max_x_y <- yValues[which.max(xValues)]
+  max_y_y <- min(yValues)
+  max_y_x <- xValues[which.min(yValues)]
+  max_df  <- data.frame(x = c(max_y_x, max_x_x), y = c(max_y_y, max_x_y))
+  
+  # Create a straight line between the extreme values
+  fit <- lm(max_df$y ~ max_df$x)
+  
+  # compute Euclidean Distance from point to line
+  distances <- c()
+  for(i in 1:length(xValues)) {
+    distances <- c(distances, 
+                   abs(coef(fit)[2]*xValues[i] - yValues[i] + coef(fit)[1]) / sqrt(coef(fit)[2]^2 + 1^2))
+  }
+  
+  # Determine the Max distance point
+  x_max_dist <- xValues[which.max(distances)]
+  y_max_dist <- yValues[which.max(distances)]
+  
+  return(c(x_max_dist, y_max_dist, max(distances)))
+}
+
+# Define elbow-drawing function
+# https://en.wikibooks.org/wiki/Linear_Algebra/Orthogonal_Projection_Onto_a_Line 
+# https://en.wikipedia.org/wiki/Vector_projection
+drawElbowGraph <- function(x_K_clusters, y_WGH_values) {
+  nbValues = length(y_WGH_values)
+  extremes_lineSlope = (y_WGH_values[nbValues] - y_WGH_values[1]) / (x_K_clusters[nbValues] - x_K_clusters[1])
+  extremes_orth_lineSlope = -1 / extremes_lineSlope
+  elbowPoint_orth_proj = c(elbowPoint[1] + elbowPoint[3]/2, 
+                           elbowPoint[2] + extremes_orth_lineSlope * (elbowPoint[3]/2))
+  e1 = c(x_K_clusters[nbValues]-x_K_clusters[1], y_WGH_values[nbValues]-y_WGH_values[1])  # bottom-left (origin) point
+  e2 = c(elbowPoint[1]-x_K_clusters[1], elbowPoint[2]-y_WGH_values[1]) # elbow point, e2
+  p = ((e1 %*% e2)[1,1]/(e1 %*% e1)[1,1]) * e1 + c(x_K_clusters[1], y_WGH_values[1]); p  # Projection point
+  distP <- e2-p
+  dist <- sqrt((distP %*% distP)[1,1])
+  distLabel <- (e2+p)/2 + c(100, 2)
+    
+  # plot(x_K_clusters, y_WGH_values, type="b", main='Within-Group Homogeneity (WGH) vs. number of clusters (k)', 
+  #      xlab = 'k', ylab = 'WGH Value')
+  # lines(x=c(x_K_clusters[1], x_K_clusters[nbValues]), y=c(y_WGH_values[1], y_WGH_values[nbValues]), 
+  #       type="b", col='green')
+  # lines(x=c(elbowPoint[1], p[1]), y=c(elbowPoint[2], p[2]), type="b", col='red')
+
+  plot_ly(x = ~x_K_clusters, y = ~y_WGH_values, type="scatter", mode = "markers+lines", name="Data") %>%
+    add_lines(x = c(x_K_clusters[1], x_K_clusters[nbValues]), name="reference", 
+              y = c(y_WGH_values[1], y_WGH_values[nbValues]), type = 'scatter', mode = 'lines') %>%
+    add_lines(x = c(elbowPoint[1], p[1]), y = c(elbowPoint[2], p[2]), type = 'scatter', 
+              name="Max Distance (Elbow)", mode = 'lines') %>%
+    layout(title='Within-Group Homogeneity (WGH) vs. number of clusters (k)',
+           xaxis = list(title="k"), # scaleanchor="y"),
+           yaxis = list(title="WGH Value"), #, scaleanchor="x"))
+           legend = list(orientation = 'h'),
+           annotations = list(text=paste0("MaxDist=", round(dist, 3)),  
+                   x=distLabel[1], y=distLabel[2], textangle=0, showarrow=T,
+                   xref = "x", yref = "y", ax = 80, ay = -40))
+}
+
+# Test the function: drawElbowGraph()
+x <- c(30, 200, 500, 1096.663, 3000, 5000, 7000, 10000)
+y <- function(x){
+  return (log(x))
+}
+
+elbowPoint = estimateElbowPoint(xValues = x, yValues = y(x))
+ 
+drawElbowGraph(x_K_clusters=x, y_WGH_values=y(x))
+```
+
+**Note**: Recall that the [projection of a point $\vec{P}$ onto a line $\vec{l}$](https://en.wikipedia.org/wiki/Vector_projection) is defined as the vector $\vec{Q}=\frac{\langle \vec{P} | \vec{l} \rangle }{\langle \vec{l} | \vec{l} \rangle }\vec{l}$. In the graph above the *max-distance* is the length $||\vec{Q}||$ and $\vec{Q} \perp \vec{l}$. However, since the scales of the horizontal and vertical axes are different, $\vec{Q}$ *appears* to be a vertical line (it's not!) and it represents the max-distance between the blue curve to the reference orange line.
+
+
+### Case Study 1: Divorce and Consequences on Young Adults
+
+*Step 1 - collecting data*
+
+This example uses the [Divorce and Consequences on Young Adults dataset](https://umich.instructure.com/files/399121/download?download_frd=1). This is a longitudinal study focused on examining the consequences of recent parental divorce for young adults (initially ages 18-23) whose parents had divorced within 15 months of the study's first wave (1990-91). The sample consisted of 257 White respondents with newly divorced parents. Here we have a subset of this dataset with 47 respondents in [our case-studies folder, CaseStudy01_Divorce_YoungAdults_Data.csv](https://umich.instructure.com/courses/38100/files/folder/Case_Studies).
+
+The features in the data include:
+
+ - **DIVYEAR**: Year in which parents were divorced.  Dichotomous variable with 1989 and 1990 
+ - **Child affective relations**: 
+    + Momint: Mother intimacy.  Interval level data with 4 possible responses (1-extremely close, 2-quite close, 3-fairly close, 4- not close at all) 
+    + Dadint: Father intimacy. Interval level data with 4 possible responses (1-extremely close, 2-quite close, 3-fairly close, 4-not close at all) 
+    + Live with mom: Polytomous variable with 3 categories (1- mother only, 2- father only, 3- both parents) 
+ - **momclose**: measure of how close the child is to the mother (1-extremely close, 2-quite close, 3-fairly close, 4- not close at all).
+ - **Depression**: Interval level data regarding feelings of depression in the past 4 weeks.  Possible responses are 1-often, 2-sometimes, 3-hardly ever, 4-never 
+ - **Gethitched**: Polytomous variable with 4 possible categories indicating respondent's plan for marriage (1-Marry fairly soon, 2-marry sometime, 3-never marry, 8-don't know)
+
+*Step 2 - exploring and preparing the data*
+
+Let's load the dataset and report a summary of all variables.
+
+```{r eval=T, message=F, warning=F}
+divorce<-read.csv("https://umich.instructure.com/files/399118/download?download_frd=1")
+summary(divorce)
+```
+
+According to the summary, DIVYEAR is actually a dummy variable (either 89 or 90). We can re-code (binarize) the DIVYEAR using the `ifelse()` function (mentioned in [Chapter 7](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/07_NaiveBayesianClass.html)). The following line of code generates a new indicator variable for *divorce year=1990*.
+
+```{r eval=T}
+divorce$DIVYEAR<-ifelse(divorce$DIVYEAR==89, 0, 1)
+```
+
+We also need another preprocessing step to deal with `livewithmom`, which has missing values, `livewithmom=9`. We can impute these using `momint` and `dadint` variables for each specific participant.
+
+```{r eval=T}
+table(divorce$livewithmom)
+divorce[divorce$livewithmom==9, ]
+```
+
+For instance, respondents that feel much closer to their dads may be assigned `divorce$livewithmom==2`, suggesting they most likely live with their fathers. Of course, alternative imputation strategies are also possible.
+
+```{r eval=T}
+divorce[45, 6]<-2
+divorce[45, ]
+```
+
+*Step 3 - training a model on the data*
+
+The function `kmeans()` provides one interface to the *k-means* clustering method using the following invocation syntax.
+
+`myclusters <- kmeans(mydata, k)`
+
+ - *mydata*: dataset in a matrix form.
+ - *k*: number of clusters we want to create.
+
+The *output* consists of:
+
+ - *myclusters$cluster*: vector indicating the cluster number for every observation.
+ - *myclusters$center*: a matrix showing the mean feature values for every center.
+ - *mycluster$size*: a table showing how many observations are assigned to each cluster.
+
+Before we perform clustering, we need to standardize the features to avoid biasing the clustering based on features that use large-scale values. Note that distance calculations are sensitive to measuring units. The method `as.data.frame()` converts the dataset into a data frame allowing us subsequently to use a combination of `lapply()` and `scale()` to standardize the data.
+
+```{r eval=T}
+di_z <- as.data.frame(lapply(divorce, scale))
+str(di_z)
+```
+
+The resulting dataset, `di_z`, is standardized so all features are unitless and follow approximately standardized normal distribution.
+
+Next, we need to think about selecting a proper $k$. We have a relatively small dataset with 47 observations. Obviously we cannot have a $k$ as large as 10. The rule of thumb suggests $k=\sqrt{47/2}=4.8$. This would be relatively large also because we may expect less than 10 observations for each cluster and it is very likely that some clusters may only have a one observation. A better choice may be 3. Let's see if this will work.
+
+```{r eval=T}
+library(stats)
+set.seed(12345)
+diz_clussters<-kmeans(di_z, 3)
+```
+
+*Step 4 - evaluating model performance*
+
+Let's look at the clusters created by the *k-means* model.
+
+```{r eval=T}
+diz_clussters$size
+```
+
+At first glance, it seems that 3 worked well for the number of clusters. We don't have any cluster that contains a small number of observations. The three clusters have a relatively equal number of respondents.
+
+*Silhouette* plots represent the most appropriate evaluation strategy to assess the quality of the clustering. Silhouette values are between -1 and 1. In our case, two data points correspond to negative Silhouette values, suggesting these cases may be "mis-clustered", or perhaps are ambiguous as the Silhouette value is close to 0. We can observe that the average Silhouette is reasonable, about $0.2$.
+
+```{r message=F, warning=F}
+library(cluster)
+library(plotly)
+dis = dist(di_z)
+sil = silhouette(diz_clussters$cluster, dis)
+summary(sil)
+plot(sil, col=c(1:length(diz_clussters$size)))
+ggplotly(factoextra::fviz_silhouette(sil, label=T, palette = "jco"))
+```
+
+The next step would be to interpret the clusters in the context of this social study.
+
+```{r eval=T}
+diz_clussters$centers
+```
+
+These results facilitate interpretation of the underlying factors associated with the derived 3-cluster labels. For instance, cluster 1 corresponds to divyear=mostly 90, momint=very close, dadint=not close, livewithmom=mostly mother, depression=not often, (gethiched) marry=will likely not get married. Cluster 1 represents mostly adolescents that are closer to mom than dad. These young adults do not often feel depressed and they may avoid getting married. These young adults tend to not be too emotional and do not value family. We can see that these three different clusters appear to contain three complementary types of young adults. Bar plots also provide an alternative strategy to visualize the difference between clusters.
+
+```{r eval=T}
+# par(mfrow=c(1, 1), mar=c(4, 4, 4, 2))
+# myColors <- c("darkblue", "red", "green", "brown", "pink", "purple", "yellow")
+# barplot(t(diz_clussters$centers), beside = TRUE, xlab="cluster", 
+# ylab="value", col = myColors)
+# legend("top", ncol=2, legend = c("DIVYEAR", "momint", "dadint", "momclose", "depression", "livewithmom", "gethitched"), fill = myColors)
+
+df <- as.data.frame(t(diz_clussters$centers))
+rowNames <- rownames(df)
+colnames(df) <- paste0("Cluster",c(1:3))
+plot_ly(df, x = rownames(df), y = ~Cluster1, type = 'bar', name = 'Cluster1') %>% 
+  add_trace(y = ~Cluster2, name = 'Cluster2') %>% 
+  add_trace(y = ~Cluster3, name = 'Cluster3') %>% 
+  layout(title="Explicating Derived Cluster Labels",
+         yaxis = list(title = 'Cluster Centers'), barmode = 'group')
+```
+
+For each of the three clusters, the bars in the plot above represent the following order of features `DIVYEAR, momint, dadint, momclose, depression, livewithmom, gethitched`.
+
+*Step 5 - usage of cluster information*
+
+Clustering results could be utilized as new information augmenting the original dataset. For instance, we can add a *cluster* label in our `divorce` dataset:
+
+```{r eval=T}
+divorce$clusters<-diz_clussters$cluster
+divorce[1:5, ]
+```
+
+We can also examine the relationship between living with mom and feel close to mom by displaying a scatter plot of these two variables. If we suspect that young adults' personality might affect this relationship, then we could consider the potential personality (cluster type) in the plot. The cluster labels associated with each participant are printed in different positions relative to each pair of observations, `(livewithmom, momint)`.
+
+```{r eval=T, message=F, warning=F}
+# require(ggplot2)
+# ggplot(divorce, aes(livewithmom, momint), main="Scatterplot Live with mom vs feel close to mom") +
+#   geom_point(aes(colour = factor(clusters), shape=factor(clusters), stroke = 8), alpha=1) + 
+#   theme_bw(base_size=25) +
+#   geom_text(aes(label=ifelse(clusters%in%1, as.character(clusters), ''), hjust=2, vjust=2, colour = factor(clusters)))+
+#   geom_text(aes(label=ifelse(clusters%in%2, as.character(clusters), ''), hjust=-2, vjust=2, colour = factor(clusters)))+
+#   geom_text(aes(label=ifelse(clusters%in%3, as.character(clusters), ''), hjust=2, vjust=-1, colour = factor(clusters))) + 
+#   guides(colour = guide_legend(override.aes = list(size=8))) +
+# theme(legend.position="top")
+
+clusterNames <- paste0("Cluster ", divorce$clusters)
+plot_ly(data = divorce, x = ~livewithmom, y = ~momint, type="scatter", mode="markers",
+        color = ~clusters, marker = list(size = 30), name=clusterNames) %>%
+  hide_colorbar()
+```
+
+We can either use `plot_ly()`, as we showed above, or use the `ggplot2::ggplot()` function to label points with cluster types. In `plot_ly`, we use name and color to stratify the clusters, whereas using `ggplot(divorce, aes(livewithmom, momint))+geom_point()` uses *aesthetics* (`aes`) to draw the scatter plot where the `geom_text()` function helps us label the points with their corresponding cluster identifiers.
+
+This plot shows that living with mom does not necessarily mean young adults will feel close to mom. For "emotional" (cluster 1) young adults, they felt close to their mom whether they live with their mom or not. "Naive" (cluster 2) young adults feel closer to mom if they live with mom. However, they tend to be estranged from their mother. "Independent" (cluster 3) young adults are opposite to cluster 1. They felt closer to mom if they didn't live with her. 
+
+### Model improvement
+
+Let's still use the divorce data to illustrate a model improvement using **k-means++**.
+
+(Appropriate) initialization of the **k-means** algorithm is of paramount importance. The **k-means++** extension provides a practical strategy to obtain an optimal initialization for k-means clustering using a predefined `kpp_init` method.
+
+```{r}
+# install.packages("matrixStats")
+library(matrixStats)
+kpp_init = function(dat, K) {
+  x = as.matrix(dat)
+  n = nrow(x)
+  # Randomly choose a first center
+  centers = matrix(NA, nrow=K, ncol=ncol(x))
+  # set.seed(123)
+  centers[1,] = as.matrix(x[sample(1:n, 1),])
+  for (k in 2:K) {
+    # Calculate dist^2 to closest center for each point
+    dists = matrix(NA, nrow=n, ncol=k-1)
+    for (j in 1:(k-1)) {
+      temp = sweep(x, 2, centers[j,], '-')
+      dists[,j] = rowSums(temp^2)
+    }
+    dists = rowMins(dists)
+    # Draw next center with probability proportional to dist^2
+    cumdists = cumsum(dists)
+    prop = runif(1, min=0, max=cumdists[n])
+    centers[k,] = as.matrix(x[min(which(cumdists > prop)),])
+  }
+  return(centers)
+}
+set.seed(12345)
+clust_kpp = kmeans(di_z, kpp_init(di_z, 3), iter.max=200, algorithm='Hartigan-Wong')
+```
+
+We can observe some differences.
+
+```{r}
+clust_kpp$centers
+```
+
+This improvement is not substantial - the new overall average Silhouette value remains $0.2$ for **k-means++**, compared with the value of $0.2$ reported for the earlier k-means clustering, albeit the 3 groups generated by each method are quite distinct. In addition, the number of "mis-clustered" instances remains 2 although their Silhouette values are rather smaller than before and the overall cluster 1 Silhouette average value is low ($0.006$).
+
+```{r}
+sil2 = silhouette(clust_kpp$cluster, dis)
+summary(sil2)
+plot(sil2, col=1:length(diz_clussters$size), border=NA)
+ggplotly(factoextra::fviz_silhouette(sil2, label=T, palette = "jco"))
+```
+
+#### Tuning the hyperparameter $k$
+
+Similar to what we performed for KNN and SVM, we can tune the **k-means** parameters, including centers initialization and $k$.
+
+```{r}
+n_rows <- 21
+mat = matrix(0,nrow = n_rows)
+for (i in 2:n_rows){
+  set.seed(321)
+  clust_kpp = kmeans(di_z, kpp_init(di_z, i), iter.max=100, algorithm='Lloyd')
+  sil = silhouette(clust_kpp$cluster, dis)
+  mat[i] = mean(as.matrix(sil)[,3])
+}
+colnames(mat) <- c("Avg_Silhouette_Value")
+mat
+# ggplot(data.frame(k=2:n_rows,sil=mat[2:n_rows]),aes(x=k,y=sil))+
+#   geom_line()+
+#   scale_x_continuous(breaks = 2:n_rows)
+
+df <- data.frame(k=2:n_rows,sil=mat[2:n_rows])
+plot_ly(df, x = ~k, y = ~sil, type = 'scatter', mode = 'lines', name='Silhouette') %>%
+  layout(title="Average Silhouette Graph")
+```
+
+This suggests that k=2 or 8 may be appropriate numbers of clusters to use in this case.
+We can also experiment with other parameter settings, e.g., set the maximal iteration of the algorithm and rerun the model with optimal values of the hyperparameter k=2 or k=8. 
+ 
+
+```{r}
+k <- 8
+set.seed(31)
+clust_kpp = kmeans(di_z, kpp_init(di_z, k), iter.max=200, algorithm="MacQueen")
+sil3 = silhouette(clust_kpp$cluster, dis)
+summary(sil3)
+plot(sil3, col=1:length(clust_kpp$size))
+```
+
+
+### Case study 2: Pediatric Trauma
+
+The next example demonstrates the use of the *k-means* clustering method on a larger dataset of trauma-exposed children.
+
+*Step 1 - collecting data*
+
+The dataset we will interrogate now includes [Services Utilization by Trauma-Exposed Children in the US data](https://umich.instructure.com/files/399127/download?download_frd=1), which is located in [our case-studies folder](https://umich.instructure.com/courses/38100/files/folder/Case_Studies). This case study examines associations between post-traumatic psychopathology and service utilization by trauma-exposed children. 
+
+The variables in this dataset include:
+
+ - **id**: Case identification number.
+ - **sex**: Female or male, dichotomous variable (1= female, 0= male).
+ - **age**: Age of child at time of seeking treatment services. Interval-level variable, score range= 0-18.
+ - **race**: Race of child seeking treatment services. Polytomous variable with 4 categories (1= black, 2= white, 3= hispanic, 4= other).
+ - **cmt**: The child was exposed to child maltreatment trauma - dichotomous variable (1= yes, 0= no).
+ - **traumatype**: Type of trauma exposure the child is seeking treatment sore. Polytomous variable with 5 categories ("sexabuse"= sexual abuse, "physabuse"= physical abuse, "neglect"= neglect, "psychabuse"= psychological or emotional abuse, "dvexp"= exposure to domestic violence or intimate partner violence).
+ - **ptsd**: The child has current post-traumatic stress disorder. Dichotomous variable (1= yes, 0= no).
+ - **dissoc**: The child currently has a dissociative disorder (PTSD dissociative subtype, DESNOS, DDNOS). Interval-level variable, score range= 0-11.
+ - **service**: Number of services the child has utilized in the past 6 months, including primary care, emergency room, outpatient therapy, outpatient psychiatrist, inpatient admission, case management, in-home counseling, group home, foster care, treatment foster care, therapeutic recreation or mentor, department of social services, residential treatment center, school counselor, special classes or school, detention center or jail, probation officer. Interval-level variable, score range= 0-19.
+
+**Note**: These data (`Case_04_ChildTrauma._Data.csv`) are tab-delimited.
+
+*Step 2 - exploring and preparing the data*
+
+First, we need to load the dataset into R and report its summary and dimensions.
+
+```{r eval=T, message=F, warning=F}
+trauma<-read.csv("https://umich.instructure.com/files/399129/download?download_frd=1", sep = " ")
+summary(trauma); dim(trauma)
+```
+
+In the summary we see two factors - `race` and `traumatype`. `Traumatype` codes the real classes we are interested in. If the clusters created by the model are quite similar to the trauma types, our model may have a quite reasonable interpretation. Let's also create a dummy variable for each racial category.
+
+```{r eval=T}
+trauma$black<-ifelse(trauma$race=="black", 1, 0)
+trauma$hispanic<-ifelse(trauma$race=="hispanic", 1, 0)
+trauma$other<-ifelse(trauma$race=="other", 1, 0)
+trauma$white<-ifelse(trauma$race=="white", 1, 0)
+```
+
+Then, we will remove the (outcome-type) class variable, `traumatype`, from the dataset to avoid biasing the clustering algorithm. Thus, we are simulating a real biomedical case-study where we do not necessarily have the actual class information available, i.e., classes are latent features. 
+
+```{r eval=T}
+trauma_notype<-trauma[, -c(1, 5, 6)]
+```
+
+*Step 3 - training a model on the data*
+
+Similar to case-study 1, let's standardize the dataset and fit a k-means model.
+
+```{r eval=T}
+tr_z <- as.data.frame(lapply(trauma_notype, scale))
+str(tr_z)
+set.seed(1234)
+trauma_clusters <- kmeans(tr_z, 5)
+```
+
+Here we use *k=5* in the hope that we have similar 5 clusters that match the 5 trauma types. In this case study, we have 1,000 observations and *k=5* may be a reasonable option.
+
+*Step 4 - evaluating model performance*
+
+To assess the clustering model results, we can examine the resulting clusters.
+
+```{r eval=T}
+trauma_clusters$centers
+
+myColors <- c("darkblue", "red", "green", "brown", "pink", "purple", "lightblue", "orange", "gray", "yellow")
+
+# barplot(t(trauma_clusters$centers), beside = TRUE, xlab="cluster", 
+# ylab="value", col = myColors)
+# legend("topleft", ncol=4, legend = c("sex", "age", "ses", "ptsd", "dissoc", "service", "black", "hispanic", "other", "white"), fill = myColors)
+
+df <- as.data.frame(t(trauma_clusters$centers))
+rowNames <- rownames(df)
+colnames(df) <- paste0("Cluster",c(1:dim(trauma_clusters$centers)[1]))
+plot_ly(df, x = rownames(df), y = ~Cluster1, type = 'bar', name = 'Cluster1') %>% 
+  add_trace(y = ~Cluster2, name = 'Cluster2') %>% 
+  add_trace(y = ~Cluster3, name = 'Cluster3') %>% 
+  add_trace(y = ~Cluster4, name = 'Cluster4') %>% 
+  add_trace(y = ~Cluster5, name = 'Cluster5') %>% 
+  layout(title="Explicating Derived Cluster Labels",
+         yaxis = list(title = 'Cluster Centers'), barmode = 'group')
+```
+
+On this barplot, the bars in each cluster represents `sex, age, ses, ptsd, dissoc, service, black, hispanic, other,` and `white`, respectively. It is quite obvious that each cluster has some unique features.
+
+Next, we can compare the *k-means* computed cluster labels to the *original labels*. Let's evaluate the similarities between the automated cluster labels and their real class counterparts using a confusion matrix table, where rows represent the k-means clusters, columns show the actual labels, and the cell values include the frequencies of the corresponding pairings.
+
+```{r eval=T}
+trauma$clusters<-trauma_clusters$cluster
+table(trauma$clusters, trauma$traumatype)
+```
+
+We can see that all of the children in cluster 4 belong to `dvexp` (exposure to domestic violence or intimate partner violence). The model groups all `physabuse` and `sexabuse` cases into *cluster1* but can't distinguish between them. Majority (200/250) of all `dvexp` children are grouped in *clusters 4 and 5*. Finally, `neglect` and `psychabuse` types are mixed in *clusters 2 and 3*.
+
+Let's review the output Silhouette value summary. It works well as only a small portion of samples appear mis-clustered.
+
+```{r}
+dis_tra = dist(tr_z)
+sil_tra = silhouette(trauma_clusters$cluster, dis_tra)
+summary(sil_tra)
+
+windows(width=7, height=7)
+plot(sil_tra, col=1:length(trauma_clusters$centers[ ,1]), border=NA)
+# report the overall mean silhouette value
+mean(sil_tra[,"sil_width"])
+# The sil object colnames  are ("cluster", "neighbor", "sil_width")
+```
+
+Next, let's try to tune $k$ with **k-means++** and see if $k=5$ appears to be optimal. 
+
+```{r}
+mat = matrix(0,nrow = 11)
+for (i in 2:11){
+  set.seed(321)
+  clust_kpp = kmeans(tr_z, kpp_init(tr_z, i), iter.max=100, algorithm='Lloyd')
+  sil = silhouette(clust_kpp$cluster, dis_tra)
+  mat[i] = mean(as.matrix(sil)[,3])
+}
+mat
+# ggplot(data.frame(k=2:11,sil=mat[2:11]),aes(x=k,y=sil))+geom_line()+scale_x_continuous(breaks = 2:11)
+
+df <- data.frame(data.frame(k=2:11, sil=mat[2:11]))
+plot_ly(df, x = ~k, y = ~sil, type = 'scatter', mode = 'lines', name='Silhouette') %>%
+  layout(title="Average Silhouette Graph")
+```
+
+Finally, let's use **k-means++** with $k=3$ and set the algorithm's maximal iteration before rerunning the experiment:
+
+```{r}
+set.seed(1234)
+clust_kpp = kmeans(tr_z, kpp_init(tr_z, 3), iter.max=100, algorithm='Lloyd')
+sil = silhouette(clust_kpp$cluster, dis_tra)
+summary(sil)
+# plot(sil)
+# report the overall mean silhouette value
+mean(sil[,"sil_width"])
+```
+
+As we showed earlier, we can interpret the resulting `kmeans` clusters in the context of this pediatric trauma study, by examining `clust_kpp$centers`.
+
+### Feature selection for k-Means clustering
+
+A very active area of research involves feature selection for unsupervised machine-learning clustering, including k-means clustering. We won't go into details here, but we list some of the current strategies to choose salient features in situations where we don't have ground-truth labels.
+
+ - For Gaussian model-based clustering, the ['mclust' package](https://cran.r-project.org/web/packages/mclust) provides the functionality to learn and report the clusters, as well as perform variable selection using ['clustvarsel'](https://cran.r-project.org/web/packages/clustvarsel/index.html).
+ - a [feature selection for clustering article](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.295.8115&rep=rep1&type=pdf) provides a review of possible strategies.
+ - [Unsupervised Feature Selection for k-means Clustering](https://www.researchgate.net/profile/Christos_Boutsidis/publication/221620396_Unsupervised_Feature_Selection_for_the_k-means_Clustering_Problem/links/02e7e52aea2e9b9923000000/Unsupervised-Feature-Selection-for-the-k-means-Clustering-Problem.pdf) provides specifics for variable selection for the k-means algorithm.
+ - A [Feature Selection for Clustering](https://link.springer.com/chapter/10.1007/3-540-45571-X_13) paper presents an approach where features are ranked according to their importance on clustering and then a subset of important features are chosen.
+
+
+## Hierarchical Clustering
+
+Recall from [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.htmll) that there are three large classes of unsupervised clustering methods - *Bayesian*, *partitioning-based*, and *hierarchical.* Hierarchical clustering represents a family of techniques that build hierarchies of clusters using one of two complementary strategies:
+
+ - *Generative* methods (also known as *agglomerative*) represent bottom-up approaches that are initialized with each individual observation being its own cluster, and the iterative protocol aggregates observations (i.e., merges clusters) by pairing similar clusters, which results in higher hierarchy levels.
+ - *Discriminative* methods (also known as *divisive*) represent reversed top-down techniques that are initialized by all observations belonging to a single cluster, which is recursively split into higher hierarchical levels.
+
+In both situations, cluster splits and merges are determined by minimizing some objective function using a greedy algorithm (e.g., gradient descent). It's common to illustrate hierarchical clustering results as dendrograms. One example of genomics data hierarchical clustering using probability distributions is available [here (DOI: 10.1016/j.jtbi.2016.07.032)](https://doi.org/10.1016/j.jtbi.2016.07.032).
+
+Decisions about merging or splitting nodes in the hierarchy heavily depend on the specific distance metric used to measure the dissimilarity between sets of observations in the original cluster and the candidate children (sub)clusters. It's common to employ standard metrics ($d$) for measuring distances between pairs of observations (e.g., Euclidean, Manhattan, Mahalanobis) and a linkage criterion connecting cluster-dissimilarity of sets to the paired distances of observations in the cluster sets (e.g., maximum/complete linkage clustering 	$\max \{ d ( a , b ) : a \in A , b \in B \}$, minimum/single linkage clustering 	$\min \{ d ( a , b ) : a \in A , b \in B \}$, mean linkage clustering $\frac {1}{|A|.|B|} \sum_{a\in A} {\sum _{b\in B}d(a,b)}$).
+
+There are a number of `R` **hierarchical clustering** packages, including:
+
+ - `hclust` in base R.
+ - `agnes` in the `cluster` package.
+
+Alternative distance measures (or linkages) can be used in all Hierarchical Clustering, e.g., *single*, *complete* and *ward*.
+
+We will demonstrate hierarchical clustering using case-study 1 ([Divorce and Consequences on Young Adults](https://umich.instructure.com/files/399121/download?download_frd=1)). Preset $k=3$ and recall that we have to use normalized data for hierarchical clustering.
+
+```{r warning=F, message=F}
+library(cluster)
+divorce_sing = agnes(di_z, diss=FALSE, method='single')
+divorce_comp = agnes(di_z, diss=FALSE, method='complete')
+divorce_ward = agnes(di_z, diss=FALSE, method='ward')
+sil_sing = silhouette(cutree(divorce_sing, k=3), dis)
+sil_comp = silhouette(cutree(divorce_comp, k=3), dis)
+# try 10 clusters, see plot above
+sil_ward = silhouette(cutree(divorce_ward, k=10), dis)
+```
+
+You can generate the hierarchical plot by `ggdendrogram` in the package `ggdendro`.
+
+```{r}
+# install.packages("ggdendro")
+library(ggdendro)
+ggdendrogram(as.dendrogram(divorce_ward), leaf_labels=FALSE, labels=FALSE)
+
+mean(sil_ward[,"sil_width"])
+ggdendrogram(as.dendrogram(divorce_ward), leaf_labels=TRUE, labels=T, size=10)
+
+library(data.tree)
+DD_hcclust <- as.hclust(divorce_ward)
+DD <- as.dendrogram(divorce_ward)
+
+# Dendrogram --> Graph(Nodes)
+DD_Node <- data.tree::as.Node(DD)
+
+# install.packages("DiagrammeR")
+# library("DiagrammeR")
+
+DD_Node$attributesAll
+DD_Node$totalCount
+DD_Node$leafCount
+# DD_Node$height
+
+# Get nodes, labels, values, IDs
+IDs <- DD_Node$Get("name")
+labels = DD_Node$Get("name")
+parents = DD_Node$Get(function(x) x$parent$name)
+values = as.numeric(DD_Node$Get("name"))
+
+df <- as.data.frame(cbind(labels=labels, parents=parents, values=values))
+
+# remove node self-loops
+df1 <- subset(df, as.character(labels) != as.character(parents))
+
+# remove duplicates
+df2 <- distinct(df1, labels, .keep_all= TRUE)
+
+plot_ly(df2, labels=~labels, parents=~parents, values=~values, type='sunburst')
+
+plot_ly(df2, labels=~labels, parents=~parents, values=~values, type='treemap')
+```
+
+Generally speaking, the best result should come from **wald** linkage, but you should also try complete linkage (method='complete'). We can see that the hierarchical clustering result (average silhouette value $\sim 0.24$) mostly agrees with the prior *k-means* ($0.2$) and *k-means++* ($0.2$) results.
+
+```{r}
+summary(sil_ward)
+plot(sil_ward, col=1:length(unique(sil_ward[,1])))
+```
+
+## Spectral Clustering
+
+Spectral clustering relies on decomposition of the similarity-matrix   in terms of its spectrum of eigenvalues. The similarity matrix of the data is computed using some pairwise distances between all observations in the dataset. This spectral decomposition is used to reduce the data dimensionality prior to clustering. Typically, one precomputes the distance matrix first and feeds it as an input to the clustering method.
+
+For a dataset of records, the similarity matrix is a symmetric matrix $A=\{a_{ij}\geq 0\}_{ij}$ encoding the similarity measures between pairs of data points indexed by $1\leq i,j \leq n$. Most spectral clustering methods employ a traditional *cluster method* like $k$-means clustering applied on the eigenvectors of the *Laplacian* similarity matrix. There are alternative approaches to define a Laplacian that lead to different mathematical interpretations of the spectral clustering protocol. The *relevant eigenvectors* correspond to the few *smallest eigenvalues* of the Laplacian, excluding the smallest eigenvalue, which is typically $0$. This process (finding the smallest eigenvalues) is analogous to computing the *largest* few eigenvalues of an operator representing a *function* of the original Laplacian.
+
+The underlying philosophy of spectral clustering has roots in physics, e.g., partitioning of a mass-spring system. The analytical concept corresponding to physical mass is data point and mass-characteristics (e.g., stiffness parameter) relates to weights of edges describing pairwise similarity of related data points. The eigenvalue problem in spectral clustering analytics maps to physical transversal vibration modes of mass-spring systems. Mathematically, the eigenvalue problem for the Laplacian matrix is $L=D-A$, where 
+$D=\{ d_{i,i} = \sum_j a_{i,j};\ d_{i\not= j}=0 \}$ is a diagonal matrix.
+
+Tightly coupled spring masses in the physical system jointly move in space from the equilibrium state in low-frequency vibration modes. Eigenvector components that correspond to the smallest eigenvalues of the Laplacian can be used to derive clustering of the masses (data points). 
+
+For instance, the *normalized cuts* spectral clustering algorithm partitions points in $B$ into two sets $B_1$ and $B_2$ based on the eigenvector $v$ corresponding to the *second-smallest* Laplacian eigenvalue, where the *symmetrized-and-normalized* Laplacian matrix is defined by:
+
+$$L^\text{norm} = I-\left (D^{-1/2} A D^{-1/2}\right ).$$
+
+Similarly, we can take the eigenvector corresponding to the *largest eigenvalue* of the adjacency matrix 
+
+$$P = D^{-1}A.$$ 
+
+The key is to obtain the spectrum of the Laplacian. Then using the eigenvectors, we can cluster the observations in many alternative ways. For instance, the cases can be partitioned by computing the median $m$ of the components of the *second smallest eigenvector* $v$ and mapping all points whose component in $v$ is greater than $m$ in $B_1$ and the remaining cases in its complement, $B_2$. Repeated partitioning of the data into the subsets using this protocol will induce a classification scheme (spectral clustering) of the data.
+
+The unnormalized spectral clustering pseudo algorithm is listed below.
+
+ - *Input*:  *Similarity matrix*, $A\in \mathbb{R}^n\times \mathbb{R}^n$, $k=$ number of clusters
+ - Construct a *similarity graph* modeling the local neighborhood relationships, where the similarity function encodes mainly local neighborhoods. For instance, a Gaussian similarity function $a(x_i,x_j)=\exp{\left (-\frac{||x_i-x_j||^2}{2\sigma^2}\right )}$, where $\sigma$ controls the width of the neighborhoods.
+ - Let $W$ be its *weighted adjacency matrix*, corresponding to the similarity graph, $W= (w_{i,j})_{i,j}$, where $w_{i,j}=w_{j,i}$ and $w_{i,j}= 0$ implies that the vertices $x_i$ and $x_j$ are not connected. 
+ - Compute the unnormalized Laplacian $L$.
+ - Compute the first $k$ eigenvectors of $L$ and let $V\in R^{n\times k}$ be the matrix containing these $k$ vectors as columns.
+ - For $1\leq i\leq n$, let $y_i\in \mathbb{R}^k$ be the vector corresponding to the $i^{th}$ row of $V$.
+ - In $\mathbb{R}^k$, Cluster the points $\{y_i \}_{1\leq i\leq n}$ in $k$-clusters, $\{C_i\}_{i=1}^k$, using $k$-means clustering.
+ - *Output*:  Clusters $\{A_i\}_{i=1}^k$, where $A_i=\{j | y_i \in C_i\}$.
+
+### Image segmentation using spectral clustering
+
+Let's look at one specific implementation of spectral clustering for segmenting/classifying a region of interest (ROI) representing [brain hematoma](https://en.wikipedia.org/wiki/Subdural_hematoma) in a 2D MRI image ([MRI_ImageHematoma.jpg](https://umich.instructure.com/files/1627149/download?download_frd=1)).
+
+```{r}
+# Import the Brain 2D image MRI_ImageHematoma.jpg
+library(jpeg)
+img_url <- "https://umich.instructure.com/files/1627149/download?download_frd=1"	
+img_file <- tempfile(); download.file(img_url, img_file, mode="wb")	
+img <- readJPEG(img_file)	
+
+# To expedite the calculations, reduce the size of 2D image
+# install.packages("BiocManager")
+# BiocManager::install("EBImage")
+# library("EBImage")
+
+library(imager)   # for image resizing
+
+# take the first RGB-color channel; transpose to get it anatomically correct Viz
+img1 <- t(apply(img[ , , 1], 2, rev)) 
+# width and height of the original image
+dim(img1)[1:2]
+olddim <- c(dim(img1)[1], dim(img1)[2])
+newdim <- c(64, 64)  # new smaller image dimensions
+# img1 <- resize(img, w = newdim[1], h = newdim[2])
+img2 <- array(img1, dim=c(dim(img1)[1], dim(img1)[2], 1, 1))  # 2D img --> 4D hyper-volume
+img3 <- resize(img2, size_x = newdim[1], size_y = newdim[2])
+# dim(img1)  # [1] 64 64  1  1
+img <- array(img3, dim=c(dim(img3)[1], dim(img3)[2]))  # 4D hyper-volume --> 2D img
+
+# image(img, main="Original (high) resolution", xaxt = "n", yaxt = "n", asp=1)
+# image(img1, main="Downsample (low) resolution)", xaxt = "n", yaxt = "n", asp=1)
+
+plot_ly(z = ~img, type="surface")
+
+# Convert image matrix to long vector (i,j, value)
+imgvec <- matrix(NA, prod(dim(img)),3)
+counter <- 1
+for (r in 1:nrow(img)) {
+  for (c in 1:ncol(img)) {
+    imgvec[counter,1] <- r
+    imgvec[counter,2] <- c
+    imgvec[counter,3] <- img[r,c]
+    counter <- counter+1
+  }
+}
+
+# Compute the Similarity Matrix A
+pixdiff <- 2
+sigma2 <- 0.01 
+simmatrix <- matrix(0, counter-1, counter-1)
+
+for(r in 1:nrow(imgvec)) {
+  # Verbose
+  # cat(r, "out of", nrow(imgvec), "\n")
+  simmatrix[r,] <- ifelse(abs(imgvec[r,1]-imgvec[,1])<=pixdiff & abs(imgvec[r,2]-imgvec[,2])<=pixdiff,exp(-(imgvec[r,3]-imgvec[,3])^2/sigma2),0)
+}
+ 
+# Compute the graph Laplacians
+# U: unnormalized graph Laplacian (U=D-A) 
+# L: normalized graph Laplacian, which can be computed in different ways:
+## L1:   Simple Laplacian: I - D^{-1} A, which can be seen as a random walk, where D^{-1} A is the transition matrix, which yields spectral clustering with groups of nodes such that the random walk seldom transitions from one group to another.
+## L2:   Normalized Laplacian D^{-1/2} A D^{-1/2}, or
+## L3:   Generalized Laplacian: D^{-1} A.
+
+D <- diag(rowSums(simmatrix))
+Dinv <- diag(1/rowSums(simmatrix))
+L <- diag(rep(1,nrow(simmatrix)))-Dinv %*% simmatrix
+U <- D-simmatrix
+
+# Compute the eigen-spectra for the normalized and unnormalized Laplacians 
+evL <- eigen(L, symmetric=TRUE)
+evU <- eigen(U, symmetric=TRUE)
+
+# Apply k-means clustering on the eigenspectra of both Laplacians
+kmL <- kmeans(evL$vectors[,(ncol(simmatrix)-1):(ncol(simmatrix)-0)],
+              centers=2,nstart=5)
+segmatL <- matrix(kmL$cluster-1, newdim[1], newdim[2], byrow=T)
+
+kmU <- kmeans(evU$vectors[,(ncol(simmatrix)-1):(ncol(simmatrix)-0)],
+              centers=2,nstart=5)
+segmatU <- matrix(kmU$cluster-1, newdim[1], newdim[2], byrow=T)
+
+colorL <- rep(1, length(img))
+dim(colorL) <- dim(img)
+
+plot_ly(x=~seq(0, 4, length.out=olddim[1]), 
+            y=~seq(0, 4, length.out=olddim[2]), z=~segmatL, 
+        surfacecolor=colorL, cauto=F, cmax=1, cmin=0,
+        name="L = Normalized graph Laplacian", type="surface") %>%
+  add_trace(x=~seq(0, 4, length.out=olddim[1]), 
+            y=~seq(0, 4, length.out=olddim[2]), z=~segmatU*(1), 
+            colorscale = list(c(0, 1), c("tan", "red")),
+            name="U = Unnormalized graph Laplacian", type="surface")  %>%
+  add_trace(x = ~seq(0, 4, length.out=olddim[1]), 
+            y = ~seq(0, 4, length.out=olddim[2]),
+            z = ~img, type="surface", name="Original Image", opacity=0.5) %>%
+  layout(scene=list(xaxis=list(name="X"), yaxis=list(name="Y"), zaxis=list(title="")),
+         title="Spectral Laplacian Classification")  %>% hide_colorbar()
+
+# Plot the pair of spectral clusters (hematoma and normal brain areas)
+# image(1-segmatL, col=grey((0:15)/15), main="Normalized Laplacian", xaxt = "n", yaxt = "n", asp=1)
+# image(segmatU, col=grey((0:15)/15), main="Unnormalized Laplacian", xaxt = "n", yaxt = "n", asp=1)
+plot_ly(z=t(img), type="heatmap", name="Original Image", opacity=0.8) %>%
+    add_trace(z=t(segmatU), type="heatmap", name="Unnormalized Laplacian", opacity=0.5) %>%
+    add_trace(z=t((1-segmatL)), name="Normalized Laplacian", opacity=0.3)  %>% 
+    layout(title="Overlay of Unnormalized and Normalized Laplacians") %>% hide_colorbar()
+
+
+# Overlay the outline of the ROI-segmentation region on top of original image
+image(seq(0, 1, length.out=olddim[1]), seq(0, 1, length.out=olddim[2]),
+      img1, col = grey((0:15)/15), xlab="",ylab="", asp=1, xaxt = "n", yaxt = "n",
+      main="Original MRI with Overlay of the Boundaries of the \n Unnormalized (red) and Normalized (green) Laplacian Labels")
+
+# Compute the outline of the spectral segmentation and plot it as piecewise polygon - line segments
+segmat <- segmatU
+linecol <- "red"
+linew <- 3
+for(r in 2:newdim[1]) {
+  for (c in 2:newdim[2]) {
+    if(abs(segmat[r-1,c]-segmat[r,c])>0) {
+      xloc <- (r-1)/(newdim[1])
+      ymin <- (c-1)/(newdim[2])
+      ymax <- (c-0)/(newdim[2])
+      segments(xloc, ymin, xloc, ymax, col=linecol,lwd=linew)
+    }
+    if(abs(segmat[r,c-1]-segmat[r,c])>0) {
+      yloc <- (c-1)/(newdim[2])
+      xmin <- (r-1)/(newdim[1])
+      xmax <- (r-0)/(newdim[1])
+      segments(xmin, yloc, xmax, yloc, col=linecol,lwd=linew)
+    }
+  }
+}
+
+# Add the normalized Laplacian contour
+segmat <- segmatL
+linecol <- "green"
+linew <- 3
+for(r in 2:newdim[1]) {
+  for (c in 2:newdim[2]) {
+    if(abs(segmat[r-1,c]-segmat[r,c])>0) {
+      xloc <- (r-1)/(newdim[1])
+      ymin <- (c-1)/(newdim[2])
+      ymax <- (c-0)/(newdim[2])
+      segments(xloc, ymin, xloc, ymax, col=linecol,lwd=linew)
+    }
+    if(abs(segmat[r,c-1]-segmat[r,c])>0) {
+      yloc <- (c-1)/(newdim[2])
+      xmin <- (r-1)/(newdim[1])
+      xmax <- (r-0)/(newdim[1])
+      segments(xmin, yloc, xmax, yloc, col=linecol,lwd=linew)
+    }
+  }
+}
+```
+
+### Point cloud segmentation using spectral clustering
+
+Let's try spectral clustering on the [Knee Pain Dataset](https://wiki.socr.umich.edu/index.php/SOCR_Data_KneePainData_041409) using the `kernlab::specc()` method.
+
+```{r message=F, warning=F}
+#Get the data first
+library("XML"); library("xml2"); library("rvest")
+
+wiki_url <- read_html("https://wiki.socr.umich.edu/index.php/SOCR_Data_KneePainData_041409")
+html_nodes(wiki_url, "#content")
+
+kneeRawData <- html_table(html_nodes(wiki_url, "table")[[2]])
+normalize<-function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+kneeRawData_df <- as.data.frame(cbind(normalize(kneeRawData$x), normalize(kneeRawData$Y), as.factor(kneeRawData$View)))
+colnames(kneeRawData_df) <- c("X", "Y", "Label")
+
+# randomize the rows of the DF as RF, RB, LF and LB labels of classes
+# which are by default sequentially ordered
+set.seed(1234)
+kneeRawData_df <- kneeRawData_df[sample(nrow(kneeRawData_df)), ]
+# summary(kneeRawData_df)
+# View(kneeRawData_df)
+
+# Artificially reduce the size of the data from 8K to 1K to get results faster 
+kneeDF <- data.frame(x=kneeRawData_df[1:1000, 1], 
+                     y=kneeRawData_df[1:1000, 2], 
+                     class=as.factor(kneeRawData_df[1:1000, 3]))
+head(kneeDF)  
+
+# Do the spectral clustering
+library(kernlab)
+knee_data <- cbind(kneeDF$x, kneeDF$y); dim(knee_data)
+spectral_knee <- specc(knee_data, iterations=10, centers=4)
+
+# plot(knee_data, col=spectral_knee, pch=1)    # estimated clusters
+# points(knee_data, col=kneeDF$class, pch=0)
+
+plot_ly(x = ~knee_data[,1], y = ~knee_data[,2], type = 'scatter',
+  mode = 'markers', symbol = ~unlist(spectral_knee@.Data), 
+  symbols = c('circle','x','o', 'diamond'),
+  color = ~unlist(spectral_knee@.Data), marker = list(size = 10)) %>%
+  layout("Knee-pain data (L+R & F+B) with derived Spectral Color/Symbol Clustering Labels", 
+         xaxis=list(title="X"), yaxis=list(title="Y")) %>%
+  hide_colorbar()
+```
+
+## Gaussian mixture models
+
+Recall the general univariate distribution mixture modeling we showed using the [crystallography data in Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html#26_Distributions). Gaussian mixture modeling is a special case of distribution mixture modeling using normal distribution components.
+
+```{r}
+# crystallography_data <- read.csv(file = "https://umich.instructure.com/files/13375767/download?download_frd=1",
+#                          header=TRUE)
+crystallography_data <- read.csv(file = "https://umich.instructure.com/files/11653615/download?download_frd=1",
+                         header=TRUE)
+# install.packages("mixtools")
+library(mixtools)
+col_num <- dim(crystallography_data)[2] 
+#  col_num
+
+fit_Gauss <- list()
+
+capture.output(
+  for(i in 1:col_num) {   # remove all non-numeric elements (if any)
+    # data_no_NA <- unlist(Filter(is.numeric, crystallography_data[complete.cases(crystallography_data[, i]), i]))
+    data_no_NA <- crystallography_data[complete.cases(crystallography_data[, i]), i]
+    length(data_no_NA)
+    fit_Gauss[[i]] <- normalmixEM(data_no_NA, k=3, verb=F)
+    # summary(fit_LN[i])
+  }, 
+  file='NUL'
+)
+
+#plot(fit_Gauss[[1]], which=2)
+library(plotly)
+
+# Custom design of Normal-Mixture Model plot
+normalMM.plot <- function(mix.object, dataSet, k = 3, main = "") { 
+  data_no_NA <- dataSet
+  d3 <- function(x) { # construct the mixture using the estimated parameters
+    mix.object$lambda[1]*dnorm(x, mean=mix.object$mu[1], sd=mix.object$sigma[1]) + 
+    mix.object$lambda[2]*dnorm(x, mean=mix.object$mu[2], sd=mix.object$sigma[2]) +
+    mix.object$lambda[3]*dnorm(x, mean=mix.object$mu[3], sd=mix.object$sigma[3])
+  }
+
+  x <- seq(min(data_no_NA), max(data_no_NA), 0.1)
+  # hist(data_no_NA, col="pink", freq=F, breaks=20, main = main, xlab="Intensities", xlim = c(4,23), ylim = c(0.0, 0.25))
+  # lines(x, d3(x), lwd=3, col="black")
+  # mixColors <- colorRampPalette(c("blue", "red"))(k)
+  # for (i in 1:k) {
+  #   d = function(x) { # construct each of the Weibull components using the estimated parameters
+  #     mix.object$lambda[i]*dnorm(x, mean=mix.object$mu[i], sd=mix.object$sigma[i])
+  #   }
+  #   lines(x, d(x), lwd=3, col=mixColors[i])
+  # }
+  
+  d_list <- list()
+  for (i in 1:3) {
+    # construct each of the Gaussian components using the estimated parameters
+    d_list[[i]] =  mix.object$lambda[i]*dnorm(x, mean=mix.object$mu[i], sd=mix.object$sigma[i])
+  }
+
+  pl <- plot_ly() %>% 
+    add_trace(x=~x, y=~(10*d3(x)), type="scatter", mode="lines", name="Mixture of 3 Gaussian Models") %>%
+    add_trace(x=~x, y=~(10*d_list[[1]]), type="scatter", mode="lines", name=paste0("Gaussian Mixture Component ", 1)) %>%
+    add_trace(x=~x, y=~(10*d_list[[2]]), type="scatter", mode="lines", name=paste0("Gaussian Mixture Component ", 2)) %>%
+    add_trace(x=~x, y=~(10*d_list[[3]]), type="scatter", mode="lines", name=paste0("Gaussian Mixture Component ", 3)) %>% 
+    add_trace(x = ~data_no_NA, type="histogram", histnorm = "probability", name = "Data histogram") %>%
+    layout(title = "Gaussian Mixture Modeling (1D)", xaxis = list(title = "data values"), 
+         yaxis = list(title = "frequency"), legend = list(orientation='h'), bargap=0.2)
+  return (pl)
+}
+
+i=1; data_no_NA <- crystallography_data[complete.cases(crystallography_data[, i]), i]
+
+normalMM.plot(mix.object=fit_Gauss[[i]], dataSet=data_no_NA, k=3, main=paste0("Mixture of ", 3, " Normal Models"))
+```
+
+When modeling a process using a mixture of $k$ Gaussian distributions, the probability of observing an outcome $x_n$ is given by the weighted averaging (linear mixture) of the corresponding $k$ Gaussian probabilities:
+
+$$p(x_n)=\sum_k {\left ( \underbrace{p(x_n | z_n=k)}_{k^{th}\ Gaussian\ Probability} \times 
+\underbrace{p(z_n=k)}_{prior} \right )}.$$
+
+The *probability* represents the specific Gaussian mixture component, $N(x_n |\mu_k, \Sigma_k)$, and the *prior* represents the mixture proportion. The probability $p(x_n)$ describes how each data point $x_n$ can be generated from the prior distribution on the $k$ model components, $\pi_k=p(z_n=k)$, choosing a cluster first, and then how to generate values of the data point from the corresponding model distribution, $N(\mu_k, \Sigma_k)$.
+
+For a mixture of $k$ Gaussians, the GMM distribution has $\theta=\{\mu_l, \Sigma_l, \pi_l, 1\leq, l\leq k \}$ parameters. We want to obtain the maximum likelihood estimate (MLE) of the unknown parameter vector $\theta$.
+
+When all data and classes $(x_i, z_i)$ are observed, we can maximize the data log-likelihood function for $(x_i, z_i)$ using $p(x_i, z_i)$. However, when only a fraction of $x_i$’s is observed, the situation is much more difficult, as we can only maximize the data log-likelihood for $(x_i)$ based on $p(x_i)$. Using the expectation maximization (EM) algorithm, we can maximize the expected data log-likelihood for $(x_i, z_i)$ based on $p(x_i, z_i)$.
+
+To learn the mixture models when the data and classes are fully observed, we assume
+that the data are IID, which helps simplify the joint probability distribution. The log-likelihood 
+decomposes into a sum of local terms. The MLE exists since the two optimization problems, for $(\mu_k, \Sigma_k)$ (each Gaussian component) and for $\pi_k$ (weights), are decoupled, and there exists a closed-form MLE solution.
+
+$$I_c(\theta | Data)=\sum_k {\log(p(x_n,z_n | \theta)}\equiv 
+\underbrace{\sum_k {\log(p(z_n | \theta)}}_{{\text{depends on }} \pi_k} + 
+\underbrace{\sum_k {\log(p(x_n | z_n, \theta)}}_{{\text{depends on }} (\mu_k,\Sigma_k)}.$$
+
+More explicitly,
+
+$$I(\theta | Data) = \log\prod_n {p(x_n,z_n | \theta)} =
+\log\prod_n{(p(z_n | \pi) p(x_n | z_n, \mu, \sigma))}=$$
+$$\sum_n {\log\prod_k \pi_k^{z_n^k}} + \sum_n {\log\prod_k (N(x_n | \mu_k, \sigma))^{z_n^k}}=$$
+$$\sum_n {\sum_k {z_n^k \log \pi_k}} - 
+\sum_n {\sum_k {\left (z_n^k\frac{1}{2\sigma^2} (x_n-\mu_k)^2\right ) + \text{const}}}\ .$$
+
+The corresponding MLE estimates are:
+
+ - $\hat{\pi}_k^{MLE}=\arg\max_{\pi} {I(\theta | Data)}$,
+ - $\hat{\mu}_k^{MLE}=\arg\max_{\mu} {I(\theta | Data)}\equiv \frac{\sum{z_n^k x_n}}{\sum{z_n^k}}$,
+ - $\hat{\sigma}_k^{MLE}=\arg\max_{\sigma} {I(\theta | Data)}$
+
+
+More [details about Gaussian mixture models (GMM) are provided here](http://escholarship.org/uc/item/1rb70972). Also see the [SOCR 2D Gaussian Mixture Model (Java) interactive activity](http://wiki.stat.ucla.edu/socr/index.php/SOCR_EduMaterials_Activities_2D_PointSegmentation_EM_Mixture). Below is a brief introduction to GMM using the `Mclust` function in the `R` package `mclust`.
+
+For multivariate mixture, there are totally 14 possible models:
+
+ - "EII"    =    spherical, equal volume
+ - "VII"    =    spherical, unequal volume
+ - "EEI"    =    diagonal, equal volume and shape
+ - "VEI"    =    diagonal, varying volume, equal shape
+ - "EVI"    =    diagonal, equal volume, varying shape
+ - "VVI"    =    diagonal, varying volume and shape
+ - "EEE"    =    ellipsoidal, equal volume, shape, and orientation
+ - "EVE"    =    ellipsoidal, equal volume and orientation (*)
+ - "VEE"    =    ellipsoidal, equal shape and orientation (*)
+ - "VVE"    =    ellipsoidal, equal orientation (*)
+ - "EEV"    =    ellipsoidal, equal volume and equal shape
+ - "VEV"    =    ellipsoidal, equal shape
+ - "EVV"    =    ellipsoidal, equal volume (*)
+ - "VVV"    =    ellipsoidal, varying volume, shape, and orientation
+
+For more practical details, you may refer to [`Mclust`](https://cran.r-project.org/web/packages/mclust/mclust.pdf) and its [vignettes](https://cran.r-project.org/web/packages/mclust/vignettes/mclust.html).  Additional theoretical details are available in [C. Fraley and A. E. Raftery (2002). Model-based clustering, discriminant analysis, and density estimation. Journal of the American Statistical Association 97:611:631](http://dx.doi.org/10.1198/016214502760047131).
+
+Let's use the [Divorce and Consequences on Young Adults dataset](https://umich.instructure.com/files/399121/download?download_frd=1) for a demonstration.
+
+```{r message=F, warning=F}
+library(mclust)
+set.seed(1234)
+gmm_clust <- Mclust(di_z)
+summary(gmm_clust, parameters = TRUE)
+gmm_clust$modelName
+```
+
+Thus, the optimal model, `VEI`, has 3 components.
+
+```{r}
+plot(gmm_clust$BIC, legendArgs = list(x = "bottom", ncol = 2, cex = 1))
+plot(gmm_clust, what = "density")
+plot(gmm_clust, what = "classification")
+plot(gmm_clust, what = "uncertainty", dimens = c(6,7), main = "livewithmom vs. gethitched")
+
+# Mclust Dimension Reduction clustering
+gmm_clustDR <- MclustDR(gmm_clust, lambda=1)
+summary(gmm_clustDR)
+
+plot(gmm_clustDR, what = "boundaries", ngrid = 200)
+plot(gmm_clustDR, what = "pairs")
+plot(gmm_clustDR, what = "scatterplot")
+
+# Plot the Silhouette plot to assess the quality of
+# the clustering based on the Mixture of 3 Gaussians
+silGauss = silhouette(as.numeric(gmm_clustDR$classification), dis)
+plot(silGauss, col=1:length(gmm_clustDR$class2mixcomp), border=NA)
+```
+
+To assess the model, we can print the confusion matrix comparing, say, the `Mclust` clustering labels and `divorce$depression` categories:
+
+```{r message=F}
+table(divorce$depression, gmm_clust$classification)
+```
+
+## Summary
+
+ - K-means, spectral, hierarchical, and Gaussian mixture-modeling clustering may be most appropriate for exploratory data analytics. These techniques are highly flexible and fairly efficient in terms of tessellating data into groups.
+ - Clustering approaches may be be used for data that has no *a priori* classes (labels), i.e., for unsupervised AI/ML.
+ - Generated clusters may lead to phenotype stratification and/or be compared against known clinical traits.
+
+
+## Practice Problems
+
+### Youth Development
+
+Use [Boys Town Study of Youth Development data](https://umich.instructure.com/courses/38100/files/folder/Case_Studies),  second case study, CaseStudy02_Boystown_Data.csv, we used in [Chapter 6](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/06_LazyLearning_kNN.html), to find clusters using variables about GPA, alcohol abuse, attitudes on drinking, social status, parent closeness and delinquency for clustering(all variables other than gender and ID).
+
+First, load the data and transfer `sex`, `dadjob` and `momjob` into dummy variables.
+
+```{r eval=T, message=F, warning=F}
+boystown<-read.csv("https://umich.instructure.com/files/399119/download?download_frd=1", sep=" ")
+boystown$sex<-boystown$sex-1
+boystown$dadjob <- (-1)*(boystown$dadjob-2)
+boystown$momjob <- (-1)*(boystown$momjob-2)
+str(boystown)
+```
+
+Then, extract all the variables, except the first two columns (subject identifiers and genders).
+
+```{r eval=T}
+boystown_sub<-boystown[, -c(1, 2)]
+```
+
+Next, we need to standardize and cluster the data with `k=3`. You may have the following centers (numbers could be a little different).
+
+```{r echo=F}
+boystown_z<-as.data.frame(lapply(boystown_sub, scale))
+set.seed(1234)
+bt_cluster <- kmeans(boystown_z, 3)
+bt_cluster$centers
+
+# myColors <- c("darkblue", "red", "green", "brown", "pink", "purple", "lightblue", "orange", "gray")
+# barplot(t(bt_cluster$centers), beside = TRUE, xlab="cluster", 
+# ylab="value", col = myColors)
+# legend("topleft", ncol=4, legend = c("gpa","Alcoholuse","alcatt",  "dadjob","momjob","dadclose", "momclose", "larceny","vandalism"), fill = myColors)
+
+df <- as.data.frame(t(bt_cluster$centers))
+rowNames <- rownames(df)
+colnames(df) <- paste0("Cluster",c(1:dim(bt_cluster$centers)[1]))
+plot_ly(df, x = rownames(df), y = ~Cluster1, type = 'bar', name = 'Cluster1') %>% 
+  add_trace(y = ~Cluster2, name = 'Cluster2') %>% 
+  add_trace(y = ~Cluster3, name = 'Cluster3') %>% 
+  layout(title="Explicating Derived Cluster Labels",
+         yaxis = list(title = 'Cluster Centers'), barmode = 'group')
+```
+
+Add *k-means* cluster labels as a new (last) column back in the original dataset.
+
+```{r echo=F}
+boystown$clusters<-bt_cluster$cluster
+```
+
+To investigate the gender distribution within different clusters we may use `aggregate()`.
+
+```{r eval=T}
+# Compute the averages for the variable 'sex', grouped by cluster
+aggregate(data=boystown, sex~clusters, mean)
+```
+
+Here `clusters` represents the new vector indicating cluster labels. The gender distribution does not vary much between different cluster labels.
+
+Try to apply these clustering methods to [other data from the list of our Case-Studies](https://umich.instructure.com/courses/38100/files/).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

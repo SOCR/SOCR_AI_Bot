@@ -1,0 +1,625 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<u>Appendix 13: Mathematical Modeling and Data Science Analytics of the Duration of Daylight</u>"
+author: "SOCR/MIDAS (Ivo Dinov)"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show	
+    self_contained: yes	
+---
+
+Expanding on [other DSPA2 appendices)](https://dspa2.predictive.space/),
+this [DSPA2 appendix](https://www.socr.umich.edu/DSPA2/) covers a discussion of building a mathematical model the length/duration of daylight and demonstrating supporting data science analytics for predicting the exact length of daylight (sunset to sunrise) for a given day, longitude, latitude, and altitude. 
+
+**Note**: [Part 2 of this DSPA Appendix 13 (Mathematical Modeling and Data Science Analytics of the Duration of Daylight)](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_13_DaylightMathModeling_Part2.html) is intentionally separated as it includes large data and JavaScript code supporting the plotly app. It includes the interactive 3D temporal animation app that allows manual navigation across longitude, latitude, altitude and time (daily).
+
+A model for computing the exact length of daylight (difference between the sunset and sunrise times) for a given day, latitude, longitude, and altitude, must utilize astronomical calculations. This requires converting the *geographic position* into *solar coordinates* and using the [solar declination](https://en.wikipedia.org/wiki/Declination), $\delta$, for a specific spacetime location and calculating the proper sunrise and sunset times.
+
+The *solar declination* angle, \(\delta\), represents the latitude at which the Sun is directly overhead at solar noon. It varies throughout the year due to Earth’s tilt and orbit around the Sun. The declination can be approximated by
+\[\delta = 23.44^\circ \times \sin\left(\frac{2\pi}{365} \times (N - 81)\right),\]
+where \( N \) is the day of the year ($N=1$ for January 1, $N=365$ for December 31, for non leap years).
+
+The *hour angle* (\(H\)) is the angle that represents the time difference from solar noon to the point at which the Sun appears on the horizon (sunrise or sunset). At sunrise and sunset, the hour angle \( H_0 \) can be calculated by
+\[H_0 = \cos^{-1}\left(\frac{-\sin(\phi) \cdot \sin(\delta)}{\cos(\phi) \cdot \cos(\delta)}\right),\]
+where \( \phi \) is the latitude of the observer and \(\delta\) is the solar declination calculated earlier. 
+
+This formula assumes observation at sea level. However, at elevations above sea level, we need to adjust for *altitude.* For a location at altitude \( h \) (in meters), the horizon drops by an angle \( \Delta h \approx -\frac{\sqrt{2h/R}}{180/\pi} \) radians, where \( R \approx 6,371,000 \, \text{m} \) (Earth's radius). The corrected hour angle \( H_{\text{alt}} \) becomes
+\[H_{\text{alt}} = \cos^{-1}\left(\frac{-\sin(\phi) \cdot \sin(\delta) - \sin(\Delta h)}{\cos(\phi) \cdot \cos(\delta)}\right) .\]
+
+The *daylight duration* \( D \) in hours is twice the time from solar noon to sunset (or sunrise to solar noon), since both are symmetric around solar noon
+\(D = \frac{2 H_{\text{alt}}}{15} ,\)
+where we divide by $15$ because each hour angle degree corresponds to $4$ minutes.
+
+Putting it all together, the daylight duration function \(D(\phi, N, h)\) in hours for a given latitude \( \phi \), day \( N \), and altitude \( h \) is
+\[D(\phi, N, h) = \frac{2}{15} \cdot \cos^{-1}\left(\frac{-\sin(\phi) \cdot \sin\left(23.44^\circ \times \sin\left(\frac{2\pi}{365} \times (N - 81)\right)\right) - \sin\left(-\frac{\sqrt{2h/R}}{180/\pi}\right)}{\cos(\phi) \cdot \cos\left(23.44^\circ \times \sin\left(\frac{2\pi}{365} \times (N - 81)\right)\right)}\right) ,\]
+where \( h \) is in meters (altitude above sea level) and \( R = 6,371,000 \) meters is the Earth’s radius.
+
+# Example Calculation
+
+For an example location at \( \phi = 40^\circ \), on the summer solstice (\( N \approx 172 \)), and an altitude of \( h = 1000 \) meters
+
+ 1. Compute \( \delta \).
+ 2. Compute \( H_{\text{alt}} \) using the altitude correction.
+ 3. Calculate \( D \) using the formula above.
+
+# `R` Implementation
+
+Let's write an `R` script that generates an animated 3D geomap of the earth 
+where mouse over a geographic location (longitude, latitude, altitude) reports
+the *daylight length* for a given date that is provided by the user with a slider day between $1$ and $365$ (January 1 through December 31). 
+This 3D geomap app requires combining `plotly` with `dplyr` and `purrr` for data processing and animation in R. The approach involves (1) Generate a grid of latitude and longitude values; (2) Calculate the daylight length for each latitude, longitude, and day of the year using the daylight duration formula; and (3) Visualize the daylight length as an animated 3D plot using `plotly`.
+
+```{r daylightApp, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(plotly)
+library(dplyr)
+library(purrr)
+
+# Define the function to compute daylight duration with checks
+daylight_duration <- function(latitude, day_of_year, altitude = 0) {
+  # Constants
+  R <- 6371000  # Earth's radius in meters
+  
+  # Solar declination angle
+  declination <- 23.44 * sin((2 * pi / 365) * (day_of_year - 81))
+  
+  # Adjust for altitude in radians
+  altitude_correction <- -sqrt(2 * altitude / R) * (180 / pi)
+  
+  # Compute the hour angle argument safely within [-1, 1]
+  hour_angle_arg <- -tan(latitude * pi / 180) * tan(declination * pi / 180) - sin(altitude_correction * pi / 180)
+  hour_angle_arg <- pmax(pmin(hour_angle_arg, 1), -1)
+  
+  # Calculate hour angle
+  hour_angle <- acos(hour_angle_arg)
+  
+  # Calculate daylight duration in hours
+  daylight_hours <- (2 * hour_angle) / (pi / 12)  # Convert radians to hours
+  
+  # Handle cases of 24-hour daylight or darkness near the poles
+  if (hour_angle_arg <= -1) {
+    daylight_hours <- 24  # Continuous daylight
+  } else if (hour_angle_arg >= 1) {
+    daylight_hours <- 0   # Continuous night
+  }
+  
+  return(daylight_hours)
+}
+
+# Define the grid of latitudes and longitudes
+latitude_grid <- seq(-89, 89, by = 10)
+longitude_grid <- seq(-180, 180, by = 10)
+days <- 1:365
+
+# Calculate daylight duration for each (latitude, longitude, day)
+data <- expand.grid(latitude=latitude_grid, longitude=longitude_grid, day=days) %>%
+  mutate(daylight = map2_dbl(latitude, day, ~daylight_duration(.x, .y)))
+
+# Create plotly animation
+fig <- plot_ly(data = data, x = ~longitude, y = ~latitude, z = ~daylight,
+               color = ~daylight, colors = "Blues",
+               frame = ~day, type = "scatter3d", mode = "markers",
+               marker = list(size = 3)) %>%
+  layout(scene = list(
+    xaxis = list(title = "Longitude"),
+    yaxis = list(title = "Latitude"),
+    zaxis = list(title = "Daylight Hours")),
+    title = "Daylight Length Over Earth Throughout the Year"
+    # , sliders = list(
+    #   list(pad = list(t = 50),
+    #     currentvalue = list(visible = TRUE, prefix = "Day of Year: "),
+    #     steps = lapply(1:365, function(i) list(label = i, method = "animate", args = list(list(frame = i))))
+    #   )
+    # )
+  )
+fig # Show the plot
+```
+
+In this implementation, the `daylight_duration()` function computes the daylight duration for a given latitude, day of the year, and altitude using the astronomical formula. We generated a 2D grid of *latitudes* and *longitudes* by using `expand.grid`, and daylight length is calculated for each coordinate and day of the year using the functions `mutate()` and `map2_dbl()`. Finally, `plot_ly()` creates a 3D *scatter plot*, `scatter3d`, with color-map reflecting the daylight duration for the spatiotemporal location. The animation frames are used to animate each day, and `sliders` allow users to control the day of the year.
+
+```{r 3D_geomap, message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(plotly)
+library(dplyr)
+library(purrr)
+
+# Define the function to compute daylight duration with checks
+daylight_duration <- function(latitude, day_of_year, altitude = 0) {
+  # Constants
+  R <- 6371000  # Earth's radius in meters
+  
+  # Solar declination angle
+  declination <- 23.44 * sin((2 * pi / 365) * (day_of_year - 81)) 
+  # Should 81 be 81.25 to account for leap years?
+  
+  # Adjust for altitude in radians
+  altitude_correction <- -sqrt(2 * altitude / R) * (180 / pi)
+  
+  # Compute the hour angle argument safely within [-1, 1]
+  hour_angle_arg <- -tan(latitude * pi / 180) * tan(declination * pi / 180) - sin(altitude_correction * pi / 180)
+  hour_angle_arg <- pmax(pmin(hour_angle_arg, 1), -1)
+  
+  # Calculate hour angle
+  hour_angle <- acos(hour_angle_arg)
+  
+  # Calculate daylight duration in hours
+  daylight_hours <- (2 * hour_angle) / (pi / 12)  # Convert radians to hours
+  
+  # Handle cases of 24-hour daylight or darkness near the poles
+  if (hour_angle_arg <= -1) { daylight_hours <- 24  # Continuous daylight
+  } else if (hour_angle_arg >= 1) {  daylight_hours <- 0   # Continuous night
+  }
+  
+  return(daylight_hours)
+}
+
+# Define the grid of latitudes and longitudes
+latitude_grid <- seq(-90, 90, by = 5)
+longitude_grid <- seq(-180, 180, by = 5)
+days <- 1:365
+
+# Calculate daylight duration for each (latitude, longitude, day)
+data <- expand.grid(latitude=latitude_grid, longitude=longitude_grid, day=days) %>%
+  mutate(daylight = map2_dbl(latitude, day, ~daylight_duration(.x, .y)))
+
+g2 <- list(projection = list(type = 'orthographic'),
+    showland = TRUE, landcolor = "lightgray", lakecolor = "lightblue")
+
+fig <- plot_ly(data = data, type = 'scattergeo', mode = 'markers',
+               lat = ~latitude, lon = ~longitude, frame = ~day,
+               marker = list(size = 6, opacity = 0.95), color = ~(daylight),
+               colors = "RdYlBu", # https://plotly.com/r/builtin-colorscales/
+               label = data$daylight, text = data$day,
+               hovertemplate = paste('<i>Latitude</i>: %{lat:.2f}',
+                                     '<br><i>Longitude</i>: %{lon:.2f}',
+                                     '<br><i>Day</i>: %{text}',
+                                     '<br><i>Daylight</i>: %{marker.color:.2f}',
+                                     '<extra></extra>'),
+               showlegend = FALSE) %>%
+    layout(geo = g2, title = "Daylight Length Over Earth Throughout the Year",
+        coloraxis = list(colorbar = list(title = "Daylight Hours")))
+fig # Show the plot
+```
+
+# Incorporating Altitude
+
+To make a more topographically-realistic geomap, we need *altitude* data by latitude and longitude. The near-global digital elevation models (DEMs) like the *TessaDEM* dataset or the *ASTER Global Digital Elevation Map (GDEM)*. These datasets provide high-resolution global elevation information, typically covering latitudes from about 84°N to 80°S, with a spatial resolution of approximately 30 meters. For example, TessaDEM combines multiple sources like AW3D30 and MERIT DEM to offer a near-global 3D topographic model, accessible through an *Elevation API* that retrieves altitude data for specific coordinates in JSON format, which would be ideal for integration in data processing workflows.
+
+Alternatively, [ElevationMap.net](https://ElevationMap.net) allows for individual point lookups or programmatic access through their API, letting you retrieve altitude information for specific latitude and longitude coordinates across the globe. This can be helpful to build a more comprehensive dataset with *latitude, longitude*, and *altitude* values.
+ This will make your daylight duration model more accurate, accounting for altitude-based variations in sunrise and sunset times. TessaDEM’s API and documentation and ElevationMap.net offer interactive and API-driven altitude lookup options for single or multiple $(lon, lat)$ geo-coordinates.
+
+To retrieve altitude values for a grid of latitude and longitude points in R, you can use an API like the *TessaDEM Elevation API* or *Open-Elevation API*. These APIs allow you to pull altitude data for multiple geographic coordinates. Below is an example of how to perform this in R using the `httr` and `jsonlite` libraries.
+
+```{r latitudeModel, eval=FALSE, warning=FALSE, message=FALSE}
+# Install necessary packages if not already installed
+# install.packages(c("httr", "jsonlite", "dplyr"))
+# Load required libraries
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(purrr)
+
+# Define the latitude and longitude grid - LOW resolution
+latitude_grid <- seq(-85, 85, by = 10)
+longitude_grid <- seq(-180, 180, by = 10)
+# for HIGHER resolution, use
+# latitude_grid <- seq(-85, 85, by = 5)
+# longitude_grid <- seq(-180, 180, by = 5)
+
+# Create a data frame to store the grid
+grid_df <- expand.grid(latitude = latitude_grid, longitude = longitude_grid)
+# grid_df <- expand.grid(latitude = latitude_grid[8:17], longitude = longitude_grid[20:30])
+
+# Read from local file
+# d <- read.csv(file="C:/Users/IvoD/Desktop/DaylightDataset_Long_Lat_Alt_2024.csv",
+#               header = TRUE)
+
+# Or pull from Elevation API service: Define the base URL for the Open-Elevation API
+base_url <- "https://api.open-elevation.com/api/v1/lookup"
+
+# Function to get altitude for a single latitude and longitude
+get_altitude <- function(lat, lon) {
+  response <- GET(base_url, query = list(locations = paste(lat, lon, sep = ",")))
+  # Parse JSON response
+  data <- fromJSON(content(response, as = "text", encoding = "UTF-8"))
+  # str(data$results)
+  # Extract the altitude value
+  if (!is.null(data$results)) {
+    # return(data$results[[1]]$elevation)
+    return(data$results$elevation)
+  } else {
+    return(NA)  # Return NA if no data is available
+  }
+}
+
+# Apply the function to each row in the grid_df
+grid_df1 <- grid_df %>%
+  rowwise() %>%
+  mutate(altitude = get_altitude(latitude, longitude)) %>%
+  ungroup()
+
+# write.csv(grid_df1, file="C:/Users/IvoD/Desktop/DaylightDataset_Long_Lat_Alt_HighRes2024.csv")
+
+# hist(grid) # View the results
+# head(grid_df$altitude)
+
+# Calculate daylight duration for each (latitude, longitude, day)
+data <- grid_df1 %>% 
+  expand.grid(latitude = latitude_grid, longitude = longitude_grid, day = days) %>%
+  mutate(altitude = map2_dbl(latitude, longitude, ~get_altitude(.x, .y))) %>%  # Retrieve altitude
+  mutate(daylight = pmap_dbl(list(latitude, day, altitude), ~daylight_duration(..1, ..2, ..3)))
+
+
+# Finally plot the 3D geo-map
+# Define geo settings for orthographic projection
+g2 <- list(
+  projection = list(type = 'orthographic'),
+  showland = TRUE,
+  landcolor = "lightgray",
+  lakecolor = "lightblue"
+)
+
+# Plotly code with altitude included in the hovertemplate
+fig <- plot_ly(data = data, type = 'scattergeo', mode = 'markers',
+               lat = ~latitude, lon = ~longitude, frame = ~day,
+               # marker = list(size = 6, opacity = 0.95), color = ~(daylight),
+               marker = list(size = ~(altitude/1000), opacity = 0.95), color = ~(daylight),
+               colors = "RdYlBu", text = data$day, 
+               hovertemplate = paste(
+                 '<i>Latitude</i>: %{lat:.2f}', '<br><i>Longitude</i>: %{lon:.2f}',
+                 '<br><i>Altitude (m)</i>: %{customdata:.2f}',  # Show altitude in meters
+                 '<br><i>Day</i>: %{text}', '<br><i>Daylight Hours</i>:
+                 %{marker.color:.2f}', '<extra></extra>'),
+               customdata = ~altitude,  # Add altitude data for use in hovertemplate
+               showlegend = FALSE) %>%
+  layout(geo = g2, title = "Daylight Length Over Earth Throughout the Year",
+    coloraxis = list(colorbar = list(title = "Daylight Hours"))  )
+fig  # Show the plot
+```
+
+We have pre-loaded the `longitude`, `latitude`, and `altitude` data and the code below, shows the protocol using a coarse version of the triple geo-surface data. For more detailed, higher spatial resolution, and more accurate assessment, we can swap the data accordingly or dynamically pull data from cloud services.
+
+The static image below shows the 3D geomap of the Earth daylight duration across
+Earth's spatiotemporal coordinates. [Part 2 of this DSPA Appendix 13 (Mathematical Modeling and Data Science Analytics of the Duration of Daylight)](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_13_DaylightMathModeling_Part2.html) includes the interactive 3D temporal animation app that allows manual navigation across longitude, latitude, altitude and time (daily).
+
+![DSPA Appendix 13: Spatiotemporal Global Longitudinal Dynamics of Daylight Length](https://wiki.socr.umich.edu/images/2/2e/DSPA_Appendix13_DaylightLength_DST.png)
+
+
+```{r latitudeModelOffline, eval=FALSE, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(purrr)
+library(plotly)
+library(tidyr)
+
+# Assume location_data is the pre-existing data frame with columns: latitude, longitude, altitude
+# Example structure of location_data:
+# location_data <- data.frame(
+#   latitude = c(-90, -80, -70, -60, -50),
+#   longitude = c(-180, -180, -180, -180, -180),
+#   altitude = c(0, 0, 0, 0, 0)
+# )
+
+location_data <- # download the low geospatial resolution lon-lat-alt data
+  read.csv("https://umich.instructure.com/files/37840607/download?download_frd=1", 
+            header = TRUE)
+
+# Define the days of the year
+days <- 1:365
+
+# Function to calculate daylight duration, including altitude
+daylight_duration <- function(latitude, day_of_year, altitude) {
+  if (is.na(latitude) || is.na(day_of_year) || is.na(altitude)) {
+    return(NA)  # Return NA if any input is missing
+  }
+  
+  R <- 6371000  # Earth's radius in meters
+  
+  # Solar declination angle
+  declination <- 23.44 * sin((2 * pi / 365) * (day_of_year - 81))
+  
+  # Altitude correction in radians, only for positive altitudes
+  if (altitude > 0) {
+    altitude_correction <- -sqrt(2 * altitude / R) * (180 / pi)
+  } else {
+    altitude_correction <- 0  # No correction for sea level or below
+  }
+  
+  # Calculate hour angle argument, clamped within [-1, 1]
+  hour_angle_arg <- -tan(latitude * pi / 180) * tan(declination * pi / 180) -
+    sin(altitude_correction * pi / 180)
+  hour_angle_arg <- pmax(pmin(hour_angle_arg, 1), -1)
+  
+  # Calculate hour angle
+  hour_angle <- acos(hour_angle_arg)
+  
+  # Calculate daylight duration in hours
+  daylight_hours <- (2 * hour_angle) / (pi / 12)  # Convert radians to hours
+  
+  # Handle cases of 24-hour daylight or darkness
+  if (hour_angle_arg <= -1) { daylight_hours <- 24  # Continuous daylight
+  } else if (hour_angle_arg >= 1) { daylight_hours <- 0   # Continuous night
+  }
+  
+  return(daylight_hours)
+}
+
+
+# Calculate daylight duration for each (latitude, longitude, day) combination
+daylight_data <- location_data %>%  rowwise() %>%
+  mutate(daylight = list(sapply(days, function(day) 
+    daylight_duration(latitude, day, altitude)))) %>%
+  unnest_wider(daylight, names_sep = "_") %>% ungroup()
+
+# Convert days of the year to actual dates
+# Define the starting date (e.g., January 1, 2024)
+start_date <- as.Date("2024-01-01")
+
+# Convert days of the year to actual dates
+daylight_data_long <- daylight_data %>%
+  pivot_longer(cols = starts_with("daylight_"), names_to = "day", 
+               values_to = "daylight_hours") %>%
+  mutate(day = as.numeric(gsub("daylight_", "", day)))  # Extract numeric day
+
+
+# daylight_data_long <- daylight_data_long %>%
+#   mutate(date = start_date + (day - 1))  # Convert day number to actual date
+
+# Create a combined label for "Day X - Date"
+daylight_data_long <- daylight_data_long %>%
+  mutate(day_label = paste("Day", day, "-", format(date, "%B %d, %Y")))  # Combine day number and date
+
+# Define the starting date (e.g., January 1, 2024)
+start_date <- as.Date("2024-01-01")
+
+# Convert days of the year to actual dates
+daylight_data_long <- daylight_data_long %>%
+  mutate(date = start_date + (day - 1))  # Convert day number to actual date
+
+# Create a combined label for "Day X - Date"
+daylight_data_long <- daylight_data_long %>%
+  mutate(day_label = paste("Day", day, "-", format(date, "%B %d, %Y")))  # Combine day number and date
+# Format the date as "Month Day, Year" for display in the tooltip
+daylight_data_long <- daylight_data_long %>%
+  mutate(date_text = format(date, "%B %d, %Y"))  # Format as "Month Day, Year"
+
+
+# Plotly code with updated frame to display day and date in slider
+fig <- plot_ly(data = daylight_data_long, type = 'scattergeo', mode = 'markers',
+  lat=~latitude, lon=~longitude, frame=~day_label,  # Use combined day and date label for frame
+  marker = list(size = 6, opacity = 0.95), color = ~daylight_hours, colors = "RdYlBu",
+  customdata = ~altitude,  # Altitude data for tooltip
+  hovertemplate = paste('<i>Latitude</i>: %{lat:.2f}', '<br><i>Longitude</i>: %{lon:.2f}',
+                        '<br><i>Altitude (m)</i>: %{customdata:.2f}',  
+                        '<br><i>Date</i>: %{text}',  # Display formatted date
+                        '<br><i>Daylight Hours</i>: %{marker.color:.2f}',
+                        '<extra></extra>'),
+  text = ~date_text,  # Assign date_text to the `text` property for hovertemplate
+  showlegend = FALSE) %>%
+  layout(geo = g2,
+    title = list(text = "Daylight Length Over Earth Throughout the Year"),  # Set title in list format
+    coloraxis = list(colorbar = list(title = "Daylight Hours"))  # Adjust coloraxis for colorbar
+  )
+
+fig  # Show the plot
+```
+
+
+Note the use of `expand.grid` to create a data frame (`grid_df` and `grid_df1`) containing each latitude-longitude-altitude triple from the specified grids.
+The `get_altitude()` function makes a `GET` request to Open-Elevation’s API for each latitude-longitude pair and obtain elevation data in meters.
+Using `mutate()` with `rowwise()`, the `get_altitude()` function is applied to each coordinate pair in `grid_df`, retrieving altitude values and adding them as a new column.
+We have saved the data to canvas, as free elevation APIs like Open-Elevation may have request limits. For larger datasets, we can also batch request or pause between requests.
+TessaDEM provides an alternative higher-resolution elevation data but may require setup with access credentials.
+
+# Daylight Savings Time
+
+In 1895, New Zealand entomologist [George Hudson](https://en.wikipedia.org/wiki/George_Hudson_(entomologist)) proposed *Daylight Saving Time* (DST) to utilize the extra daylight for collecting insects after work. Later, motivated by the desire to enjoy more daylight in the evenings, the British builder William Willett popularized the idea in 1907. Germany and Austria-Hungary were the first to implement DST on April 30, 1916, as a way to conserve fuel during World War I. Other countries, including the UK and the US, soon adopted DST during the war, with the practice continuing in various forms thereafter, especially in regions with seasonal daylight variations.
+
+*Daylight Saving Time Pros*: 
+
+ 1. *Energy Conservation*: DST was originally intended to reduce energy usage by extending daylight hours in the evening, reducing the need for artificial lighting and heating.
+ 2. *More Daylight for Activities*: Longer daylight hours in the evening encourage outdoor activities and exercise, benefiting physical and mental health.
+ 3. *Economic Boost*: Retailers, restaurants, and tourism businesses may see increased activity and sales as people spend more time outside after work.
+ 4. *Reduced Traffic Accidents*: Studies suggest that DST can reduce traffic accidents due to better visibility in evening hours.
+
+*Daylight Saving Time Cons*:
+
+ 1. *Health Disruptions*: Shifting clocks disrupts circadian rhythms, potentially leading to sleep problems, fatigue, and increased health risks like heart attacks and strokes shortly after the time change.
+ 2. *Limited Energy Savings*: Modern research questions DST’s energy-saving benefits due to changes in how we use energy today (e.g., air conditioning in warmer months).
+ 3. *Increased Accident Risks*: While evening accidents might decrease, studies show an increase in accidents and workplace injuries immediately following the spring transition due to disrupted sleep.
+ 4. *Complexity and Confusion*: Switching clocks can cause logistical issues, particularly in global business and communication, and can be confusing for individuals living near time zone borders.
+
+In *temperate zones*, where seasonal variations in daylight are more pronounced than the tropical/subtropical areas, but less extreme than the acrtic zones, DST can have tangible benefits by aligning waking hours more closely with daylight hours during spring and summer. This provides more evening light, which is highly valued in regions with shorter winter days, enhancing outdoor leisure and reducing electricity demand for lighting. However, in tropical zones, where day length varies little across the year, DST provides minimal benefit. In temperate regions, DST’s value lies in extending evening daylight during months when daylight hours increase, providing both social and economic benefits during the warmer months when outdoor activities are popular.
+
+## DST - Quantitative Optimization and Inference
+
+To quantify the benefits of *Daylight Saving Time (DST)* versus *year-round standard time* and transform this into an optimization problem, we can define several objective functions. Each function can measure different aspects of DST's impact. Some of the key categories influencing the perception of benefots to DST include *economic impact*, *health benefits*, *environmental impact*, and *social factors*. 
+
+These objectives can be combined or optimized individually based on specific weights or goals. Below, I outline potential objective functions for each category, discuss how to set up the optimization, and provide example R code to model and optimize these objectives.
+
+### A. Economic Impact
+
+*Objective Function*: Maximize retail and hospitality revenue by aligning business hours with daylight hours.
+ 
+ - Hypothesis: Increased evening daylight under DST boosts consumer spending on leisure activities.
+ - *Metric*: \( f_{\text{economic}} = \sum_{t=1}^{T} (S_t \cdot L_t) \)
+   - \( S_t \): Average spending per hour in the evening.
+   - \( L_t \): Number of evening daylight hours.
+  
+### B. Health Benefits
+*Objective Function*: Minimize health risks associated with DST transitions (e.g., sleep disruptions).
+
+ - Hypothesis: Sudden time changes disrupt sleep and increase risks of cardiovascular issues and accidents.
+ - *Metric*: \( f_{\text{health}} = -\sum_{d=1}^{D} R_d \)
+   - \( R_d \): Risk factor (e.g., accident rate, heart attack risk) on day \(d\).
+   - *Optimization*: Minimize \( f_{\text{health}} \) by reducing DST transitions.
+
+### C. Environmental Impact
+*Objective Function*: Minimize energy consumption by aligning active hours with daylight.
+
+ - Hypothesis: DST reduces artificial lighting in the evening, but its impact may vary based on modern energy usage.
+ - *Metric*: \( f_{\text{environment}} = -\sum_{t=1}^{T} (E_t \cdot L_t) \)
+   - \( E_t \): Energy saved per hour in the evening.
+   - \( L_t \): Number of evening daylight hours.
+
+### D. Social Factors
+*Objective Function*: Maximize time available for outdoor social activities in daylight.
+
+  Hypothesis: Extended daylight supports social well-being by allowing more outdoor activities.
+ - *Metric*: \( f_{\text{social}} = \sum_{t=1}^{T} (A_t \cdot L_t) \)
+   - \( A_t \): Social activity value per hour (e.g., based on participation rates).
+   - *Optimization*: Maximize \( f_{\text{social}} \) by aligning active hours with evening daylight.
+
+Let’s create a *weighted sum* of these objective functions to evaluate the overall benefit
+\[\text{Objective} = w_{\text{economic}} \cdot f_{\text{economic}} + w_{\text{health}} \cdot f_{\text{health}} + w_{\text{environment}} \cdot f_{\text{environment}} + w_{\text{social}} \cdot f_{\text{social}} ,\]
+where \( w_{\text{economic}}, w_{\text{health}}, w_{\text{environment}}, w_{\text{social}} \) are weights assigned to each factor based on their importance.
+
+This is a *multi-objective optimization problem*, but we can solve it as a single-objective problem by tuning the weights.
+
+Below is an `R` example simulating and optimizing these objective functions. For simplicity, we’ll use hypothetical values.
+
+*Step 1*: Define Parameters and Objective Functions
+
+```{r optim1, warning=FALSE, message=FALSE}
+# Set up weights for each objective (adjust based on importance)
+weights <- c(economic = 0.4, health = 0.3, environment = 0.2, social = 0.1)
+
+# Hypothetical data (values would ideally come from real data sources)
+set.seed(123)
+T <- 24  # Number of hours in a day
+D <- 365  # Number of days in a year
+
+# Generate random values representing hourly metrics across days
+S <- runif(T, 100, 300)  # Spending per hour
+R <- rnorm(D, mean = 1.2, sd = 0.5)  # Risk factor per day (health impact)
+E <- runif(T, 10, 50)  # Energy saved per hour
+A <- runif(T, 0.2, 1)  # Social activity value per hour
+L <- ifelse(6 <= 1:T & 1:T <= 18, 1, 0)  # Daylight hours (6am-6pm)
+
+# Define the objective functions
+f_economic <- sum(S * L)  # Economic impact
+f_health <- -sum(R)  # Health impact (minimized)
+f_environment <- -sum(E * L)  # Environmental impact
+f_social <- sum(A * L)  # Social impact
+
+# Aggregate objective
+objective <- weights["economic"] * f_economic +
+             weights["health"] * f_health +
+             weights["environment"] * f_environment +
+             weights["social"] * f_social
+objective
+```
+
+*Step 2*: Optimize by Adjusting Weights or Daylight Hours. Suppose we want to see how different weights impact the total objective.
+
+```{r optim2, warning=FALSE, message=FALSE}
+# Define a function to compute objective given weights
+compute_objective <- function(w) {
+  w["economic"] * f_economic +
+    w["health"] * f_health +
+    w["environment"] * f_environment +
+    w["social"] * f_social
+}
+
+# Try different weight configurations
+weights_list <- list(
+  c(economic = 0.5, health = 0.2, environment = 0.2, social = 0.1),
+  c(economic = 0.3, health = 0.4, environment = 0.2, social = 0.1),
+  c(economic = 0.2, health = 0.3, environment = 0.4, social = 0.1)
+)
+
+# Evaluate the objective for each weight configuration
+objectives <- sapply(weights_list, compute_objective)
+objectives
+```
+
+*Step 3*: Optimize Daylight Hours (DST vs Standard Time). To simulate DST’s impact, we can adjust the `L` vector (representing daylight hours) to see how it affects the objective.
+
+```{r optim3, warning=FALSE, message=FALSE}
+# Simulate Standard Time (6am-6pm daylight)
+L_standard <- ifelse(6 <= 1:T & 1:T <= 18, 1, 0)
+
+# Simulate DST (shift daylight to 7am-7pm)
+L_dst <- ifelse(7 <= 1:T & 1:T <= 19, 1, 0)
+
+# Recalculate objectives
+f_economic_standard <- sum(S * L_standard)
+f_economic_dst <- sum(S * L_dst)
+
+f_environment_standard <- -sum(E * L_standard)
+f_environment_dst <- -sum(E * L_dst)
+
+f_social_standard <- sum(A * L_standard)
+f_social_dst <- sum(A * L_dst)
+
+# Calculate objective values
+objective_standard <- weights["economic"] * f_economic_standard +
+              weights["health"] * f_health +  # Health is unaffected by DST in this setup
+              weights["environment"] * f_environment_standard +
+              weights["social"] * f_social_standard
+
+objective_dst <- weights["economic"] * f_economic_dst +
+              weights["health"] * f_health +  # Health is unaffected by DST in this setup
+              weights["environment"] * f_environment_dst +
+              weights["social"] * f_social_dst
+
+# Print results
+objective_standard
+objective_dst
+```
+
+By comparing `objective_standard` and `objective_dst`, you can quantify the overall benefit of DST versus year-round standard time under different weight configurations. You can also adjust weights based on priorities (e.g., if health is more important than economic factors) and observe how the optimal choice between DST and standard time shifts.
+This approach provides a flexible way to simulate and optimize DST’s impact across multiple factors. For a real-world application, replace the random data with actual metrics and refine the objective functions based on empirical evidence.
+
+Show some examples of using the above mathematical model to predict daylight and 
+validate using real data from [DaylightMap.org](https://daylightmap.org/).
+
+[Part 2 of this DSPA Appendix 13 (Mathematical Modeling and Data Science Analytics of the Duration of Daylight)](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_13_DaylightMathModeling_Part2.html) is intentionally separated as it includes large data and JavaScript code supporting the plotly app. It includes the interactive 3D temporal animation app that allows manual navigation across longitude, latitude, altitude and time (daily).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

@@ -1,0 +1,2107 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Linear and Nonlinear Dimensionality Reduction</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+We use a simple 2D rotation matrix example to demonstrate the rationale for representing complex phenomena in terms of corresponding simple lower-dimensional fundamental constituents. Specifically, we will discuss linear and nonlinear data dimensionality reduction techniques, such as principal and independent component analyses, factor analysis, matrix singular value decomposition, t-distributed stochastic neighbor embedding, and uniform manifold approximation and projection. These methods will be applied to hand-written digit recognition imaging data and Parkinson’s disease clinical data.
+
+
+
+# Motivational Example: Reducing 2D to 1D
+
+Now that we have most of the `R` fundamentals covered and saw a model-based forecasting (multivariate linear regression), we can delve into more interesting ML/AI data analytic methods. *Dimension reduction* reduces the number of features when dealing with a very large number of variables. Linear and nonlinear dimension reduction can help us extract a set of "uncorrelated" (principal) variables, reduce the complexity of the data, and facilitate supervised data clustering and unsupervised classification. Dimensionality reduction is related to feature selection, however, it goes beyond simply picking some of the original variables. Rather, we are constructing new (uncorrelated) variables, which sometimes may be expressed as linear functions of the original features, and sometimes can only be inferred as highly nonlinear transformations (maps) of the initial state space.
+
+Dimensionality reduction techniques enable exploratory data analytics by reducing the complexity of the dataset, still approximately preserving important process characteristics, such as retaining the distances between cases or subjects. If we are able to reduce the complexity down to a few dimensions and protect some of that information content in the data, then we may visually inspect the data and try other lower-dimensional methods to untangle its intrinsic characteristics.
+
+All *dimensionality reduction* techniques carry some resemblance to *variable selection*, which we will see in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html). The *continuous* process of dimensionality reduction yields lower variability compared to the *discrete* feature selection process, e.g., see [Wolfgang M. Hartmann's paper](https://link.springer.com/chapter/10.1007/11558958_113).
+
+Specifically, we will (1) start with a synthetic example demonstrating the reduction of a 2D data into 1D, (2) explain the notion of rotation matrices, (3) show examples of principal component analysis (PCA), singular value decomposition (SVD), independent component analysis (ICA), factor analysis (FA), and t-distributed Stochastic Neighbor Embedding (t-SNE), Uniform Manifold Approximation and Projection (UMAP), and (4) present a Parkinson's disease case-study at the end.
+
+Let's consider a simple example of twin heights. Suppose we simulate $1,000$ 2D points that representing *normalized* individual heights, i.e., number of standard deviations from the mean height. Each 2D point represents a pair of twins. We will simulate this scenario using [Bivariate Normal Distribution](https://socr.umich.edu/HTML5/BivariateNormal/).
+
+```{r simulate_twin_heights, fig.cap="Simulated twin heights",warning=F, message=FALSE}
+library(MASS)
+
+set.seed(1234)
+n <- 1000
+y=t(mvrnorm(n, c(0, 0), matrix(c(1, 0.95, 0.95, 1), 2, 2)))
+```
+
+$Twin1_{Height}$ | $Twin2_{Height}$
+-----------------|-----------------
+$y[1,1]$  | $y[1,2]$ 
+$y[2,1]$  | $y[2,2]$ 
+$y[3,1]$  | $y[3,2]$ 
+$\cdots$ | $\cdots$
+$y[500,1]$  | $y[500,2]$ 
+
+$$ y^T_{2\times500} = \begin{bmatrix}
+    y[1, ]=Twin1_{Height} \\
+    y[2, ]=Twin2_{Height}
+\end{bmatrix} \sim BVN \left ( \mu= \begin{bmatrix}
+    Twin1_{Height} \\
+    Twin2_{Height}
+\end{bmatrix} , \Sigma=\begin{bmatrix}
+    1 & 0.95 \\
+    0.95 & 1
+\end{bmatrix}
+\right ) .$$
+ 
+```{r warning=F, error=F, message=F}
+# plot(y[1, ], y[2, ], xlab="Twin 1 (standardized height)", 
+#      ylab="Twin 2 (standardized height)", xlim=c(-3, 3), ylim=c(-3, 3))
+# points(y[1, 1:2], y[2, 1:2], col=2, pch=16)
+
+library(plotly)
+plot_ly() %>% 
+  add_markers(x = ~y[1, ], y = ~y[2, ], name="Data Scatter") %>% 
+  add_markers(x = y[1, 1], y = y[2, 1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Twin-pair 1") %>% 
+  add_markers(x = y[1, 2], y = y[2, 2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Twin-pair 2")%>% 
+    layout(title='Scatter Plot Simulated Twin Data (Y)', 
+           xaxis = list(title="Twin 1 (standardized height)"), yaxis = list(title="Twin 2 (standardized height)"),
+           legend = list(orientation = 'h'))
+```
+
+These data may represent a fraction of the information included in a high-throughput neuroimaging genetics study of twins. You can see [one example of such pediatric study here](https://wiki.socr.umich.edu/index.php/SOCR_Data_Oct2009_ID_NI). 
+
+Tracking the distances between any two samples can be accomplished using the `dist` function. `stats::dist()` is a function computing the distance matrix (according to a user-specified  distance metric, default=Euclidean) representing the distances between the *rows of the data matrix*. For example, here is the distance between the two RED points in the figure above:
+
+```{r warning=F, error=F, message=F}
+d=dist(t(y))
+as.matrix(d)[1, 2]
+```
+
+To reduce the 2D data to a simpler 1D plot we can transform the data to a 1D matrix (vector) preserving (approximately) the distances between the 2D points.
+
+The 2D plot shows the Euclidean distance between the pair of RED points, the length of this line is the distance between the 2 points. In 2D, these lines tend to go along the direction of the diagonal. If we `rotate` the plot so that the diagonal aligned with the x-axis we get the following *raw* and *transformed* plots:
+
+```{r rotation, fig.cap="Raw (above) and transformed (below) Twin heights scatterplots.", fig.width=10.5, fig.height=5.25}
+z1 = (y[1, ]+y[2, ])/2 # the sum (actually average)
+z2 = (y[1, ]-y[2, ])   # the difference
+
+z = rbind( z1, z2) # matrix z has the same dimension as y
+
+thelim <- c(-3, 3)
+# par(mar=c(1, 2))
+# par(mfrow=c(2,1))
+# plot(y[1, ], y[2, ], xlab="Twin 1 (standardized height)", 
+#      ylab="Twin 2 (standardized height)", 
+#      xlim=thelim, ylim=thelim)
+# points(y[1, 1:2], y[2, 1:2], col=2, pch=16)
+
+# plot(z[1, ], z[2, ], xlim=thelim, ylim=thelim, xlab="Average height", ylab="Difference in height")
+# points(z[1, 1:2], z[2, 1:2], col=2, pch=16)
+# par(mfrow=c(1,1))
+
+plot_ly() %>% 
+  add_markers(x = ~z[1, ], y = ~z[2, ], name="Data Scatter") %>% 
+  add_markers(x = z[1, 1], y = z[2, 1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Twin-pair 1") %>% 
+  add_markers(x = y[1, 2], y = y[2, 2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Twin-pair 2") %>% 
+  layout(title='Scatter Plot Transformed Twin Data (Z)', 
+         xaxis = list(title="Twin 1 (standardized height)", scaleanchor = "y", scaleratio = 2), 
+         yaxis = list(title="Twin 2 (standardized height)", scaleanchor = "x", scaleratio = 0.5),
+         legend = list(orientation = 'h'))
+```
+
+Of course, matrix linear algebra notation can be used to represent this affine transformation of the data. Here we can see that to get the result `z`, we multiplied `y` by the matrix $A$:
+
+$$ A = \begin{pmatrix}
+1/2&1/2\\
+1&-1\\
+\end{pmatrix}
+\implies z = A \times y .$$
+
+We can invert this transform by multiplying the result by the `inverse` (rotation matrix?) $A^{-1}$ as follows:
+
+$$ A^{-1} = \begin{pmatrix}
+1&1/2\\
+1&-1/2\\
+\end{pmatrix}
+\implies y = A^{-1} \times z $$
+
+You can try this in `R`:
+```{r warning=F, error=F, message=F}
+A <- matrix(c(1/2, 1, 1/2, -1), nrow=2, ncol=2); A   # define a matrix
+A_inv <- solve(A); A_inv  # inverse
+A %*% A_inv # Verify result
+```
+
+Note that this matrix transformation did not preserve distances, i.e., it's not a simple rotation in 2D:
+
+```{r warning=F, error=F, message=F}
+d=dist(t(y)); as.matrix(d)[1, 2]     # distance between first two points in Y
+d1=dist(t(z)); as.matrix(d1)[1, 2]   # distance between first two points in Z=A*Y
+```
+
+# Matrix Rotations 
+
+One important question is how to identify transformations that preserve distances. In mathematics, transformations between metric spaces that are distance-preserving are called `isometries` (or `congruences` or congruent transformations).
+
+First, let's test the MA transformation we used above:
+$$A=\frac{Y_1+Y_2}{2} \\ M=Y_1 - Y_2.$$
+
+```{r warning=F, error=F, message=F}
+MA <- matrix(c(1/2, 1, 1/2, -1), 2, 2)
+
+MA_z <- MA%*%y
+d <- dist(t(y))
+d_MA <- dist(t(MA_z))
+
+# plot(as.numeric(d), as.numeric(d_MA)) 
+# abline(0, 1, col=2)
+
+plot_ly() %>% 
+  add_markers(x = ~as.numeric(d)[1:5000], y = ~as.numeric(d_MA)[1:5000], name="Transformed Twin Distances") %>% 
+  add_markers(x = ~as.numeric(d)[1], y = ~as.numeric(d_MA)[1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Twin-pair 1") %>% 
+  add_markers(x = ~as.numeric(d)[2], y = ~as.numeric(d_MA)[2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Twin-pair 2") %>% 
+  add_trace(x = ~c(0,8), y = ~c(0,8), mode="lines",
+        line = list(color = "red", width = 4), name="Preserved Distances") %>% 
+    layout(title='Preservation of Distances Between Twins (Transform=MA_Z)', 
+           xaxis = list(title="Original Twin Distances", range = c(0, 8)), 
+           yaxis = list(title="Transformed Twin Distances", range = c(0, 8)),
+           legend = list(orientation = 'h'))
+```
+
+Observe that this MA transformation is not an isometry - the distances are not preserved. Here is one example with $v1=\begin{bmatrix} v1_x=0 \\ v1_y=1 \end{bmatrix}$, $v2=\begin{bmatrix} v2_x=1 \\ v2_y=0 \end{bmatrix}$, which are distance $\sqrt{2}$ apart in their native space, but separated further by the transformation $MA$, $d(MA(v1),MA(v2))=2$.
+
+```{r warning=F, error=F, message=F}
+MA; t(MA); solve(MA); t(MA) - solve(MA)
+v1 <- c(0,1); v2 <- c(1,0); rbind(v1,v2)
+euc.dist <- function(x1, x2) sqrt(sum((x1 - x2) ^ 2))
+euc.dist(v1,v2)
+v1_t <- MA %*% v1; v2_t <- MA %*% v2
+euc.dist(v1_t,v2_t)
+```
+
+More generally, if
+$$ \begin{pmatrix}
+Y_1\\
+Y_2\\
+\end{pmatrix}
+\sim BVN \left( \begin{pmatrix}
+\mu_1\\
+\mu_2\\
+\end{pmatrix},
+\begin{pmatrix}
+\sigma_1^2&\sigma_{12}\\
+\sigma_{12}&\sigma_2^2\\
+\end{pmatrix}
+\right).$$
+
+Then,
+$$ Z = AY + \eta \sim BVN(\eta + A\mu,A\Sigma A^{T}),$$
+
+where [BVN denotes bivariate normal distribution](http://www.distributome.org/V3/calc/2D_BivariateNormalCalculator.html), $A = \begin{pmatrix}a&b\\c&d\\ \end{pmatrix}$, $Y=(Y_1,Y_2)^T$, $\mu = (\mu_1,\mu_2)$, $\Sigma = \begin{pmatrix} \sigma_1^2&\sigma_{12}\\ \sigma_{12}&\sigma_2^2\\ \end{pmatrix}$.
+
+You can verify this by using the [change of variable theorem](https://en.wikipedia.org/wiki/Change_of_variables). Thus, affine transformations preserve bivariate normality. However, in general, the linear transformation ($A$) is not guaranteed to be an isometry. 
+
+The question now is under what additional conditions for the transformation matrix $A$, can we guarantee an isometry.
+
+Notice that,
+$$ d^2(P_i,P_j) =\sum_{k=1}^{n} (P_{jk}-P_{ik})^2 = ||P||^2 = P^TP,$$
+
+where $P = (P_{j,1}-P_{i,1},...,P_{j,n}-P_{i,n})^T$, $P_i,P_j \in \mathbb{R}^n$ are any two points in $n$ dimensions.
+
+Thus, the only requirement we need for $A$ to be an isometry is $(AY)^T(AY)=Y^TY$, i.e., $A^TA=I$, which implies that $A$ is an orthogonal (rotational) matrix.
+
+Let's use a two dimension orthogonal matrix to illustrate this.
+
+Set $A = \frac{1}{\sqrt{2}} \begin{pmatrix}1&1\\1&-1\\ \end{pmatrix}$. It's easy to verify that $A$ is an orthogonal (2D rotation) matrix.
+
+The simplest way to test the isometry is to perform the linear transformation directly as follows.
+
+```{r warning=F, error=F, message=F}
+A <- 1/sqrt(2)*matrix(c(1, 1, 1, -1), 2, 2)
+z <- A%*%y
+d <- dist(t(y))
+d2 <- dist(t(z))
+
+# plot(as.numeric(d), as.numeric(d2)) 
+# abline(0, 1, col=2)
+
+plot_ly() %>% 
+  add_markers(x = ~as.numeric(d)[1:5000], y = ~as.numeric(d2)[1:5000], name="Transformed Twin Distances") %>% 
+  add_trace(x = ~c(0,8), y = ~c(0,8), mode="lines",
+        line = list(color = "red", width = 4), name="Preserved Distances") %>% 
+  add_markers(x = ~as.numeric(d)[1], y = ~as.numeric(d2)[1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Twin-pair 1") %>% 
+  add_markers(x = ~as.numeric(d)[2], y = ~as.numeric(d2)[2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Twin-pair 2")  %>% 
+    layout(title='Preservation of Distances Between Twins (Transform=A)', 
+           xaxis = list(title="Original Twin Distances", range = c(0, 8)), 
+           yaxis = list(title="Transformed Twin Distances", range = c(0, 8)),
+           legend = list(orientation = 'h'))
+```
+
+We can observe that the distances between points computed from original data and the transformed data are the same. Thus, the transformation $A$ is called a rotation (isometry) of $y$. 
+
+The alternative method is to simulate from the joint distribution of $Z = (Z_1,Z_2)^T$. 
+
+As we have mentioned above: $Z = AY + \eta \sim BVN(\eta + A\mu,A\Sigma A^{T})$.
+
+where $\eta = (0,0)^T$, $\Sigma = \begin{pmatrix} 1&0.95\\0.95&1\\ \end{pmatrix}$, $A = \frac{1}{\sqrt{2}} \begin{pmatrix}1&1\\1&-1\\ \end{pmatrix}$.
+
+We can compute $A\Sigma A^{T}$ by hand or using matrix multiplication in `R`:
+
+```{r warning=F, error=F, message=F}
+sig <- matrix(c(1,0.95,0.95,1),nrow=2)
+A%*%sig%*%t(A)
+```
+
+$A\Sigma A^{T}$ represents the variance-covariance matrix, $cov(z_1,z_2)$.  We can simulate $z_1$, $z_2$ independently from $z_1\sim N(0,1.95)$ and $z_2 \sim N(0,0.05)$. Note that *independence* and *uncorrelation* are equivalent for bivariate normal distribution.
+
+```{r echo=F, warning=F, error=F, message=F}
+set.seed(2017)
+zz1 = rnorm(1000,0,sd = sqrt(1.95))
+zz2 = rnorm(1000,0,sd = sqrt(0.05))
+zz = rbind(zz1,zz2)
+d3 = dist(t(zz))
+# qqplot(d,d3)
+# abline(a = 0,b=1,col=2)
+
+# compute the quantiles
+QQ <- qqplot(d,d3, plot.it=FALSE)
+# take a smaller sample size to expedite the viz
+ind <-  sample(1:length(QQ$x), 10000, replace = FALSE)
+x1 <- QQ$x[ind]
+y1 <- QQ$y[ind]
+plot_ly() %>%
+  # add_markers(x = ~as.numeric(d)[1:1000], y = ~as.numeric(d3)[1:1000], name="Transformed Twin Distances") %>%
+  add_markers(x = ~x1, y = ~y1, name="Transformed Distances") %>%
+  add_trace(x = ~c(0,8), y = ~c(0,8), mode="lines",
+        line = list(color = "red", width = 4), name="Preserved Distances") %>%
+  add_markers(x = ~x1[1], y = ~y1[1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Pair 1") %>%
+  add_markers(x = ~x1[2], y = ~y1[2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Pair 2")  %>%
+    layout(title='Preservation of Distances (Random Bivariate))',
+           xaxis = list(title="Original Distances", range = c(0, 8)),
+           yaxis = list(title="Transformed Distances", range = c(0, 8)),
+           legend = list(orientation = 'h'))
+```
+
+Let's demonstrate that the rotation transform $A = \frac{1}{\sqrt{2}} \begin{pmatrix}1&1\\1&-1\\ \end{pmatrix}: y\to z\equiv Ay$ preserves twin-pair distances by plotting the raw and transformed distances and computing the pre- and post-transform distances between two pair of twins.
+
+```{r rotation2, fig.cap="Twin height scatterplot (upper) and after rotation (lower).", fig.width=10.5, fig.height=5.25}
+
+# thelim <- c(-3, 3)
+# #par(mfrow=c(2,1))
+# plot(y[1, ], y[2, ], xlab="Twin 1 (standardized height)", 
+#      ylab="Twin 2 (standardized height)", 
+#      xlim=thelim, ylim=thelim)
+# points(y[1, 1:2], y[2, 1:2], col=2, pch=16)
+
+# plot(z[1, ], z[2, ], xlim=thelim, ylim=thelim, xlab="Average height", ylab="Difference in height")
+# points(z[1, 1:2], z[2, 1:2], col=2, pch=16)
+# par(mfrow=c(1,1))
+
+# Original (pre-transform)
+euc.dist <- function(x1, x2) sqrt(sum((x1 - x2) ^ 2))
+plot_ly() %>% 
+  add_markers(x = ~y[1,], y = ~y[2,], name="Twin Distances") %>% 
+  add_markers(x = ~y[1, 1], y = ~y[2, 1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Twin-pair 1") %>% 
+  add_markers(x = ~y[1, 2], y = ~y[2, 2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Twin-pair 2")  %>% 
+    layout(title=paste0('(Pre-Transform) Original Twin Heights (standardized): Twin-Pair Distance = ', 
+              round(euc.dist(y[, 1], y[, 2]),3)),
+           xaxis = list(title="Twin 1"), 
+           yaxis = list(title="Twin 2"),
+           legend = list(orientation = 'h'))
+
+# Transform
+plot_ly() %>% 
+  add_markers(x = ~z[1,], y = ~z[2,], name="Transformed Twin Distances") %>% 
+  add_markers(x = ~z[1, 1], y = ~z[2, 1], marker=list(color = 'red', size = 20,
+                   line = list(color = 'yellow', width = 2)), name="Twin-pair 1") %>% 
+  add_markers(x = ~z[1, 2], y = ~z[2, 2], marker=list(color = 'green', size = 20,
+                   line = list(color = 'orange', width = 2)), name="Twin-pair 2")  %>% 
+    layout(title=paste0('(Transform) Twin Heights: Twin-Pair Distance = ', 
+              round(euc.dist(z[, 1], z[, 2]),3)),
+           xaxis = list(title="Twin 1", scaleanchor = "y", scaleratio = 2), 
+           yaxis = list(title="Twin 2", scaleanchor = "x", scaleratio = 0.5),
+           legend = list(orientation = 'h'))
+```
+
+We applied this transformation and observed that the *distances between points were unchanged after the rotation* $A$. This rotation achieves the goals of:
+
+* preserving the distances between points, and 
+* reducing the dimensionality of the data (see plot reducing 2D to 1D). 
+
+*Removing the second dimension* and recomputing the distances, we get:
+
+```{r approx_dist, fig.cap="Distance computed with just one dimension after rotation versus actual distance."}
+d4 = dist(z[1, ]) ##distance computed using just first dimension
+# plot(as.numeric(d), as.numeric(d4)) 
+# abline(0, 1)
+
+# take a smaller sample size to expedite the viz
+ind <-  sample(1:length(d4), 10000, replace = FALSE)
+x1 <- d[ind]
+y1 <- d4[ind]
+plot_ly() %>%
+  add_markers(x = ~x1, y = ~y1, name="Transformed Distances") %>%
+  add_trace(x = ~c(0,8), y = ~c(0,8), mode="lines",
+        line = list(color = "red", width = 4), name="Preserved Distances") %>%
+  layout(title='Approximate Distance Preservation in 1D',
+           xaxis = list(title="(1D) Original Distances", range = c(0, 8)),
+           yaxis = list(title="(1D) A-Transformed Distances", range = c(0, 8)),
+           legend = list(orientation = 'h'))
+  # add_markers(x = ~x1[1], y = ~y1[1], marker=list(color = 'red', size = 20,
+  #                  line = list(color = 'yellow', width = 2)), name="Pair 1") %>%
+  # add_markers(x = ~x1[2], y = ~y1[2], marker=list(color = 'green', size = 20,
+  #                  line = list(color = 'orange', width = 2)), name="Pair 2")  %>%
+  # layout(title=paste0('Approximate Distance Estimated in 1D(Transform): Twin-Pair Distance = ', 
+  #             round(euc.dist(x1[1], y1[1]),3)),
+  #          xaxis = list(title="Original Distances", range = c(0, 8)),
+  #          yaxis = list(title="Transformed Distances", range = c(0, 8)),
+  #          legend = list(orientation = 'h'))
+```
+
+The 1D distance provides a very good approximation to the actual 2D distance. This first dimension of the transformed data is called the first `principal component`. In general, this idea motivates the use of principal component analysis (PCA) and the singular value decomposition (SVD) to achieve dimension reduction. 
+
+# Notation
+
+In the notation above, the rows represent variables and columns represent cases. In general, rows represent cases and columns represent variables. Hence, in our example shown here, $Y$ would be transposed to be an $N \times 2$ matrix. This is the most common way to represent the data: individuals in the rows, features are columns. In genomics, it is more common to represent subjects/SNPs/genes in the columns. For example, genes are rows and samples are columns. The sample covariance matrix usually denoted with
+$\mathbf{X}^\top\mathbf{X}$ and has cells representing covariance between two units. Yet for this to be the case, we need the rows of $\mathbf{X}$ to represent units. Here, we have to compute $\mathbf{Y}\mathbf{Y}^\top$ instead following the rescaling.
+
+# Summary (PCA vs. ICA vs. FA)
+
+Principal Component Analysis (PCA), Independent Component Analysis (ICA), and Factor Analysis (FA) are similar strategies, seeking to identify a new basis (vectors representing the principal directions) that the data is projected against to maximize certain (specific to each technique) objective function. These basis functions, or vectors, are just linear combinations of the original features in the data/signal. 
+
+The singular value decomposition (SVD), discussed later in this chapter, provides a specific matrix factorization algorithm that can be employed in various techniques to decompose a data matrix $X_{m\times n}$ as ${U\Sigma V^{T}}$, where ${U}$ is an $m \times m$ real or complex unitary matrix (${U^TU=UU^T=I}$, i.e., $|\det(U)|=1$), ${\Sigma }$ is a $m\times n$ rectangular diagonal matrix of *singular values*, representing non-negative values on the diagonal, and ${V}$ is an $n\times n$ unitary matrix.
+
+Method | Assumptions | Cost Function Optimization | Applications
+-------|-------------|----------------------------|-------------
+*PCA* |  Gaussian signals, linear bivariate relations | Aims to explain the variance in the original signal. Minimizes the covariance of the data and yields high-energy orthogonal vectors in terms of the signal variance. PCA looks for an orthogonal linear transformation that maximizes the variance of the variables   |  Relies on $1^{st}$ and $2^{nd}$ moments of  the measured data, which makes it useful when data features are close to Gaussian
+*ICA* |  No Gaussian signal assumptions  | Minimizes higher-order statistics (e.g., $3^{rd}$ and $4^{th}$ order skewness and kurtosis), effectively minimizing the *mutual information* of the transformed output. ICA seeks a linear transformation where the basis vectors are statistically independent, but neither Gaussian, orthogonal or ranked in order  | Applicable for non-Gaussian, very noisy, or mixture processes composed of simultaneous input from multiple sources
+*FA* | Approximately Gaussian data | Objective function relies on second order moments to compute likelihood ratios. FA *factors* are linear combinations that maximize the shared portion of the variance underlying *latent variables*, which may use a variety of optimization strategies (e.g., maximum likelihood)  | PCA-generalization used to test a theoretical model of latent factors causing the observed features
+
+# Principal Component Analysis (PCA)
+
+PCA (principal component analysis) is a mathematical procedure that transforms a number of possibly correlated variables into a smaller number of uncorrelated variables through a process known as orthogonal transformation.
+
+**Principal Components**
+
+Let's consider the simplest situation where we have *n* observations $\{p_1, p_2, ..., p_n\}$ with 2 features $p_i=(x_i, y_i)$. When we draw them on a plot, we use x-axis and y-axis for positioning. However, we can make our own coordinate system by principal components.
+
+```{r include=T}
+ex<-data.frame(x=c(1, 3, 5, 6, 10, 16, 50), y=c(4, 6, 5, 7, 10, 13, 12))
+# reg1<-lm(y~x, data=ex)
+# plot(ex)
+# abline(reg1, col='red', lwd=4)
+# text(40, 10.5, "pc1")
+# segments(10.5, 11, 15, 7, lwd=4)
+# text(11, 7, "pc2")
+
+yLM <- lm(y ~ x, data=ex)
+perpSlope = - 1/(yLM$coefficients[2]) # slope of perpendicular line
+newX <- data.frame(x = mean(ex$x))
+newY <- predict.lm(yLM,newX)
+
+point0 <- c(x=newX, y=newY)  # (x,y) coordinates of point0 on LM line
+point1 <- c(x=newX[1]-1, y=newY-perpSlope)  # (x,y) coordinates of point1 on perpendicular line
+point2 <- c(x=newX[1]+1, y=newY+perpSlope)  # (x,y) coordinates of point2 on perpendicular line
+
+modelLabels <- c('PC 1 (LM)', 'PC 2 (Perp_LM)')
+modelLabels.x <- c(40, 20)
+modelLabels.y <- c(10, 6)
+modelLabels.color <- c("blue", "green")
+
+plot_ly(ex) %>%
+  add_lines(x = ~x, y = ~yLM$fitted, name="First PC, Linear Model lm(Y ~ X)", 
+            line = list(width = 4)) %>%
+  add_markers(x = ~x, y = ~y, name="Sample Simulated Data") %>%
+  add_lines(x = ~c(point1$x,point2$x), y = ~c(point1$y,point2$y), name="Second PC, Orthogonal to lm(Y ~ X)", 
+            line = list(width = 4))  %>% 
+  add_markers(x = ~newX[1]$x, y = ~newY, name="Center (avg(x),avg(y))", marker = list(size = 20,
+                                    color = 'green', line = list(color = 'yellow', width = 2))) %>%
+  layout(xaxis = list(title="X", scaleanchor  = "y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Y", scaleanchor  = "x"), legend = list(orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, 
+                            color = modelLabels.color, showarrow=FALSE ))
+```
+
+Illustrated on the graph, the first PC, $pc_1$ is a minimum distance fit in the feature space. The second PC is a minimum distance fit to a line perpendicular to the first PC. Similarly, the third PC would be a minimum distance fit to all previous PCs. In our case of a 2D space, two PCs are the most we can have. In higher dimensional spaces, we need to consider how many PCs do we need to make the best performance.
+
+In general, the formula for the first PC is $pc_1=a_1^TX=\sum_{i=1}^N a_{i, 1}X_i$ where $X_i$ is a $n\times 1$ vector representing a column of the matrix $X$ (representing a total of n observations and N features). The weights $a_1=\{a_{1, 1}, a_{2, 1}, ..., a_{N, 1}\}$ are chosen to maximize the variance of $pc_1$. According to this rule, the $k^{th}$ PC is $pc_k=a_k^TX=\sum_{i=1}^N a_{i, k}X_i$. $a_k=\{a_{1, k}, a_{2, k}, ..., a_{N, k}\}$ has to be constrained by more conditions:
+
+1. Variance of $pc_k$ is maximized
+2. $Cov(pc_k, pc_l)=0$, $\forall 1\leq l<k$
+3. $a_k^Ta_k=1$ (the weights vectors are unitary)
+
+Let's figure out how to find $a_1$. First we need to express the variance of our first principal component using the variance covariance matrix of $X$:
+$$Var(pc_1)=E(pc_1^2)-(E(pc_1))^2=$$
+$$\sum_{i, j=1}^N a_{i, 1} a_{j, 1} E(x_i x_j)-\sum_{i, j=1}^N a_{i, 1} a_{j, 1} E(x_i)E(x_j)=$$
+$$\sum_{i, j=1}^N a_{i, 1} a_{j, 1} S_{i, j}.$$
+
+Where $S_{i, j}=E(x_i x_j)-E(x_i)E(x_j)$.
+
+This implies $Var(pc_1)=a_1^TS a_1$ where $S=S_{i, j}$ is the covariance matrix of $X=\{X_1, ..., X_N\}$. Since $a_1$ maximized $Var(pc_1)$ and the constrain $a_1^T a_1=1$ holds, we can rewrite $a_1$ as:
+$$a_1=max_{a_1}(a_1^TS a_1-\lambda (a_1^T a_1-1))$$
+Where the second part after the minus sign should be 0. To maximize this quadratic expression, we can take the derivative of this expression w.r.t. $a_1$ and set it to 0. This yields $(S-\lambda I_N)a_1=0$.
+
+In [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html) we showed that $a_1$ will correspond to the largest eigenvalue of $S$, the variance covariance matrix of $X$. Hence, $pc_1$ retains the largest amount of variation in the sample. Likewise, $a_k$ is the $k^{th}$ largest eigenvalue of $S$.
+
+PCA requires the mean for each column in the data matrix to be zero. That is, the sample mean of each column is shifted to zero. 
+
+Let's use a subset (N=33) of [Parkinson's Progression Markers Initiative (PPMI) data](https://wiki.socr.umich.edu/index.php/SMHS_PCA_ICA_FA#Parkinson.27s_disease_case_study) to demonstrate the relationship between $S$ and PC loadings. First, we need to import the dataset into R and delete the patient ID column.
+
+```{r warning=F, message=F, error=F}
+library(rvest)
+wiki_url <- read_html("https://wiki.socr.umich.edu/index.php/SMHS_PCA_ICA_FA")
+html_nodes(wiki_url, "#content")
+pd.sub <- html_table(html_nodes(wiki_url, "table")[[1]])
+summary(pd.sub)
+pd.sub<-pd.sub[, -1]
+```
+
+Then, we need to center the `pdsub` by subtracting the average of all column means from each element in the column. Next, we cast `pd.sub` as a matrix and compute its variance covariance matrix, $S$. Finally, we can calculate the corresponding eigenvalues and eigenvectors of $S$.
+
+```{r warning=F, error=F, message=F}
+mu<-apply(pd.sub, 2, mean)
+mean(mu)
+pd.center<-as.matrix(pd.sub)-mean(mu)
+S<-cov(pd.center)
+eigen(S)
+```
+
+The next step would be calculating the PCs using the `prcomp()` function in R. Note that we will use the raw (`uncentered`) version of the data and have to specify the `center=TRUE` option to ensure the column means are trivial. We can save the model information into `pca1` where `pca1$rotation` provides the loadings for each PC.
+
+```{r warning=F, error=F, message=F}
+pca1<-prcomp(as.matrix(pd.sub), center = T)
+summary(pca1)
+pca1$rotation
+```
+
+We notice that the loadings are just the eigenvectors times `-1`. These loadings represent vectors in 6D space (we have 6 columns in the original data). The scale factor `-1`  just represents the opposite direction of the eigenvector. We can also load the `factoextra` package and compute the eigenvalues of each PC.
+
+```{r warning=F, message=F, error=F}
+# install.packages("factoextra")
+library("factoextra")
+eigen<-get_eigenvalue(pca1)
+eigen
+```
+
+The eigenvalues correspond to the amount of the variation explained by each principal component (PC), which is the same as the eigenvalues of the $S$ matrix.
+
+To see a detailed information about the *variances* explained by each PC, relative to the corresponding PC loadings.
+
+In the 3D loadings interactive plot below, you need to zoom-in to see the smaller projections (original features that have lower impact after the linear PC rotation).
+
+```{r fig.width=7, fig.height=7, warning=F, message=F}
+# plot(pca1)
+# library(graphics)
+# biplot(pca1, choices = 1:2, scale = 1, pc.biplot = F)
+
+plot_ly(x = c(1:length(pca1$sdev)), y = pca1$sdev*pca1$sdev, name = "Scree", type = "bar") %>%
+  layout(title="Scree Plot", xaxis = list(title="PC's"),  yaxis = list(title="Variances (SD^2)"))
+
+
+# Scores
+scores <- pca1$x
+
+# Loadings
+loadings <- pca1$rotation
+
+# Visualization scale factor for loadings
+scaleLoad <- 10
+
+p <- plot_ly() %>%
+  add_trace(x=scores[,1], y=scores[,2], z=scores[,3], type="scatter3d", mode="markers", name="",
+            marker = list(color=scores[,2], colorscale = c("#FFE1A1", "#683531"), opacity = 0.7)) 
+for (k in 1:ncol(loadings)) {
+   x <- c(0, loadings[6, k])*scaleLoad  # Project PCAs only on the last 3 original data dimensions (6,5,4)
+   y <- c(0, loadings[5, k])*scaleLoad
+   z <- c(0, loadings[4, k])*scaleLoad
+   p <- p %>% add_trace(x=x, y=y, z=z, type="scatter3d", mode="lines", 
+  name=paste0("Loading PC ", k, " ", colnames(pd.sub)[k]), line=list(width=8), opacity=1) 
+  # %>%
+  # add_annotations( x = 0, y = 0, z = 0,
+  #           xref = "x", yref = "y",  zref = "z",
+  #           # axref = "x", ayref = "y", azref = "z",
+  #           text = "", showarrow = T,
+  #           ax = c(0, loadings[k,1])*scaleLoad, ay = c(0, loadings[k,2])*scaleLoad, az = c(0,
+  #                  loadings[k,3])*scaleLoad)
+}
+
+p <- p %>%
+  layout(legend = list(orientation = 'h'), title="3D Projection of 6D Data along First 3 PCs",
+         scene = list ( xaxis = list(title = rownames(loadings)[6]),
+                        yaxis = list(title = rownames(loadings)[5]),
+                        zaxis = list(title = rownames(loadings)[4]))) 
+p
+
+#          scene = list(
+#             dragmode = "turntable",
+#             annotations = list(
+#               list(showarrow = T, x = c(0, loadings[1,1])*scaleLoad, y = c(0, loadings[1,2])*scaleLoad, 
+#                    z = c(0, loadings[1,3])*scaleLoad, text = "Point 1", xanchor = "left", xshift = 2, opacity=0.7),
+#               list(showarrow = T, x = c(0, loadings[2,1])*scaleLoad, y = c(0, loadings[2,2])*scaleLoad, 
+#                    z = c(0, loadings[2,3])*scaleLoad, text="Point 2", textangle=0, ax = 0, ay = -1, font = list(
+#                 color = "black", size = 12), arrowcolor = "black", arrowsize = 3, arrowwidth = 1, arrowhead = 1),
+#               list(showarrow = T, x = c(0, loadings[3,1])*scaleLoad, y = c(0, loadings[3,2])*scaleLoad, 
+#                    z = c(0, loadings[3,3])*scaleLoad, text = "Point 3", arrowhead = 1,
+#                    xanchor = "left", yanchor = "bottom")
+#     )))
+
+# library("factoextra")
+# # Data for the supplementary qualitative variables
+# qualit_vars <- as.factor(pd.sub$Part_IA)
+# head(qualit_vars)
+# # for plots of individuals
+# # fviz_pca_ind(pca1, habillage = qualit_vars, addEllipses = TRUE, ellipse.level = 0.68) +
+# #  theme_minimal()
+# # for Biplot of individuals and variables 
+# fviz_pca_biplot(pca1, axes = c(1, 2), geom = c("point", "text"),
+#   col.ind = "black", col.var = "steelblue", label = "all",
+#   invisible = "none", repel = T, habillage = qualit_vars, 
+#   palette = NULL, addEllipses = TRUE, title = "PCA - Biplot")
+
+# A slightly more representative 3D plot of the original data and the new PC's
+a <- as.matrix(pd.sub[, c(4:6)])
+
+p <- plot_ly() %>%
+    add_trace(x=a[,1], y=a[,2], z=a[,3], type="scatter3d", mode="markers", name="",
+              marker = list(color=a[,2], colorscale = c("#FFE1A1", "#683531"), opacity = 0.7)) 
+for (k in 1:ncol(loadings)) {
+    x <- c(0, -loadings[6, k])*scaleLoad  # Project PCAs only on the last 3 original data dimensions (6,5,4)
+    y <- c(0, -loadings[5, k])*scaleLoad
+    z <- c(0, -loadings[4, k])*scaleLoad
+    p <- p %>% add_trace(x=x, y=y, z=z, type="scatter3d", mode="lines", 
+                         name=paste0("Loading PC ", k, " ", colnames(pd.sub)[k]), line=list(width=8), opacity=1) 
+}
+p <- p %>%
+    layout(legend = list(orientation = 'h'), title="Alternative 3D Projection of 3D Data along with First 3 PCs",
+           scene = list ( xaxis = list(title = rownames(loadings)[6]),
+                        yaxis = list(title = rownames(loadings)[5]),
+                        zaxis = list(title = rownames(loadings)[4]))) 
+p
+```
+
+The scree-plot has a clear "elbow" point at the second PC, suggesting that the first two PCs explain about 95% of the variation in the original dataset. Thus, we say we can use the first 2 PCs to represent the data. In this case, the dimension of the data is substantially reduced. 
+
+The dynamic 3D `plot_ly` graph uses PC1, PC2, and PC3 as the coordinate axes to represent the new variables and the lines radiating from the origin show the loadings on the original features. This *triplot* help us to visualize how the loadings are used to rearrange the structure of the data. 
+
+Next, let's try to obtain a bootstrap test for the confidence interval of the explained variance.
+
+```{r fig.width=7, fig.height=7}
+set.seed(12)
+num_boot = 1000
+bootstrap_it = function(i) {
+  data_resample = pd.sub[sample(1:nrow(pd.sub), nrow(pd.sub), replace=TRUE),] 
+  p_resample = princomp(data_resample,cor = T) 
+  return(sum(p_resample$sdev[1:3]^2)/sum(p_resample$sdev^2))
+  }
+
+pco = data.frame(per=sapply(1:num_boot, bootstrap_it)) 
+quantile(pco$per, probs = c(0.025,0.975))  # specify 95-th % Confidence Interval
+corpp = sum(pca1$sdev[1:3]^2)/sum(pca1$sdev^2)
+
+# require(ggplot2)
+# plot = ggplot(pco, aes(x=pco$per)) +
+#   geom_histogram() + geom_vline(xintercept=corpp, color='yellow')+ 
+#   labs(title = "Percent Var Explained by the first 3 PCs") +
+#   theme(plot.title = element_text(hjust = 0.5))+
+#   labs(x='perc of var')
+# show(plot)
+
+plot_ly(x = pco$per, type = "histogram", name = "Data Histogram") %>% 
+    layout(title='Histogram of a Bootstrap Simulation <br /> Percent of Data Variability Captured by first 3 PCs', 
+           xaxis = list(title = "Percent of Variability"), yaxis = list(title = "Frequency Count"), bargap=0.1)
+```
+
+Suppose we want to fit a linear model `Top_of_SN_Voxel_Intensity_Ratio ~ Side_of_SN_Voxel_Intensity_Ratio + Part_IA`. We can use `plot_ly` to show a 3D scatterplot and the (univariate) linear model. 
+
+```{r warning=F, message=F, error=F}
+library(scatterplot3d)
+
+#Fit linear model
+lm.fit <- lm(Top_of_SN_Voxel_Intensity_Ratio ~	Side_of_SN_Voxel_Intensity_Ratio + Part_IA, data = pd.sub)
+
+# Get the ranges of the variable.names
+summary(pd.sub$Side_of_SN_Voxel_Intensity_Ratio)
+summary(pd.sub$Part_IA)
+summary(pd.sub$Top_of_SN_Voxel_Intensity_Ratio)
+
+# #plot results
+# myPlot <- scatterplot3d(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA,
+#                 pd.sub$Top_of_SN_Voxel_Intensity_Ratio)
+# # Plot the linear model (line in 3D)
+# myCoef <- lm.fit$coefficients
+# plotX <- seq(0.93, 1.4,length.out = 100)
+# plotY <- seq(0,6,length.out = 100)
+# plotZ <- myCoef[1] + myCoef[2]*plotX + myCoef[3]*plotY # linear model
+# #Add the linear model to the 3D scatterplot
+# myPlot$points3d(plotX,plotY,plotZ, type = "l", lwd=2, col = "red")
+
+cf = lm.fit$coefficients
+pltx = seq(summary(pd.sub$Side_of_SN_Voxel_Intensity_Ratio)[1],
+           summary(pd.sub$Side_of_SN_Voxel_Intensity_Ratio)[6], 
+           length.out = length(pd.sub$Side_of_SN_Voxel_Intensity_Ratio))
+plty = seq(summary(pd.sub$Part_IA)[1], summary(pd.sub$Part_IA)[6],length.out = length(pd.sub$Part_IA))
+pltz = cf[1] + cf[2]*pltx + cf[3]*plty
+
+# Plot Scatter and add the LM line to the plot
+plot_ly() %>%
+  add_trace(x = ~pltx, y = ~plty, z = ~pltz, type="scatter3d", mode="lines",
+        line = list(color = "red", width = 4), 
+        name="lm(Top_of_SN_Voxel_Intensity_Ratio ~	Side_of_SN_Voxel_Intensity_Ratio + Part_IA)") %>% 
+  add_markers(x = ~pd.sub$Side_of_SN_Voxel_Intensity_Ratio, y = ~pd.sub$Part_IA, 
+              z = ~pd.sub$Top_of_SN_Voxel_Intensity_Ratio, color = ~pd.sub$Part_II, mode="markers") %>% 
+  layout(title="lm(Top_of_SN_Voxel_Intensity_Ratio ~	Side_of_SN_Voxel_Intensity_Ratio + Part_IA)",
+    legend=list(orientation = 'h'), showlegend = F,
+    scene = list(xaxis = list(title = 'Side_of_SN_Voxel_Intensity_Ratio'),
+                 yaxis = list(title = 'Part_IA'),
+                 zaxis = list(title = 'Top_of_SN_Voxel_Intensity_Ratio'))) %>% 
+  hide_colorbar()
+```
+
+We can also plot in 3D a bivariate 2D plane model (e.g., `lm.fit', or `pca1`) for the 3D scatter (Top_of_SN_Voxel_Intensity_Ratio, Side_of_SN_Voxel_Intensity_Ratio, Part_IA). Below is an example using the linear model.
+
+```{r warning=F, error=F, message=F}
+myPlot <- scatterplot3d(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA, pd.sub$Top_of_SN_Voxel_Intensity_Ratio)
+
+# Static Plot
+myPlot$plane3d(lm.fit, lty.box = "solid")
+# planes3d(a, b, c, d, alpha = 0.5)
+# planes3d draws planes using the parametrization a*x + b*y + c*z + d = 0.
+# Multiple planes may be specified by giving multiple values for the normal
+# vector (a, b, c) and the offset parameter d
+```
+
+Next are examples of plotting the 3D scatter along with the 2D PCA model using either `rgl` or `plot_ly`.
+
+```{r warning=F, message=F, error=F}
+pca1 <- prcomp(as.matrix(cbind(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA, pd.sub$Top_of_SN_Voxel_Intensity_Ratio)), center = T); summary(pca1)
+
+# Given two vectors PCA1 and PCA2, the cross product V = PCA1 x PCA2
+
+# is orthogonal to both A and to B, and a normal vector to the 
+# plane containing PCA1 and PCA2
+# If PCA1 = (a,b,c) and PCA2 = (d, e, f), then the cross product is
+# PCA1 x PCA2 =  (bf - ce, cd - af, ae - bd)
+# PCA1 = pca1$rotation[,1] and PCAS2=pca1$rotation[,2]
+# https://en.wikipedia.org/wiki/Cross_product#Names
+#normVec = c(pca1$rotation[,1][2]*pca1$rotation[,2][3]-
+#              pca1$rotation[,1][3]*pca1$rotation[,2][2],
+#            pca1$rotation[,1][3]*pca1$rotation[,2][1]-
+#              pca1$rotation[,1][1]*pca1$rotation[,2][3],
+#            pca1$rotation[,1][1]*pca1$rotation[,2][2]-
+#              pca1$rotation[,1][2]*pca1$rotation[,2][1]
+#            )
+normVec = c(pca1$rotation[2,1]*pca1$rotation[3,2]-
+              pca1$rotation[3,1]*pca1$rotation[2,2],
+            pca1$rotation[3,1]*pca1$rotation[1,2]-
+              pca1$rotation[1,1]*pca1$rotation[3,2],
+            pca1$rotation[1,1]*pca1$rotation[2,2]-
+              pca1$rotation[2,1]*pca1$rotation[1,2]
+            )
+
+# Interactive RGL 3D plot with PCA Plane
+library(rgl) 
+
+# Compute the 3D point representing the gravitational balance
+dMean <- apply( cbind(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Top_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA), 2, mean)
+# then the offset plane parameter is (d):
+d <- as.numeric((-1)*normVec %*% dMean)  # force the plane to go through the mean
+
+# Plot the PCA Plane
+plot3d(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA, pd.sub$Top_of_SN_Voxel_Intensity_Ratio, type = "s", col = "red", size = 1)
+planes3d(normVec[1], normVec[2], normVec[3], d, alpha = 0.5)
+```
+
+Another alternative is to use `plot_ly` for the interactive 3D visualization. First, we demonstrate displaying the `lm()` derived plane modeling superimposed on the 3D scatterplot (using `pd.sub$Side_of_SN_Voxel_Intensity_Ratio`, `pd.sub$Top_of_SN_Voxel_Intensity_Ratio`, and `pd.sub$Part_IA`).
+
+```{r message=F, warning=F}
+# Define the 3D features
+x <- pd.sub$Side_of_SN_Voxel_Intensity_Ratio
+y <- pd.sub$Top_of_SN_Voxel_Intensity_Ratio
+z <- pd.sub$Part_IA
+myDF <- data.frame(x, y, z)
+
+### Fit a (bivariate-predictor) linear regression model
+lm.fit <- lm(z ~ x+y)
+coef.lm.fit <- coef(lm.fit)
+
+### Reparameterize the 2D (x,y) grid, and define the corresponding model values z on the grid
+x.seq <- seq(min(x),max(x),length.out=100)
+y.seq <- seq(min(y),max(y),length.out=100)
+z.seq <- function(x,y) coef.lm.fit[1]+coef.lm.fit[2]*x+coef.lm.fit[3]*y
+# define the values of z = z(x.seq, y.seq), as a Matrix of dimension c(dim(x.seq), dim(y.seq))
+z <- t(outer(x.seq, y.seq, z.seq))
+
+# First draw the 2D plane embedded in 3D, and then add points with "add_trace"
+# library(plotly)
+# myPlotly <- plot_ly(x=~x.seq, y=~y.seq, z=~z,
+#     colors = c("blue", "red"),type="surface", opacity=0.7) %>%
+#   
+#   add_trace(data=myDF, x=x, y=y, z=pd.sub$Part_IA, mode="markers", 
+#             type="scatter3d", marker = list(color="green", opacity=0.9, 
+#                                             symbol=105)) %>%
+#   
+#   layout(scene = list(
+#     aspectmode = "manual", aspectratio = list(x=1, y=1, z=1),
+#     xaxis = list(title = "Side_of_SN_Voxel_Intensity_Ratio"),
+#     yaxis = list(title = "Top_of_SN_Voxel_Intensity_Ratio"),
+#     zaxis = list(title = "Part_IA"))
+#     )
+# # print(myPlotly)
+# myPlotly
+
+#Setup Axis
+axis_x <- seq(min(x), max(x), length.out=100)
+axis_y <- seq(min(y), max(y), length.out=100)
+
+#Sample points
+library(reshape2)
+lm_surface <- expand.grid(x = axis_x, y = axis_y, KEEP.OUT.ATTRS = F)
+lm_surface$z <- predict.lm(lm.fit, newdata = lm_surface)
+lm_surface <- acast(lm_surface, x ~ y, value.var = "z") # z ~ 0 + x + y
+
+plot_ly(myDF, x = ~x, y = ~y, z = ~z,
+        text = paste0("Part_II: ", pd.sub$Part_II), type="scatter3d", mode="markers", color=pd.sub$Part_II) %>%
+  add_trace(x=~axis_x, y=~axis_y, z=~lm_surface, type="surface", color="gray", name="LM model", opacity=0.3) %>%
+  layout(title="3D Plane Regression (Part_IA ~ Side_of_SN_Voxel + Top_of_SN_Voxel); Color=Part II", showlegend = F,
+         scene = list ( xaxis = list(title = "Side_of_SN_Voxel_Intensity_Ratio"),
+                        yaxis = list(title = "Top_of_SN_Voxel_Intensity_Ratio"),
+                        zaxis = list(title = "Part_IA"))) %>% 
+  hide_colorbar()
+```
+
+Second, we show the PCA-derived 2D plane model superimposed on the 3D scatterplot.
+
+```{r warning=F, error=F, message=F}
+# define the original 3D coordinates
+x <- pd.sub$Side_of_SN_Voxel_Intensity_Ratio
+y <- pd.sub$Top_of_SN_Voxel_Intensity_Ratio
+z <- pd.sub$Part_IA
+myDF <- data.frame(x, y, z)
+
+### Fit (compute) the 2D PCA space (dimensionality reduction)
+pca1 <- prcomp(as.matrix(cbind(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Top_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA)), center = T); summary(pca1)
+# Compute the Normal to the 2D PC plane
+normVec = c(pca1$rotation[2,1]*pca1$rotation[3,2]-
+              pca1$rotation[3,1]*pca1$rotation[2,2],
+            pca1$rotation[3,1]*pca1$rotation[1,2]-
+              pca1$rotation[1,1]*pca1$rotation[3,2],
+            pca1$rotation[1,1]*pca1$rotation[2,2]-
+              pca1$rotation[2,1]*pca1$rotation[1,2]
+            )
+# Compute the 3D point of gravitational balance (Plane has to go through it)
+dMean <- apply( cbind(pd.sub$Side_of_SN_Voxel_Intensity_Ratio, pd.sub$Top_of_SN_Voxel_Intensity_Ratio, pd.sub$Part_IA), 2, mean)
+
+d <- as.numeric((-1)*normVec %*% dMean)  # force the plane to go through the mean
+
+# Reparameterize the 2D (x,y) grid, and define the corresponding model values z on the grid. Recall z=-(d + ax+by)/c, where normVec=(a,b,c)
+x.seq <- seq(min(x),max(x),length.out=100)
+y.seq <- seq(min(y),max(y),length.out=100)
+z.seq <- function(x,y) -(d + normVec[1]*x + normVec[2]*y)/normVec[3]
+# define the values of z = z(x.seq, y.seq), as a Matrix of dimension c(dim(x.seq), dim(y.seq))
+#z <- t(outer(x.seq, y.seq, z.seq))/10; range(z)  # we need to check this 10 correction, to ensure the range of z is appropriate!!!
+z <- t(outer(x.seq, y.seq, z.seq)); range(z)
+
+# Draw the 2D plane embedded in 3D, and then add points with "add_trace"
+# library(plotly)
+myPlotly <- plot_ly(x=~x.seq, y=~y.seq, z=~z,
+    colors = c("blue", "red"),type="surface", opacity=0.7) %>%
+    add_trace(data=myDF, x=x, y=y, z=(pd.sub$Part_IA-mean(pd.sub$Part_IA))*10, mode="markers", 
+            showlegend=F, type="scatter3d", marker=list(color="green", opacity=0.9, symbol=105)) %>%
+    layout(scene = list(
+    aspectmode = "manual", aspectratio = list(x=1, y=1, z=1),
+    xaxis = list(title = "Side_of_SN_Voxel_Intensity_Ratio"),
+    yaxis = list(title = "Top_of_SN_Voxel_Intensity_Ratio"),
+    zaxis = list(title = "Part_IA")) ) %>%
+  hide_colorbar()
+# print(myPlotly)
+myPlotly
+```
+
+As stated in the [summary table](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/05_DimensionalityReduction.html#4_summary_(pca_vs_ica_vs_fa)), classical PCA assumes that the bivariate relations are linear in nature. The non-linear PCA is a generalization that allows us to incorporate nominal and ordinal variables, as well as to handle and identify nonlinear relationships between variables in the dataset. See Chapter 2 of this textbook [Nonparametric inference in nonlinear principal components analysis: exploration and beyond](https://openaccess.leidenuniv.nl/handle/1887/12386).
+
+Non-linear PCA assigns values to the categories representing the numeric variables, which maximize the association (e.g., correlation) between the quantified variables (i.e., optimal scaling to quantify the variables according to their analysis levels). The [Bioconductor's pcaMethods](https://www.bioconductor.org/packages/release/bioc/html/pcaMethods.html) package provides the functionality for non-linear PCA.
+
+# Independent component analysis (ICA)
+ICA aims to find basis vectors representing independent components of the original data. For example, this may be achieved by maximizing the norm of the $4^{th}$ order normalized kurtosis, which iteratively projects the signal on a new basis vector, computes the objective function (e.g., the norm of the kurtosis) of the result, slightly adjusts the basis vector (e.g., by gradient ascent), and recomputes the kurtosis again. At the end, this iterative process generates a basis vector corresponding to the highest (residual) kurtosis representing the next independent component. 
+
+The process of Independent Component Analysis is to maximize the statistical independence of the estimated components. Assume that each variable $X_i$ is generated by a sum of *n* independent components.
+$$X_i=a_{i, 1}s_1+...+a_{i, n}s_n$$
+Here, $X_i$ is generated by $s_1, ..., s_n$ and $a_{i,1}, ... a_{i,n}$ are the corresponding weights. Finally, we rewrite $X$ as
+$$X=As,$$
+where $X=(X_1, ..., X_n)^T$, $A=(a_1, ..., a_n)^T$, $a_i=(a_{i,1}, ..., a_{i,n})$ and $s=(s_1, ..., s_n)^T$. Note that $s$ is obtained by maximizing the independence of the components. This procedure is done by maximizing some *independence* objective function.
+
+ICA does not assume that all of its components ($s_i$) are Gaussian and independent of each other.
+
+We will utilize the `fastICA` function in R.
+
+`fastICA(X, n.comp, alg.typ, fun, rownorm, maxit, tol)`
+
+* **X**: data matrix
+* **n.comp**:number of components, 
+* **alg.type**: components extracted simultaneously(`alg.typ == "parallel"`) or one at a time(`alg.typ == "deflation"`)
+* **fun**: functional form of F to approximate to neg-entropy, 
+* **rownorm**: whether rows of the data matrix X should be standardized beforehand
+* **maxit**: maximum number of iterations 
+* **tol**: a positive scalar giving the tolerance at which the un-mixing matrix is considered to have converged.
+
+Now we can create a correlated matrix $X$. 
+
+```{r warning=F, error=F, message=F}
+S <- matrix(runif(10000), 5000, 2)
+S[1:10, ]
+A <- matrix(c(1, 1, -1, 3), 2, 2, byrow = TRUE)
+X <- S %*% A # In R,  "*" and "%*%" indicate "scalar" and matrix multiplication, respectively!
+cor(X)
+```
+The correlation between two variables is -0.4. Then we can start to fit the ICA model.
+```{r warning=F, error=F, message=F}
+# install.packages("fastICA")
+library(fastICA)
+a <- fastICA(X, 2, alg.typ = "parallel", fun = "logcosh", alpha = 1, 
+            method = "C", row.norm = FALSE, maxit = 200, tol = 0.0001)
+```
+
+To visualize the correlation of the original pre-processed data ($X$) and the independence of the corresponding ICA components $S=fastICA(X)\$S$ we can draw the following composite scatter-plot.
+
+```{r fig.width=12, fig.height=12}
+# par(mfrow = c(1, 2))
+# plot(a$X, main = "Pre-processed data")
+# plot(a$S, main = "ICA components")
+
+plot_ly() %>%  
+  add_markers(x = a$X[ , 1], y =~a$X[ , 2], name="Pre-processed data", 
+              marker = list(color="green", opacity=0.9, symbol=105)) %>%
+  add_markers(x = a$S[ , 1], y = a$S[ , 2], name="ICA components",
+              marker = list(color="blue", opacity=0.99, symbol=5))  %>% 
+  layout(title='Scatter Plots of the Original (Pre-processed) Data and the corresponding ICA Transform', 
+         xaxis = list(title="Twin 1 (standardized height)", scaleanchor = "y"), 
+         yaxis = list(title="Twin 2 (standardized height)", scaleanchor = "x"),
+         legend = list(orientation = 'h'))
+```
+
+Finally we can confirm that the correlation of two components is nearly 0.
+
+```{r warning=F, error=F, message=F}
+cor(a$S)
+```
+
+Let's look at a more interesting example, based on the `pd.sub` dataset. It has 6 variables and the correlation is relatively high. After fitting the ICA model. The components are nearly independent.
+
+```{r warning=F, error=F, message=F}
+cor(pd.sub)
+a1<-fastICA(pd.sub, 6, alg.typ = "parallel", fun = "logcosh", alpha = 1, 
+                 method = "C", row.norm = FALSE, maxit = 200, 
+                 tol = 0.0001)
+par(mfrow = c(1, 2))
+cor(a1$X)
+cor(a1$S)
+```
+Notice the independence of the ICA components, $\rho(i,j)\sim 0, \ \forall i\not= j$. Furthermore, we can reduce the dimension of the original data (6D) to 2-3 ICA components.
+
+# Factor analysis (FA)
+
+Similar to ICA and PCA, FA tries to find special principal components in data. As a generalization of PCA, FA requires that the number of components is smaller than the original number of variables (or columns of the data matrix). FA optimization relies on iterative perturbations with full-dimensional Gaussian noise and maximum-likelihood estimation where every observation in the data represents a sample point in a higher dimensional space. Whereas PCA assumes the noise is spherical, Factor Analysis allows the noise to have an arbitrary diagonal covariance matrix and estimates the subspace as well as the noise covariance matrix.
+
+Under FA, the centered data can be expressed in the following from:
+
+$$x_i-\mu_i=l_{i, 1}F_1+...+l_{i, k}F_k+\epsilon_i=LF+\epsilon_i,$$
+
+where $i\in {1, ..., p}$, $j \in{1, ..., k}$, $k<p$ and $\epsilon_i$ are independently distributed error terms with zero mean and finite variance.
+
+Let's try FA in R using the function `factanal()`. According to the previous PCA, our `pd.sub` dataset can explain 95% of variance using only the first two principal components. This suggests that we might need 2 factors in FA. We can double check that by examining the *scree* plot.
+
+```{r fig.width=7, fig.height=7, eval=T, echo=F, warning=F, message=FALSE}
+# Determine Number of Factors to Extract
+# install.packages("nFactors")
+
+library(nFactors)
+par(mfrow=c(1, 1))
+ev <- eigen(cor(pd.sub)) # get eigenvalues
+ap <- parallel(subject=nrow(pd.sub), var=ncol(pd.sub), rep=100, cent=.05)
+nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
+summary(nS)
+# plotnScree(nS)
+
+plot_ly() %>% 
+  add_trace(y = nS$Analysis$Eigenvalues, type="scatter", name = 'Eigenvalues', 
+              mode = 'lines+markers', marker = list(opacity=0.99, size=20, symbol=5)) %>%
+  add_trace(y = nS$Analysis$Par.Analysis, type="scatter", 
+            name = 'Parallel Analysis (centiles of random eigenvalues)', 
+            mode = 'lines+markers', marker = list(opacity=0.99, size=20, symbol=2)) %>%
+  # add_trace(y = nS$Analysis$OC, type="scatter", 
+  #           name = 'Critical Optimal Coordinates', 
+  #           mode = 'lines+markers', marker = list(opacity=0.99, size=20, symbol=3)) %>%
+  add_trace(y = nS$Analysis$Acc.factor, type="scatter", 
+            name = 'Acceleration Factor', 
+            mode = 'lines+markers', marker = list(opacity=0.99, size=20, symbol=15)) %>%
+  layout(title='Scree plot', 
+         xaxis = list(title="Components)", scaleanchor = "y"), 
+         yaxis = list(title="Eigenvalues)", scaleanchor = "x"),
+         legend = list(orientation = 'h'))
+```
+
+Note that 3 out of 4 Cattell's Scree test rules summary suggest we should use 2 factors. Thus, in the function `factanal()` we can specify `factors=2`. In addition, we can use `varimax` rotation of the factor axes maximizing the variance of the squared loadings of factors (columns) on the original variables (rows), which effectively differentiates the original variables by the extracted factors. Oblique `promax` and `Procrustes rotation` (projecting the loadings to a target matrix with a simple structure) are two alternative and commonly used matrix rotations that may be specified.
+
+```{r warning=F, error=F, message=F}
+fit<-factanal(pd.sub, factors=2, rotation="varimax")
+# fit<-factanal(pd.sub, factors=2, rotation="promax") # the most popular oblique rotation; And fitting a simple structure
+fit
+```
+
+Here the p-value 0.854 is very large, suggesting that we failed to reject the null-hypothesis that 2 factors are sufficient. We can also visualize the loadings for all the variables.
+
+```{r warning=F, error=F, message=F}
+load <- fit$loadings
+# plot(load, type="n") # set up plot 
+# text(load, labels=colnames(pd.sub), cex=.7) # add variable names
+
+df <- as.data.frame(load[])
+Features <- rownames(df)
+X <- df$Factor1
+Y <- df$Factor2
+df1 <- data.frame(Features, X, Y)
+cols <- palette(rainbow(6))   # as.numeric(as.factor(Features))
+cols <- cols[2:7]   # this is necessary as cols has 8 rows (not 6, as df1 does!)
+
+plot_ly(df1, x = ~X, y = ~Y, text = ~Features, color = cols) %>% 
+  add_markers(marker = list(opacity=0.99, size=20, color=cols, symbol=~as.numeric(as.factor(Features)))) %>% 
+  add_text(textfont = list(family= "Times", size= 20, color= cols), textposition="top right") %>% 
+  layout(title = '2D FA', xaxis = list(title = 'Factor 1', zeroline = TRUE,range = c(-0.5, 1)),
+         yaxis = list(title = 'Factor 2'), showlegend = FALSE)
+```
+
+This plot displays *factors 1* and *2* on the x-axis and y-axis, respectively.
+
+# Singular Value Decomposition (SVD)
+
+SVD is a factorization of a real or complex matrix. If we have a data matrix $X$ with $n$ observation and $p$ variables it can be factorized into the following form:
+$$X=U D V^T,$$ 
+where $U$ is a $n \times p$ unitary matrix that $U^TU=I$, $D$ is a $p \times p$ diagonal matrix, and $V^T$ is a $p \times p$ unitary matrix, which is the conjugate transpose of the $n\times n$ unitary matrix, $V$. Thus, we have $V^TV=I$.
+
+SVD is closely linked to PCA (when correlation matrix is used for calculation). $U$ represents the left singular vectors, $D$ the singular values, $U%*%D$ yields the PCA scores, and $V$  the right singular vectors - PCA loadings.
+
+Using the `pd.sub` dataset, we can compare the outputs from the `svd()` function and the `princomp()` function (another R function for PCA). Prior to the SVD, we need to `scale` the data matrix.
+
+```{r warning=F, error=F, message=F}
+#SVD output
+df<-nrow(pd.sub)-1
+zvars<-scale(pd.sub)
+z.svd<-svd(zvars)
+z.svd$d/sqrt(df)
+z.svd$v
+#PCA output
+pca2<-princomp(pd.sub, cor=T)
+pca2
+loadings(pca2)
+```
+
+When correlation matrix is used for calculation (`cor=T`), the $V$ matrix of SVD contains the corresponding PCA loadings.
+
+## SVD Summary
+Intuitively, the SVD approach $X= UD V^T$ represents a composition of the (centered!) data into 3 geometrical transformations: a rotation or reflection ($U$), a scaling ($D$), and a rotation or reflection ($V$). Here we assume that the data $X$ stores samples/cases in rows and variables/features in columns. If these are reversed, then the interpretations of the $U$ and $V$ matrices reverse as well.
+
+* The columns of $V$ represent the directions of the principal axes, the columns of $UD$ are the principal components, and the singular values in $D$ are related to the eigenvalues of data variance-covariance matrix ($\Sigma$) via $\lambda_i = \frac{d_i^2}{n-1}$, where the eigenvalues $\lambda_i$ capture the magnitude of the data variance in the respective PCs.
+* The standardized scores are given by columns of $\sqrt{n-1}U$, the corresponding loadings are given by columns of $\frac{1}{n-1}VD$. However, these "loadings" *are not* the principal directions. The requirement for $X$ to be centered is needed to ensure that the covariance matrix $Cov(X) = \frac{1}{n-1}X^TX$.
+* Alternatively, to perform PCA on the *correlation matrix* (instead of the covariance matrix), the columns of $X$ need to be *scaled* (centered and standardized).
+* Reduce the data dimensionality from $p$ to $k<p$, we multiply the first $k$ columns of $U$ by the $k\times k$ upper-left corner of the matrix $D$ to get an $n\times k$ matrix $U_kD_k$ containing the first $k$ PCs.
+* Multiplying the first $k$ PCs by their corresponding principal directions $V_k^T$ reconstructs the original data from the first $k$ PCs, $X_k=U_k D_kV_k^T$, with the lowest possible reconstruction error.
+* Typically we have more subjects/cases ($n$) than variables/features ($p<n$). As $U_{n\times n}$ and $V_{p\times p}$, the last $n-p>0$ columns of $U$ may be trivial (zeros). It's customary to drop the zero columns of $U$ for $n>>p$ to avoid dealing with unnecessarily large (trivial) matrices. 
+
+# t-SNE (t-distributed Stochastic Neighbor Embedding)
+
+The t-SNE technique represents a recent machine learning strategy for nonlinear dimensionality reduction that is useful for embedding (e.g., scatter-plotting) of high-dimensional data into lower-dimensional (1D, 2D, 3D) spaces. For each object (point in the high-dimensional space), the method models *similar objects* using nearby and *dissimilar objects* using remote distant objects. The two steps in t-SNE include (1) construction of a probability distribution over pairs of the original high-dimensional objects where similar objects have a high probability of being paired and correspondingly, dissimilar objects have a small probability of being selected; and (2) defining a similar probability distribution over the points in the derived low-dimensional embedding minimizing the [Kullback-Leibler divergence](https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence) between the high- and low-dimensional distributions relative to the locations of the objects in the embedding map. Either Euclidean or non-Euclidean distance measures between objects may be used as similarity metrics.
+
+## t-SNE Formulation
+Suppose we have high dimensional data ($N$D): $x_1, x_2,..., x_N$. In `step 1`, for each pair ($x_i, x_j$), t-SNE estimates the probabilities $p_{i,j}$ that are proportional to their corresponding similarities, $p_{j | i}$:
+
+$$p_{j | i} = \frac{\exp\left (\frac{-||x_i - x_j||^2}{2\sigma_i^2} \right )}{\sum_{k \neq i} \exp\left (\frac{-||x_i - x_k||^2}{2\sigma_i^2} \right )}.$$
+
+The similarity between $x_j$ and $x_i$ may be thought of as the conditional probability, $p_{j | i}$. That is, assuming $N$D Gaussian distributions centered at each point $x_i$, neighbors are selected based on a probability distribution (proportion of their probability density), which represents the chance that $x_i$ may select $x_j$ as its neighbor, $p_{i,j} = \frac{p_{j | i} + p_{i |j}}{2N}$.
+
+The **perplexity** ($perp$) of a discrete probability distribution, $p$, is defined as an exponential function of the entropy, $H(p)$, over all discrete events: $perp(x)=2^{H(p)}=2^{-\sum _{x}p(x)\log_{2}p(x)}$. t-SNE performs a binary search for the value $\sigma_i$ that produces a predefined value $perp$. The simple interpretation of the perplexity at a data point $x_i$, $2^{H(p_i)}$, is as a smooth measure of the effective number of points in the $x_i$ neighborhood. The performance of t-SNE may vary with the perplexity value, which is typically specified by the user, e.g., between $5\leq perp\leq 50$.
+
+Then, the precision (variance, $\sigma_i$) of the local Gaussian kernels may be chosen to ensure that the *perplexity* of the conditional distribution equals a specified perplexity. This allows adapting the kernel bandwidth to the sample data density -- smaller $\sigma_i$ values are fitted in denser areas of the sample data space, and correspondingly, larger $\sigma_i$ are fitted in sparser areas. A particular value of $\sigma_i$ yields a probability distribution, $p_i$, over all of the other data points, which has an increasing entropy as $\sigma_i$ increases.
+
+t-SNE learns a mapping $f: \{x_1, x_2, ..., x_N\} \longrightarrow \{y_1, y_2, ..., y_d\}$, where $x_i\in \mathbb{R}^N$ and $y_i \in \mathbb{R}^d$ ($N\gg d$) that resembles closely the *original similarities*, $p_{i,j}$ and represents the *derived similarities*, $q_{i,j}$ between pairs of embedded points $y_i,y_j$, defined by:
+
+$$q_{i,j} = \frac{(1 + ||y_i - y_j||^2)^{-1}}{\sum_{k \neq i} (1 + ||y_i - y_k||^2)^{-1}}.$$
+
+The `t-distributed` reference in t-SNE refers to the heavy-tailed *Student-t distribution* ($t_{df=1}$) which [coincides](https://wiki.socr.umich.edu/index.php/AP_Statistics_Curriculum_2007_StudentsT) with [Cauchy distribution](https://wiki.socr.umich.edu/index.php/AP_Statistics_Curriculum_2007_Cauchy), $f(z)=\frac{1}{1+z^2}$. It is used to model and measure similarities between closer points in the embedded low-dimensional space, as well as dissimilarities of objects that map far apart in the embedded space. 
+
+The rationale for using *Student t distribution* for mapping the points is based on the fact that the volume of an $N$D ball of radius $r$, $B^N$, is proportional to $r^N$. Specifically, $V_N(r) = \frac{\pi^\frac{N}{2}}{\Gamma\left(\frac{N}{2} + 1\right)}r^N$, where $\Gamma()$ is the [Euler's gamma function](https://en.wikipedia.org/wiki/Gamma_function), which is an extension of the factorial function to non-integer arguments. For large $N$, when we select uniformly random points inside $B^N$, most points will be expected to be close to the ball surface (boundary), $S^{N-1}$, and few will be expected near the $B^N$ center, as half the volume of $B^N$ is included in the hyper-area *inside* $B^N$ and *outside* a ball of radius $r_1=\frac{1}{\sqrt[N]{2}}\times r \sim r$. You can try this with $N=2$, $\{x\in \mathbb{R}^2 |\ ||x||\leq r\}$, representing a disk in a 2D plane. 
+
+When reducing the dimensionality of a dataset, if we used the  Gaussian distribution for the mapping embedding into the lower dimensional space, there will be a distortion of the distribution of the distances between neighboring objects. This is simply because the *distribution* of the distances is much different between the original (high-dimensional) and the map-transformed low-dimensional spaces. t-SNE tries to (approximately) preserve the distances in the two spaces  to avoid imbalances that may lead to biases due to excessive attraction-repulsion forces. Using Student t distribution $df=1$ (aka Cauchy distribution) for mapping the points preserves (to some extent) the distance similarity distribution, because of the heavier tails of $t$ compared to the Gaussian distribution. For a given similarity between a pair of data points, the two corresponding map points will need to be much further apart in order for their similarity to match the data similarity. 
+
+A minimization process with respect to the objects $y_i$ using gradient descent of a (non-symmetric) objective function, *Kullback-Leibler divergence* between the distributions $Q$ and $P$ , is used to determine the object locations $y_i$ in the map, i.e.,
+
+$$KL(P || Q) = \sum_{i \neq j} p_{i,j} \log \frac{p_{i,j}}{q_{i,j}}.$$
+
+The minimization of the KL objective function by gradient descent may be analytically represented by:
+
+$$\frac{\partial {KL(P||Q)}}{\partial {y_i}}= \sum_{j}{(p_{i,j}-q_{i,j})f(|x_i-x_j|) u_{i,j}},$$
+where $f(z)=\frac{z}{1+z^2}$ and $u_{i,j}$ is a unit vector from $y_j$ to $y_i$. This gradient represents the aggregate sum of all spring forces applied to map point $x_i$.
+
+This optimization leads to an embedding mapping that "preserves" the object (data point) similarities of the original high-dimensional inputs into the lower dimensional space. Note that the data similarity matrix ($p_{i,j}$) is fixed, whereas its counterpart, the map similarity matrix ($q_{i,j}$) depends on the embedding map. Of course, we want these two distance matrices to be as close as possible, implying that similar data points in the original space yield similar map-points in the reduced dimension.
+
+## t-SNE Example: Hand-written Digit Recognition
+
+Later, in [Chapter 6](https://socr.umich.edu/DSPA2/DSPA2_notes/06_ML_NN_SVM_RF_Class.html) and [Chapter 14](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html), we will present the Optical Character Recognition (OCR) and analysis of hand-written notes (unstructured text). 
+
+Below, we show a simple example of generating a 2D embedding of the [hand-written digits dataset](https://www.socr.umich.edu/people/dinov/2017/Spring/DSPA_HS650/data/DigitRecognizer_TrainingData.zip) using t-SNE.
+
+```{r handWrittenDigitsExample, warning=F, message=F}
+# install.packages("tsne"); library (tsne)
+# install.packages("Rtsne")
+library(Rtsne)
+
+# Download the hand-written digits data
+pathToZip <- tempfile()	
+download.file("https://www.socr.umich.edu/people/dinov/2017/Spring/DSPA_HS650/data/DigitRecognizer_TrainingData.zip", pathToZip)	
+train <- read.csv(unzip(pathToZip))	
+dim(train)	
+unlink(pathToZip)	
+
+# identify the label-nomenclature - digits 0, 1, 2, ..., 9 - and map to diff colors
+colMap <- function(x){
+  cols <- rainbow(length(x))[order(order(x))] # reindexing by ranking the observed values
+}
+
+# Note on "order(order())": set.seed(123); x <- sample(10)
+# This experiment shows that order(order()) = rank()
+# set.seed(12345); data <- sample(6); data
+# order(data); order(order(data)); rank(data)
+# Ordering acts as its own inverse and returns a sequence starting with the index of the
+# smallest data value (1). Nested odd "order" applications yield the same vector outputs.
+# Order outputs an index vector useful for sorting the original data vector. 
+# The location of the smallest value is in the first position of the order-output.
+# The index of the second smallest data value is next, etc.
+# The last order output item represents the index of the largest data value.
+# Double-order application yields an indexing vector where the first element is the index 
+# of the smallest first-order-index, etc., which corresponds to the data vector's rank.
+
+train.labels<-train$label
+train$label<-as.factor(train$label)
+train.labels.colors <- colMap(train.labels)
+names(train.labels.colors) <- train$label # unique(train$label)
+
+# May need to check and increase the RAM allocation
+memory.limit() 
+memory.limit(50000)
+
+# Remove the labels (column 1) and Scale the image intensities to [0; 1]
+train  <- data.matrix(train[, -1]); dim(train)
+train <- t(train/255)
+
+# Visualize some of the images
+library("imager")
+# first convert the CSV data (one row per image, 42,000 rows)
+array_3D <- array(train[ , ], c(28, 28, 42000))
+mat_2D <- matrix(array_3D[,,1], nrow = 28, ncol = 28)
+plot(as.cimg(mat_2D))
+
+# We can also use plot_ly to display the image as heatmap
+plot_ly(z=~t(mat_2D[, ncol(mat_2D):1]), type="heatmap", showscale = FALSE) %>%
+  layout(xaxis=list(title="X)", scaleanchor="y"), yaxis=list(title="Y)", scaleanchor="x"), legend=list(orientation='h'))
+
+N <- 42000
+img_3D <- as.cimg(array_3D[,,], 28, 28, N)
+
+# plot the k-th image (1<=k<=N)
+k <- 5; plot(img_3D, k)
+k <- 6; plot(img_3D, k)
+k <- 7; plot(img_3D, k)
+
+pretitle <- function(index) bquote(bold("Image: "~.(index)))
+#layout(t(1:2))
+op <- par(mfrow = c(2,2), oma = c(5,4,0,0) + 0.1, mar = c(0,0,1,1) + 0.1)
+
+for (k in 1:4) {
+  plot(img_3D, k, xlim = c(0,28), ylim = c(28,0), axes=F, ann=T, main=pretitle(k))
+}
+
+# Run the t-SNE, tracking the execution time (artificially reducing the sample-size to get reasonable calculation time)
+execTime_tSNE <- system.time(tsne_digits <- Rtsne(t(train)[1:10000 , ], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500)); execTime_tSNE
+# Full dataset(42K * 1K) execution may take over 5-mins
+# execTime_tSNE <- system.time(tsne_digits <- Rtsne(train[ , ], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500)); execTime_tSNE
+
+# Plot only first 1,000 cases (to avoid clutter)
+# plot(tsne_digits$Y[1:1000, ], t='n', main="t-SNE") # don't plot the points to avoid clutter
+# text(tsne_digits$Y[1:1000, ], labels=names(train.labels.colors)[1:1000], col=train.labels.colors[1:1000])
+
+# 2D t-SNE Plot
+df <- data.frame(tsne_digits$Y[1:1000, ], train.labels.colors[1:1000])
+plot_ly(df, x = ~X1, y = ~X2, mode = 'text') %>%
+  add_text(text = names(train.labels.colors)[1:1000], textfont = list(color = df$train.labels.colors.1.1000.)) %>%
+  layout(title = "t-SNE 2D Embedding", xaxis = list(title = ""),  yaxis = list(title = ""))
+
+# 3D t_SNE plot
+execTime_tSNE <- system.time(tsne_digits3D <- Rtsne(t(train)[1:10000 , ], dims = 3, perplexity=30, verbose=TRUE, max_iter = 500)); execTime_tSNE
+
+df3D <- data.frame(tsne_digits3D$Y[1:1000, ], train.labels.colors[1:1000])
+plot_ly(df3D, x = ~df3D[, 1], y = ~df3D[, 2], z= ~df3D[, 3], mode = 'markers+text') %>%
+  add_text(text = names(train.labels.colors)[1:1000], textfont = list(color = df$train.labels.colors.1.1000.)) %>%
+  layout(title = "t-SNE 3D Embedding", 
+         scene = list(xaxis = list(title=""),  yaxis=list(title=""), zaxis=list(title="")))
+
+# Classic plot all cases as solid discs with colors corresponding to each of the 10 numbers
+# plot(tsne_digits$Y, main="t-SNE Clusters", col=train.labels.colors, pch = 19)
+# legend("topright", unique(names(train.labels.colors)), fill=unique(train.labels.colors), bg='gray90', cex=0.5)
+
+plot_ly(df3D, x = ~df3D[, 1], y = ~df3D[, 2], z= ~df3D[, 3], mode = 'markers+text') %>%
+  add_text(text = names(train.labels.colors)[1:1000], textfont = list(color = df$train.labels.colors.1.1000.)) %>%
+  layout(title = "t-SNE 3D Embedding", 
+         scene = list(xaxis = list(title=""),  yaxis=list(title=""), zaxis=list(title="")))
+
+cols <- palette(rainbow(10)) 
+
+plot_ly(df3D, x=~df3D[, 1], y=~df3D[, 2], z=~df3D[, 3], color=train.labels.colors[1:1000], 
+        colors=cols, name=names(train.labels.colors)[1:1000]) %>% 
+  add_markers() %>% 
+  layout(scene=list(xaxis=list(title=''), yaxis=list(title=''), zaxis=list(title='')), showlegend=F) %>%
+  hide_colorbar()
+```
+
+The [hands-on interactive SOCR t-SNE Dimensionality Reduction Activity](https://socr.umich.edu/HTML5/SOCR_TensorBoard_UKBB) provides an interactive demonstration of t-SNE utilizing TensorBoard and the UK Biobank data.
+
+# Uniform Manifold Approximation and Projection (UMAP)
+
+In 2018, McInnes and Healy proposed the [Uniform Manifold Approximation and Projection (UMAP)](https://arxiv.org/abs/1802.03426) (UMAP) technique for dimensional reduction.
+
+SImilar to t-SNE, UMAP first constructs a high dimensional graph representation of initial data and employs graph-layout algorithms to project the original high-dimensional data into a lower dimensional space. The iterative process aims to preserve the *graph structure* as much as possible. The initial high-dimensional graph representation uses *simplicial complexes*, as weighted graphs where edge weights represent likelihoods of the connectivity between two graph points are connected, i.e., neighborhoods. For a given point, the UMAP connectedness metric computes the distance with other points based on the overlap of their respective neighborhoods.
+
+The parameter controlling the neighborhood size (i.e., radius) determines the tradeoff between within and between cluster sizes. Choosing too small a radius may lead to small and rather isolated clusters. Selecting too large a radius may cluster all points into a single group. For local radius selection, UMAP preprocessing utilizes the distances between each point and its n-th nearest neighbor. 
+
+A "fuzzy" simplicial complex (graph) is constructed by iterative minimization of the connectivity likelihood function as the radius increases. Assuming that each point is connected to at least one of its closest neighbors, UMAP ensures that local and global graph structure is (somewhat protected and) preserved during the optimization process (e.g., based on stochastic gradient descent).
+
+## Mathematical formulation
+
+UMAP relies on local approximations of patches on the manifold to construct local fuzzy simplicial complex (topological) representations of the high dimensional data.  For each low dimensional representation of the projection of the data, UMAP tries to generate an analogous equivalent simplicial complex representation. The iterative UMAP optimization process aims to preserve the topological layout in the low dimensional space by minimizing the cross-entropy between the high- and low-dimensional topological representations.
+
+The [DSPA Appendix on Shape](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_03.1_Geometric_Parametric_Surface_Viz.html) includes examples of how to generate some of geometric and topological primitives, including 0, 1, and 2 simplicial complexes.
+
+
+<!-- ```{r launchPython, warning=F, message=FALSE, error=F} -->
+<!-- # Launch the Python environment early! -->
+<!-- # install.packages("reticulate") -->
+<!-- library(reticulate) -->
+<!-- # specify the path of the Python version that you want to use -->
+<!-- py_path = "C:/Users/IvoD/Anaconda3/"  # manual -->
+<!-- # py_path = Sys.which("python3")       # automated -->
+<!-- use_python(py_path, required = T)  -->
+<!-- # Sys.setenv(RETICULATE_PYTHON = "C:/Users/IvoD/Anaconda3/") -->
+<!-- ``` -->
+
+
+The figure below shows the first few such primitives - a point, line, triangle, and tetrahedron.
+
+```{r topoPrimitives, warning=F, error=F, message=F}
+## Preload the SimplicialComplex.py functions ...
+
+##############################################################################
+# source_python("https://socr.umich.edu/DSPA2/DSPA2_notes/SimplicialComplex.py")
+##############################################################################
+
+# loadPythonScript <- function(
+#     filePythonURL="https://socr.umich.edu/DSPA2/DSPA2_notes/SimplicialComplex.py") {
+#     tryCatch( {   
+#         message("This is the 'try' part")
+#         suppressWarnings(
+#            source_python(filePythonURL)
+#         )},
+#         error = function(cond) {
+#             message("Error loading external Pythin script")
+#             message("Here's the original error message:")
+#             message(conditionMessage(cond))
+#             # Choose a return value in case of error
+#             NA
+#         },
+#         warning = function(cond) {
+#             message("Python function loading caused a warning ...")
+#             message(conditionMessage(cond))
+#             # Choose a return value in case of warning
+#             NULL
+#         },
+#         finally = { # everything that should be executed at the end,
+#             source_python(filePythonURL)
+#         }
+#     )
+# }
+# 
+# loadPythonScript(filePythonURL="https://socr.umich.edu/DSPA2/DSPA2_notes/SimplicialComplex.py")
+
+library(plotly)
+
+p <- plot_ly(type = 'mesh3d',
+             # Define all (4) zero-cells (points or vertices)
+             # P_i(x,y,z), 0<=i<4
+             x = c(0,           1/sqrt(3), -1/(2*sqrt(3)), -1/(2*sqrt(3))),
+             y = c(sqrt(2/3),   0,          0,             0),
+             z = c(0,           0,          -1/2,          1/2),
+             
+             # Next define all triples (i,j,k) of vertices that form a 2-cell face. 
+             # All Tetrahedra have 4 faces
+             i = c(0, 0, 0, 1),
+             j = c(1, 2, 3, 2),
+             k = c(2, 3, 1, 3),
+             
+             # Define the appearance of the 4 faces (2-cells)
+             facecolor = toRGB(viridisLite::viridis(4)),
+             showscale = TRUE, 
+             opacity=0.8
+) 
+traceEdge <- list( 
+  x1 = c(-1/(2*sqrt(3)), -1/(2*sqrt(3))), 
+  y1 = c(0, 0), 
+  z1 = c(-1/2, 1/2), 
+  line = list(
+    color = "rgb(1, 1, 1)",  #dark color for line traces
+    width = 20 # width of line
+  ), 
+  mode = "lines", 
+  opacity = 1,
+  type = "scatter3d"
+)
+
+# emphasize one of the faces by stressing the three 1-cells (edges)
+p <- add_trace(p, x=~traceEdge$x1, y=~traceEdge$y1, z=~traceEdge$z1,
+               type="scatter3d", mode=traceEdge$mode,
+               opacity=traceEdge$opacity,
+               line = list(color=traceEdge$line$color,
+                           width=traceEdge$line$width), showlegend=F)
+# add one 0-cell (point)
+p <- add_trace(p, x=-1/(2*sqrt(3)), y=0, z=1/2, type="scatter3d",
+                mode="markers", marker = list(size =16, 
+                                      color="blue", opacity = 1.0)) %>%
+  layout(title = "Simplicial Complexes (0,1,2,3) Cells", showlegend = FALSE,
+         scene = list(
+          xaxis = list(title = "X"),
+          yaxis = list(title = "Y"),
+          zaxis = list(title = "Z")
+        ))
+p
+```
+
+For a given finite set of data observations, we are trying to represent the underlying topological space the data is sampled from. This topological formulation can be approximated as patches of open covers modeled by simplicial complexes. Locally, the data may be assumed to lie in a metric space where distances between data points can be measured. This leads to neighborhood approximations that can locally be represented as $nD$ balls centered at each data point. This topological space covering may not represent a complete and open cover as all data samples are finite and small, biased, or incomplete samples may lead to poor approximations of the topology of the problem state-space. Zero-cells (0-simplexes, points) are fit for each observed data point, 1-cells (lines) are fit for each pair of data in the same neighborhood, and so on. More information about simplex trees is available in this article [The Simplex Tree: An Efficient Data Structure for General Simplicial Complexes](https://link.springer.com/chapter/10.1007/978-3-642-33090-2_63).
+
+Example of simplicial tree decomposition of 10 data points using the `R` package [simplextree](https://cran.r-project.org/web/packages/simplextree/).
+
+**Note** If you encounter errors like `pillow`, there may be some conflicts between 
+`conda` and `pip` installations of the python package . In this case, re-install `pillow`
+using `pip`: `pip install --force pillow`.
+
+
+```{r exampleSimplicialTreeR, warning=F, error=F, message=F}
+# first install Python for your system
+# for instance, for Windows, use Anaconda 3:
+# https://www.anaconda.com/products/distribution
+# https://www.anaconda.com/download/success
+# install.packages("simplextree")
+
+# Launch the Python environment early!
+# install.packages("reticulate")
+library(reticulate)
+# specify the path of the Python version that you want to use
+# py_path = "C:/Users/IvoD/Anaconda3/"  # manual
+# py_path = Sys.which("python3")       # automated
+# use_python(py_path, required = T) 
+# Sys.setenv(RETICULATE_PYTHON = "C:/Users/IvoD/Anaconda3/")
+
+library(simplextree)
+library(plotly)
+
+simplicialTreeExample <- simplex_tree(list(1:2, 1:3, 2:5, 5:8, 7:9, c(7,9,10), 15:18))
+plot(simplicialTreeExample, color_pal = rainbow(simplicialTreeExample$dimension + 1))
+
+# Generate some data
+n <- 30 #number of points to generate
+
+#generate space of parameter
+theta = seq(length.out=n, from=0, to=pi) 
+
+a <- 0.0; b <- 0.0; r <- 5.0
+
+x = a + r*cos(theta) + rnorm(n, 0, 0.4)
+y = b + r*sin(theta) + rnorm(n, 0, 0.4)
+
+x1 = a + r*cos(theta)
+y1 = b + r*sin(theta)
+
+df <- as.data.frame(cbind(x,y))
+#code to plot the circle for visualization
+# plot(x,y)
+
+plot_ly() %>% 
+  add_trace(x=x, y=y, type="scatter", name = 'Simulated Data Sample', 
+              mode = 'markers', marker = list(opacity=0.99, size=20, symbol=1)) %>%
+  add_trace(x=x1, y = y1, type="scatter", 
+            name = '(Quadratic) Model', 
+            mode = 'lines') %>%
+  layout(title='Sample Data from Quadratic Model', 
+         xaxis = list(title="X)", scaleanchor = "y"), 
+         yaxis = list(title="Y)", scaleanchor = "x"),
+         legend = list(orientation = 'h'))
+
+
+# install the matplotlib python package
+# py_install(packages = "matplotlib")
+
+# Test the R --> Python --> R data transfer:
+as.data.frame(py_to_r(r_to_py(df)))
+
+# See: https://cran.r-project.org/web/packages/reticulate/vignettes/calling_python.html
+```
+
+Go into python to generate and visualize the simplicial complex as a topological model
+for the point-cloud data. To run `python` interactively in the `R` console, use the *reticulate* package's `repl_python()` and `exit` functions. Note that we are using `R` to preload the `python` code from 
+[this source file *SimplicialComplex.py*](https://socr.umich.edu/DSPA2/DSPA2_notes/SimplicialComplex.py), 
+by utilizing the method `reticulate::source_python(()`.
+
+```{python pythonSimplicialComplex}
+# In the Anaconda terminal install Pillow Python Package
+# >pip install --upgrade Pillow
+
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import os 
+# os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = 'C:/Users/IvoD/Anaconda3/Library/plugins/platforms'
+
+print(r.df)
+
+# This set of functions allows for building a Vietoris-Rips
+# simplicial complex from point data
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def euclidianDist(a, b):
+  return np.linalg.norm(a - b)  # Euclidean distance metric
+
+
+def lower_nbrs(nodeSet, edgeSet, node):
+  return {x for x in nodeSet if {x, node} in edgeSet and node > x}
+
+
+def rips(graph, k):
+  nodes, edges = graph[0:2]
+  VRcomplex = [{n} for n in nodes]
+  for e in edges:  # add 1-simplices (edges)
+    VRcomplex.append(e)
+  for i in range(k):
+    # skip 0-simplices
+    for simplex in [x for x in VRcomplex if len(x) == i+2]:
+      # for each u in simplex
+      nbrs = set.intersection(
+        *[lower_nbrs(nodes, edges, z) for z in simplex])
+      for nbr in nbrs:
+        VRcomplex.append(set.union(simplex, {nbr}))
+  return VRcomplex
+
+
+# Build neighorbood graph
+# raw_data is a numpy array
+
+
+def buildGraph(raw_data, epsilon=3.1, metric=euclidianDist):
+  # initialize node set, reference indices from original data array
+  nodes = [x for x in range(raw_data.shape[0])]
+  edges = []  # initialize empty edge array
+  # initialize weight array, stores the weight
+  # (which in this case is the distance) for each edge
+  weights = []
+  for i in range(raw_data.shape[0]):  # iterate through each data point
+    # inner loop to calculate pairwise point distances
+    for j in range(raw_data.shape[0]-i):
+      a = raw_data[i]
+      # each simplex is a set (no order), hence [0,1]=[1,0]; only store 1
+      b = raw_data[j+i]
+      if (i != j+i):
+        dist = metric(a, b)
+        if dist <= epsilon:
+          edges.append({i, j+i})  # add edge
+          # store index and weight
+          weights.append([len(edges)-1, dist])
+  return nodes,edges,weights
+
+
+def drawComplex(origData, ripsComplex, axes=[-12, 12, -8, 8]):
+  plt.clf()
+  plt.axis(axes)
+  print(origData)
+  plt.scatter(origData[:, 0], origData[:, 1])  # plotting just for clarity
+  for i, txt in enumerate(origData):
+    plt.annotate(i, (origData[i][0]+0.05, origData[i][1]))  # add labels
+  
+  # add lines for edges
+  for edge in [e for e in ripsComplex if len(e) == 2]:
+    # print(edge)
+    pt1, pt2 = [origData[pt] for pt in [n for n in edge]]
+    # plt.gca().add_line(plt.Line2D(pt1, pt2))
+    line = plt.Polygon([pt1, pt2], closed=None, fill=None, edgecolor='gray')
+    plt.gca().add_patch(line)
+  
+  # add triangles
+  for triangle in [t for t in ripsComplex if len(t) == 3]:
+    pt1, pt2, pt3 = [origData[pt] for pt in [n for n in triangle]]
+    # plt.gca().add_line(plt.Line2D(pt1, pt2, pt3))
+    line = plt.Polygon([pt1, pt2, pt3], closed=False,
+    facecolor="blue", alpha=0.3, fill=True, edgecolor="red")
+    plt.gca().add_patch(line)
+        # plt.gca().add_line(line)
+  
+  plt.show()
+
+#This set of functions allows for building a Vietoris-Rips simplicial complex from point data
+
+#### These functions are already preloaded from Python source ############################
+# # This set of functions allows for building a Vietoris-Rips
+# # simplicial complex from point data
+# 
+# import numpy as np
+# import matplotlib.pyplot as plt
+# 
+# 
+# def euclidianDist(a, b):
+#     return np.linalg.norm(a - b)  # euclidian distance metric
+# 
+# # Build neighorbood graph
+# # raw_data is a numpy array
+# 
+# 
+# def buildGraph(raw_data, epsilon=3.1, metric=euclidianDist):
+#     # initialize node set, reference indices from original data array
+#     nodes = [x for x in range(raw_data.shape[0])]
+#     edges = []  # initialize empty edge array
+#     # initialize weight array, stores the weight (which in this case is the distance) for each edge
+#     weights = []
+#     for i in range(raw_data.shape[0]):  # iterate through each data point
+#         # inner loop to calculate pairwise point distances
+#         for j in range(raw_data.shape[0]-i):
+#             a = raw_data[i]
+#             # each simplex is a set (no order), hence [0,1]=[1,0]; only store 1
+#             b = raw_data[j+i]
+#             if (i != j+i):
+#                 dist = metric(a, b)
+#                 if dist <= epsilon:
+#                     edges.append({i, j+i})  # add edge
+#                     # store index and weight
+#                     weights.append([len(edges)-1, dist])
+#     return nodes, edges, weights
+# 
+# 
+# def lower_nbrs(nodeSet, edgeSet, node):
+#     return {x for x in nodeSet if {x, node} in edgeSet and node > x}
+# 
+# 
+# def rips(graph, k):
+#     nodes, edges = graph[0:2]
+#     VRcomplex = [{n} for n in nodes]
+#     for e in edges:  # add 1-simplices (edges)
+#         VRcomplex.append(e)
+#     for i in range(k):
+#         # skip 0-simplices
+#         for simplex in [x for x in VRcomplex if len(x) == i+2]:
+#             # for each u in simplex
+#             nbrs = set.intersection(
+#                 *[lower_nbrs(nodes, edges, z) for z in simplex])
+#             for nbr in nbrs:
+#                 VRcomplex.append(set.union(simplex, {nbr}))
+#     return VRcomplex
+# 
+# 
+# def drawComplex(origData, ripsComplex, axes=[-6, 8, -6, 6]):
+#     plt.clf()
+#     plt.axis(axes)
+#     plt.scatter(origData[:, 0], origData[:, 1])  # plotting just for clarity
+#     for i, txt in enumerate(origData):
+#         plt.annotate(i, (origData[i][0]+0.05, origData[i][1]))  # add labels
+# 
+#     # add lines for edges
+#     for edge in [e for e in ripsComplex if len(e) == 2]:
+#         # print(edge)
+#         pt1, pt2 = [origData[pt] for pt in [n for n in edge]]
+#         # plt.gca().add_line(plt.Line2D(pt1,pt2))
+#         line = plt.Polygon([pt1, pt2], closed=None, fill=None, edgecolor='r')
+#         plt.gca().add_line(line)
+# 
+#     # add triangles
+#     for triangle in [t for t in ripsComplex if len(t) == 3]:
+#         pt1, pt2, pt3 = [origData[pt] for pt in [n for n in triangle]]
+#         line = plt.Polygon([pt1, pt2, pt3], closed=False,
+#                            color="blue", alpha=0.3, fill=True, edgecolor=None)
+#         plt.gca().add_line(line)
+#     plt.show()
+
+### TEST
+import numpy as np
+import matplotlib.pyplot as plt
+
+n = 50 #number of points to generate
+
+# generate Elipcical space of parameter
+theta = np.linspace(0, 2.0*np.pi, n) 
+
+a, b, r = 0.0, 0.0, 5.0
+
+x = a + 2*r*np.cos(theta)
+y = b + r*np.sin(theta)
+
+#code to plot the circle for visualization
+plt.plot(x, y)
+plt.show()
+
+x2 = np.random.normal(0, 0.5, n) + x # add some "noise" to points on Elliptical model
+y2 = np.random.normal(0, 0.5, n) + y
+fig, ax = plt.subplots()
+ax.scatter(x2,y2)
+plt.show()
+
+newData = np.array(list(zip(x2,y2)))
+# import SimplicialComplex
+# 
+# graph = SimplicialComplex.buildGraph(raw_data=newData, epsilon=3.0) #Notice the epsilon parameter is 3.0
+# ripsComplex = SimplicialComplex.rips(graph=graph, k=3)
+# SimplicialComplex.drawComplex(origData=newData, ripsComplex=ripsComplex)
+
+graph = buildGraph(raw_data=newData, epsilon=3.0) #Notice the epsilon parameter is 3.0
+ripsComplex = rips(graph=graph, k=3)
+drawComplex(origData=newData, ripsComplex=ripsComplex)
+```
+
+
+<!-- ```{python} -->
+<!-- # In anaconda, install pandas package -->
+<!-- #      pip install pandas  -->
+<!-- from matplotlib import pyplot as plt -->
+<!-- import SimplicialComplex -->
+<!-- newData = np.array(r.df, ndmin=2) # np.array ([x0,]*n  #  df.to_numpy() -->
+<!-- # print(newData) -->
+<!-- graph = buildGraph(raw_data=newData, epsilon=1.7) -->
+<!-- ripsComplex = rips(graph=graph, k=3) -->
+<!-- drawComplex(origData=newData, ripsComplex=ripsComplex) -->
+<!-- ``` -->
+
+The 2D simplicial complex construction above illustrates a weighted graph representation of the 2D data using 0, 1, and 2 cells. In general, similar decomposition using higher order simplexes can be obtained, with increasing computational complexity. This simplex graph helps with the lower dimensional projections in the UMAP algorithm as the simplicial decomposition captures the topological structure of the data.
+
+Our aim is to generate a low dimensional representation of the data that has similar (or homologous) topological structure as the higher-dimensional simplicial decomposition. The UMAP projection is a low dimensional representation of the data into the desired embedding space (e.g., $\mathbb{R}^2$ or $\mathbb{R}^3$). We will measure distances on the manifolds using some metric, e.g., standard Euclidean distance. In particular, we focus on distances to the nearest neighbors, where neighborhoods are defined as balls centered at specific data points of a `min_dist` diameter, a user-specified hyper-parameter.
+
+The lower dimensional projections are driven by iteratively solving optimization problems of finding the low dimensional simplicial graph that closely resembles the fuzzy topological structure of the previous graph (or the original simplicial decomposition. The simplexes are represented as graphs with weighted edges that can be thought of as probabilities that compare the homologous 0-simplexes, 1-simplexes, and so on. These probabilities can be modeled as Bernoulli processes as (corresponding) simplexes either exist or don't exist and the probability is the univariate parameter of the Bernoulli distribution, which can be estimated using the cross entropy measure.
+
+For example, if $S1$ the set of all possible 1-simplexes, let's denote by $\omega(e)$ and $\omega'(e)$ the weight functions of the 1-simplex $e$ in the high dimensional space and the corresponding lower dimensional counterpart. Then, the cross entropy measure for the 1-simplexes is:
+
+$$\sum_{e\in E} {\left [ \underbrace{\omega(e)log\left ( \frac{\omega(e)}{\omega'(e)}\right )}_\text{attractive force}+
+\underbrace{(1-\omega(e))log\left ( \frac{1-\omega(e)}{1-\omega'(e)}\right ) }_\text{repulsive force}\right ]} .$$
+
+The iterative optimization process would minimize the objective function composed of all cross entropies for all simplicial complexes using a strategy like stochastic gradient descent.
+
+The optimization process balances the push-pull between the *attractive forces* between the points favoring larger values of $\omega'(e)$ (that correspond to small distances between the points), and the *repulsive forces* between the ends of $e$ when $\omega(e)$ is small (that correspond to small values of $\omega'(e)$.
+
+If $X$ and $Y$ are some topological spaces, a map $f: X \to Y$ is called a *homeomorphism* if it is a continuous bijection with a continuous inverse, $f^{-1}: Y \to X$, $f\circ f^{-1}\equiv I$. In 2D, there exists a homeomorphism between a circle and an ellipse, however no homeomorphism maps
+a circle onto an open interval. Homeomorphisms consider only the open subsets of the embedding space and they are not affected by the metric on the space. Any pair of n-simplices are homeomorphic. As high-dimensional data may be considered as point clouds in a high dimensional spaces, we can study the embedding manifolds as simplicial complexes by decomposing them into their topological building blocks - *simplices.* A simplicial complex $X$ is a collection of simplices in $\mathbb{R}^N$ where for any simplex in $X$, all of its faces (lower-order simplices) are also in $X$ and the intersection of any two simplices is either empty or a face in both of them. All simplicial complexes $X$ can be described, up to homeomorphism, by listing the vertices of each simplex in $X$. Common vertices allow us to understand which simplices share faces.
+
+There is a generalization of simplices defined by their vertices to abstract simplicial
+complexes, where $X$ is a series of sets $\{X_i\}_{i \geq 0}$, such that the elements of $X^n$ (the $n$-simplices) are $(n + 1)$-element sets that satisfy the condition
+$\forall x_{i=1}^n\in X^n$, all n-element subsets of this set are in $X^{n−1}$. 
+Different simplices can share common elements, e.g., vertices, edges, faces. For instance, a square in $\mathbb{R}^2$ can be describe by explicating the 0-, 1- and 2-cells 
+$$S_0 = \{\{a\}, \{b\}, \{c\}, \{d\}\}; \  
+S_1 = \{\{a, b\}, \{a, c\}, \{a, d\}, \{b, c\}, \{c, d\}\}, \ 
+S_2 = \{\{a, b, c\}, \{a, c, d\}\}.$$
+
+The simplex vertex order is important for defining face-maps. An ordered $n$-simplex can be
+represented as $[x_0, x_1, \cdots, x_n]$. We can characterise an $n$-simplex in a
+simplicial complex by the collection of its $n + 1$ face-maps, the $i$-th face-map sends the simplex to the face excluding the $i$-th vertex from the original simplex, i.e., 
+$$f_i:[x_0, x_1, \cdots, x_i, \cdots, x_n] \to [x_0, x_1, \cdots, x_{i-1},x_{i+1}, \cdots, x_n].$$
+
+Fuzzy sets are sets where element participation in the set is represented by continuous membership functions, i.e., set membership is not binary (in or out) but rather probabilistic. Hence, a fuzzy set is a set of objects $A$ and a function $\mu:A \to [0, 1]$ where $\mu(a) = 1$ indicates a definitive membership of $a$ in the fuzzy set. Fuzzy simplicial sets have the property that the membership strength of the face of a simplex is at least the membership strength of the simplex.
+
+Suppose we start with a Riemannian manifold $(M, g)$ embedded in $\mathbb{R}^n$. Given a point
+$p\in M$, consider a ball $B$, $p\in B\subseteq M$, whose volume with respect to the locally constant metric $g$ is $V(B)=\frac{\pi^{n/2}}{\Gamma(1+n/2)}$. Then the distance of the shortest path in $M$ from $p$ to another point $q\in B$ is $\frac{1}{r}d_{\mathbb{R}^N} (p,q)$, where $r$ is the radius of $B$ in $M$ and $d_{\mathbb{R}^N} (p,q)$ is the chosen $\mathbb{R}^N$ distance between $p$ and $q$ in $\mathbb{R}^N$.
+
+To convert between metric spaces and fuzzy simplicial sets consider a fixed data point $x_i$ in the dataset $D$. We can approximate the distance from $x_i$ to any other point $x_j$ in $D$ by $d_{x_i} (x_i, x_j) =\frac{1}{r_i} d_{\mathbb{R}^N} (x_i, x_j)$. This gives us a partly defined metric space, using the (observed) distances between $x_i$ and $x_j, \ \forall j$, even though we may not know the distances between $x_j$ and $x_k$ for $j, k \not= i$. Denote by $\rho_i$ the distance between $x_i$ and its nearest neighbor in $D$ in $\mathbb{R}^N$ and assume $M$ is locally connected, i.e., $x_i$ must be connected to its nearest neighbor $\forall j \not= i$. Then,
+
+$$d_{x_i} (x_i, x_j) = 
+    \begin{cases} 
+        \frac{1}{r_i} d_{\mathbb{R}^N} (x_i, x_j), & \text{if } j =i \text{ or } k=i\\
+        \infty, & \text{otherwise}
+    \end{cases} .$$
+
+By this definition, $x_i$ and its nearest neighbor are distance $0$ apart, and
+$\forall j,k \not= i$, the unknown distances of $x_j$ and $x_k$ relative to $x_i$ are set this to infinity. With this formulation, we lose the exact metric characterization of the state space and instead utilize the extended *pseudo-metric space* consisting of the set $X$ and the function 
+$d: X \times X \to \mathbb{R}\cup \{\infty\}$, which has pseudo-metric properties:
+(1) $d(x, y) \geq 0$, (2) $d(x, x) = 0$, (3) $d(x, y) = d(y, x)$, and (4) either $d(x, z) =\infty$
+or $d(x, z) \leq d(x, y) + d(y, z)$. The pseudo-metric permits infinite distances as well as the posibility that $d(x, y) = 0$ for $x\not= y$.
+
+The most commonly used objective function in UMAP is `cross entropy` of pairs of fuzzy sets represented via symmetric weight matrices
+
+$$C_{UMAP} = \sum_{i,j}  \left [\underbrace{v_{i,j} \log \left (\frac{v_{i,j}}{w_{i,j}} \right )}_{\text{attarctive force}} +
+\underbrace{(1−v_{i,j}) \log \left (\frac{1-v_{i,j}}{1-w_{i,j}}\right )}_{\text{repulsive force}} \right ], $$
+
+where $v_{i,j}$ are *symmetrized input weights* (affinities), weights of the corresponding fuzzy simplices in the native high-dimensional space. For 1-simpex, these are effectively graph edge weights. The associated UMAP *unsymmetrized input weights* are $v_{i|j}=e^{−(r_{i,j}−\rho_{i})/{\sigma_{i}}}$, where 
+$r_{i,j}$ are the input distances, $\rho_{i}$ is the distance to the nearest neighbor (suppressing zero distances for duplicate neighbors), and $\sigma_{i}$ (perplexity parameters) are estimated using the number of nearest neighbors (hyperparameter $k$) via the restriction $\sum_{j}v_{i|j}=\log(2k)$.
+
+The relation between symmetrized and unsymmetrized input weights is given by
+
+$$v_{i,j}=(v_{j|i}+v_{i|j})− v_{j|i}v_{i|j} \ \ \ (\text{element-wise}), $$
+
+$$V_{symm}= V+V^T−V \circ  V^T \ \ \ (\text{matrix-wise}), $$
+
+where the Hadamard element-wise product is $\circ$ and  $V^T$ is the transpose matrix. The symmetrization corresponds to a fuzzy set union.
+
+The corresponding *output weights* in the lower-dimensional projection space are
+$$w_{i,j}=\frac{1}{1+ad^{2b}_{i,j}},$$
+
+where the parameters $a$ and $b$, typically in the range $[0.5,5]$ are estimated using non-linear least squares subject to the distances $d_{i,j}$ that control the tightness of the lower-dimensional compression function.
+
+The attractive and repulsive UMAP gradient expressions for stochastic gradient descent (SGD, Chapter 13) are
+
+$$\underbrace{\frac{\partial C^+_{UMAP}}{\partial y_i}}_{\text{attractive}}= \frac{−2abd^{2(b−1)}_{i,j}}{1+ad^{2b}_{i,j}}(y_i−y_j),$$
+$$\underbrace{\frac{\partial C^-_{UMAP}}{\partial y_i}}_{\text{repulsive}}= \frac{2b}{(\epsilon + d^{2}_{i,j})(1+ad^{2b}_{i,j})}(y_i−y_j),$$
+
+where the correction $\epsilon\sim 0.001$ avoids singularities. Note that in the repulsive SGD expression, the exact gradient also contains a term $1−v_{i,j}$, which can be ignored as for most pairs of edges (paired distances) $v_{i,j}=0$.
+
+
+## Hand-Written Digits Recognition
+
+Let's go back to the [MNIST digits dataset](https://en.wikipedia.org/wiki/MNIST_database) and apply UMAP projection from the original 784D space to 2D or 3D.
+
+The R package `umap` provides functionality to use UMAP for dimensional reduction of high-dimensional data.
+
+Let's demonstrate UMAP projecting the hand-written digits dataset in 2D and 3D, as well as show how to use the projection for *prediction* and *forecasting* for new testing/validation data.
+
+```{r warning=F, error=F, message=F}
+# install.packages('plotly')
+library(plotly)
+# install.packages('umap')
+library(umap)
+# 
+# # Specify the input data 
+# umapData <- iris[ , 1:4]
+# umapLabels <- iris[ , 5]
+# 
+# # UMAP projection in 2D
+# umapData.umap <- umap(umapData)   # exclude the iris 3-class labels
+# 
+# # Using Python through R-reticulate interface
+# # library(reticulate)
+# # iris.umap_learn <- umap(umapData, method="umap-learn")
+# 
+# # Plot UMAP reduction in 2D
+# plot(umapData.umap$layout, col=as.factor(umapLabels))
+
+# https://rdrr.io/cran/umap/man/umap.defaults.html
+custom.settings = umap.defaults
+custom.settings$n_neighbors = 5
+custom.settings$n_components=3
+# custom.settings
+execTime_UMAP <- system.time(umap_digits3D <- umap(t(train)[1:10000 , ], umap.config=custom.settings)); execTime_UMAP
+
+cols <- palette(rainbow(10)) 
+
+# 2D UMAP Plot
+dfUMAP <- data.frame(umap_digits3D$layout[1:1000, ], train.labels.colors[1:1000])
+plot_ly(dfUMAP, x = ~X1, y = ~X2, mode = 'text') %>%
+  add_text(text=names(train.labels.colors)[1:1000], textfont=list(color=dfUMAP$train.labels.colors.1.1000.)) %>%
+  layout(title="UMAP (784D->2D) Embedding", xaxis = list(title = ""),  yaxis = list(title = ""))
+
+# 3D UMAP plot
+execTime_UMAP <- system.time(umap_digits3D <- umap(t(train)[1:10000 , ], umap.config=custom.settings, n_components=3))
+execTime_UMAP
+
+df3D <- data.frame(umap_digits3D [["layout"]], train.labels.colors[1:1000])
+plot_ly(df3D, x = ~df3D[1:1000, 1], y = ~df3D[1:1000, 2], z= ~df3D[1:1000, 3], mode = 'markers+text') %>%
+  add_text(text = names(train.labels.colors)[1:1000], textfont = list(color = df3D$train.labels.colors.1.1000.)) %>%
+  layout(title = "UMAP 3D Embedding",
+         scene = list(xaxis = list(title=""),  yaxis=list(title=""), zaxis=list(title="")))
+```
+
+
+```{r warning=F, error=F, message=F}
+# execTime_UMAP <- system.time(umapData.umap <- 
+#                                umap(t(train)[1:10000 , ])) 
+# execTime_UMAP
+# # Full dataset(42K * 1K) execution may take much longer
+# 
+# # Plot the result 2D UMAP embedding of the data with digits or solid discs
+# par(mfrow=c(1,1)) # reset the plot canvas
+# 
+# # Plot only first 1,000 cases (to avoid clutter)
+# plot(umapData.umap$layout[1:200 , ], t='n', main="UMAP (784D->2D)") # don't plot the points to avoid clutter
+# text(umapData.umap$layout[1:200,], labels=names(train.labels.colors)[1:200], col=train.labels.colors[1:200])
+# 
+# # plot(umapData.umap$layout[1:200 , ],
+# #      col=as.factor(train.labels.colors[1:200]))
+```
+
+## Apply UMAP for class-prediction using new data
+
+Using the MNIST hand-written digits dataset, or the simpler iris dataset, we will show how we can use UMAP for predicting the image-to-digit, or flower-to-species (taxa) mappings. In the MNIST data, we use a set of $1,000$ new 2D images for prediction, and for the iris data, we simulate new iris flower features by introducing random (additive) noise $N(0,0.1)$ to the original Iris data.
+
+```{r warning=F, error=F, message=F}
+# for IRIS data
+# umapData <- iris[ , 1:4]
+# umapLabels <- iris[ , 5]
+# 
+# # UMAP projection in 2D
+# umapData.umap <- umap(umapData)
+# 
+# # Generate a new random set (from the original iris data)
+# umapDataNoise <- umapData + matrix(rnorm(150*40, 0, 0.1), ncol=4)
+# colnames(umapDataNoise) <- colnames(umapData)
+# head(umapDataNoise, 5)
+# 
+# # Prediction/Forecasting
+# umapDataNoisePred <- predict(umapData.umap, umapDataNoise)
+# 
+# # Stack the original and noise-corrupted data into the same object and plot
+# plot(umapData.umap$layout, col=umapLabels, pch = 1, 
+#      xlab='UMAP Dim 1', ylab='UMAP Dim 2')  # UMAP of Original data
+# par(new=TRUE)
+# plot(umapDataNoisePred, col=umapLabels, pch = 3, 
+#      xaxt='n', yaxt='n', ann=FALSE)  # UMAP of Predictions on Noisy data
+# Stack the original and noise-corrupted data into the same object and plot
+# plot(umap_digits3D$layout, col=umapLabels, pch = 1, 
+#      xlab='UMAP Dim 1', ylab='UMAP Dim 2')  # UMAP of Original data
+# par(new=TRUE)
+# plot(umapDataNoisePred, col=umapLabels, pch = 3, 
+#      xaxt='n', yaxt='n', ann=FALSE)  # UMAP of Predictions on Noisy data
+
+
+# Use the next 1,000 images as prospective new data to classify into 0,1, ..., 9 labels
+umapData_1000 <- train[ , 10001:11000]
+str(umapData_1000)
+
+# Prediction/Forecasting
+umapData_1000_Pred <- predict(umap_digits3D, t(umapData_1000))  # mind transpose of data (case * Feature)
+# train.labels.colors <- colMap(train.labels)
+
+# 2D UMAP Plot
+dfUMAP <- data.frame(x=umap_digits3D$layout[1:1000, 1], y=umap_digits3D$layout[1:1000, 2],
+                     col=train.labels.colors[1:1000])
+plot_ly(dfUMAP, x = ~x, y = ~y, mode = 'text') %>%
+    # Add training data UMAP projection scatter Digits
+    add_text(text=names(train.labels.colors)[1:1000], textfont=list(color=~col, size=15), showlegend=F) %>%
+    # Add 1,000 testing hand-written digit cases onto the 2D UMAP projection pane as colored scatter points
+    # add_markers(marker = list(opacity=0.99, size=10, color=train.labels.colors[10001:11000],
+    #                           symbol=~as.numeric(as.factor(train.labels.colors[10001:11000]))))
+    add_markers(x=umapData_1000_Pred[ , 1], y=umapData_1000_Pred[ , 2], 
+                name =train.labels[10001:11000], marker = list(color=train.labels.colors[10001:11000], opacity=0.3)) %>%
+    layout(title="UMAP Prediction: Projection of 1,000 New Images in 2D", 
+           xaxis = list(title = ""),  yaxis = list(title = ""))
+
+# #############################################################################
+# # plot(range(umapData.umap$layout)[ , 1], range(umapData.umap$layout[ , 2]))
+# # points(umapData.umap$layout[,1], umapData.umap$layout[,2],
+# #        col=umapLabels, cex=2, pch=1)
+# # mtext(side=3, main="UMAP")
+# # df <- as.data.frame(cbind(umapData.umap$layout[ , 1], umapData.umap$layout[ , 2]))
+# library(plotly)
+# plot_ly(x = umapData.umap$layout[ , 1] , 
+#         y = umapData.umap$layout[ , 2], z = umapData.umap$layout[ , 2], 
+#         color = ~umapLabels,
+#         opacity = .5,
+#         colors = c('darkgreen', 'red'), 
+#         type = "scatter3d", 
+#         mode = "markers",
+#         marker = list(size = 5, width=2), 
+#         text = ~umapLabels,
+#         hoverinfo = "text") %>%
+#   layout(
+#     title = "UMAP clusters"
+#   )
+# 
+# # p <-plot_ly(
+# #   x = umapData.umap$layout[ , 1] , 
+# #         y = umapData.umap$layout[ , 2], z = umapData.umap$layout[ , 2], 
+# #   type="scatter3d",
+# #   mode = "markers",
+# #   color = as.factor(umapLabels)) %>%
+# #   layout(
+# #     title = "UMAP clusters"
+# #   )
+# # p
+```
+
+## UMAP Parameters
+
+The UMAP configuration allows specifying the 21 parameters controlling the UMAP projection embedding of the function `umap()`.
+
+ - *n_neighbors*: integer; number of nearest neighbors
+ - *n_components*: integer; dimension of target (output) space
+ - *metric*: character or function determining how distances between data points are computed. String-labeled metrics include : *euclidean*, *manhattan*, *cosine*, *pearson*, *pearson2*. The triangle inequality may not be satisfied by some  metrics and the internal **knn** search may not be optimal 
+ - *n_epochs*: integer; number of iterations performed during layout optimization
+ - *input*: character, use either "data" or "dist"; determines whether the primary input argument to `umap()` is treated as a data matrix or as a distance matrix
+ - *init*: character or matrix. The default string "spectral" computes an initial embedding using eigenvectors of the connectivity graph matrix. An alternative is the string "random", which creates an initial layout based on random coordinates. This setting.can also be set to a matrix, in which case layout optimization begins from the provided coordinates.
+ - *min_dist*: numeric; determines how close points appear in the final layout
+  - *set_op_ratio_mix_ratio*: numeric in range [0,1]; determines the knn-graph  used to create a fuzzy simplicial graph
+ - *local_connectivity*: numeric; used during construction of fuzzy simplicial set
+ - *bandwidth*: numeric; used during construction of fuzzy simplicial set
+ - *alpha*: numeric; initial value of "learning rate" of layout optimization
+ - *gamma*: numeric; determines, together with alpha, the learning rate of layout optimization
+ - *negative_sample_rate*: integer; determines how many non-neighbor points are used per point and per iteration during layout optimization
+ - *a*: numeric; contributes to gradient calculations during layout optimization. When left at NA, a suitable value will be estimated automatically.
+ - *b*: numeric; contributes to gradient calculations during layout optimization.
+ - *spread*: numeric; used during automatic estimation of a/b parameters.
+ - *random_state*: integer; seed for random number generation used during umap()
+ - *transform_state*: integer; seed for random number generation used during `predict()`
+ - *knn.repeat*: number of times to restart knn search
+ - *verbose*: logical or integer; determines whether to show progress messages
+ - *umap_learn_args*: vector of arguments to python package umap-learn
+
+
+## Stability, Replicability and Reproducibility
+
+*Reproducibility* is a stronger condition that requires obtaining consistent computational results using a *fixed* protocol including input data, computational steps, scientific methods, software code, compiler, and other experimental conditions. 
+
+*Replicability* is a weaker condition that requires obtaining homologous results across multiple studies examining the same phenomenon aiming at answering the same scientific questions, each study using its own independent (yet homologous) input data.
+
+As most UMAP implementations involve stochastic processes that employ random number generation, there may be variations in the output results from repeated runs of the algorithm. To stabilize these outputs and ensure result reproducibility we can use seed-setting, `umapData.umap.1234 = umap(umapData, random_state=1234)`. 
+
+## UMAP Interpretation
+
+Below is a summary of key UMAP interpretation points:
+
+  - The choice of the hyperparameters will affect the output: Choosing optimal parameter values may be difficult and is always data dependent. The stability of running UMAP repeatedly with a range of hyperparameters may provide a more sensible interpretation of the lower dimensional MAP projection.
+  - The sizes of the lower dimensional UMAP cluster should not be over-interpreted, since UMAP relies only on local graph neighborhood distances (not global) to construct the initial high-dimensional graph representation.
+  - Similarly, between-cluster distances are not representative of dissimilarities between the cluster elements.
+  - Initial random noise in the data will not be preserved as random variation in the UMAP projections and some spurious clustering may be present that may not be signal related.
+
+
+
+# Dimensionality Reduction Case Study (Parkinson's Disease)
+
+## Step 1: Collecting Data
+
+The data we will be using in this case study is the Clinical, Genetic and Imaging Data for Parkinson's Disease in the SOCR website. A detailed data explanation is on the following link [PD data](https://wiki.socr.umich.edu/index.php/SOCR_Data_PD_BiomedBigMetadata). Let's import the data into R.
+
+```{r warning=F, error=F, message=F}
+# Loading required package: xml2
+wiki_url <- read_html("https://wiki.socr.umich.edu/index.php/SOCR_Data_PD_BiomedBigMetadata")
+html_nodes(wiki_url, "#content")
+pd_data <- html_table(html_nodes(wiki_url, "table")[[1]])
+head(pd_data); summary(pd_data)
+```
+
+## Step 2: Exploring and preparing the data
+
+To make sure that the data is ready for further modeling, we need to fix a few things. Firstly, the `Dx` variable or diagnosis is a factor. We need to change it to a numeric variable. Second, we don't need the patient ID and time variable in the dimension reduction procedures. 
+
+```{r warning=F, error=F, message=F}
+pd_data$Dx <- gsub("PD", 1, pd_data$Dx)
+pd_data$Dx <- gsub("HC", 0, pd_data$Dx)
+pd_data$Dx <- gsub("SWEDD", 0, pd_data$Dx)
+pd_data$Dx <- as.numeric(pd_data$Dx)
+attach(pd_data)
+pd_data<-pd_data[, -c(1, 33)]
+```
+
+## PCA
+
+Now we start the process of fitting a PCA model. Here we will use the `princomp()` function and use the correlation rather than the covariance matrix for calculation. Mind that previously we used `prcomp()` and now we are employing `princomp()`, two different functions, to compute the PCA.
+
+```{r fig.width=15, fig.height=10}
+library(factoextra)
+pca.model <- princomp(pd_data, cor=TRUE)
+summary(pca.model) # pc loadings (i.e., eigenvector columns)
+plot(pca.model)
+biplot(pca.model)
+
+fviz_pca_biplot(pca.model, axes = c(1, 2), geom = "point",
+  col.ind = "black", col.var = "steelblue", label = "all",
+  invisible = "none", repel = F, habillage = pd_data$Sex, 
+  palette = NULL, addEllipses = TRUE, title = "PCA - Biplot")
+
+
+plot_ly(x = c(1:length(pca.model$sdev)), y = pca.model$sdev*pca.model$sdev, name = "Scree", type = "bar") %>%
+  layout(title="Scree Plot", xaxis = list(title="PC's"),  yaxis = list(title="Variances (SD^2)"))
+
+# Scores
+scores <- pca.model$scores
+# Loadings
+loadings <- pca.model$loadings
+
+# Visualization scale factor for loadings
+scaleLoad <- 10
+
+p <- plot_ly() %>%
+  add_trace(x=scores[,1], y=scores[,2], z=scores[,3], type="scatter3d", mode="markers", name=pd_data$Dx,
+            marker = list(color=pd_data$Dx, colorscale = c("gray", "red"), opacity = 0.7), showlegend=F) 
+for (k in 1:nrow(loadings)) {
+   x <- c(0, loadings[k,1])*scaleLoad
+   y <- c(0, loadings[k,2])*scaleLoad
+   z <- c(0, loadings[k,3])*scaleLoad
+   p <- p %>% add_trace(x=x, y=y, z=z, type="scatter3d", mode="lines", 
+  name=paste0("Loading PC ", k, " ", colnames(pd.sub)[k]), line=list(width=8), opacity=1) 
+}
+
+p <- p %>%
+  layout(legend = list(orientation = 'h'), 
+         title=paste0("3D Projection of ", length(pca.model$sdev),"D PD Data along First 3 PCs (Colored by Dx)")) 
+p
+```
+
+Albeit the two cohorts (normal controls and patients, $DX$, red and gray colored markers in the 3D scene) are slightly separated in the second principal direction, we can see in this real world example that PCs do not necessarily correspond to a definitive "elbow" plot suggesting an optimal number of components. In our PCA model, each PC explains about the same amount of variation. Thus, it is hard to tell how many PCs, or factors, we need to select. This would be an *ad hoc* decision in this case. We can understand this better after understanding the following FA model. 
+
+## FA
+
+Let's set up an Cattel's Scree test to determine the number of factors first. FOr a given variable, the *variance communality* is the proportion of the variability for the specific variable that is *shared* with other covariates. The *variable uniqueness* is the variance that is uniquely attributed to the specific features, i.e.,  not shared with any other
+variables,  $uniqueness= 1 – communality$.
+
+```{r warning=F, error=F, message=F}
+library(nFactors)
+ev <- eigen(cor(pd_data)) # get eigenvalues
+ap <- parallel(subject=nrow(pd_data), var=ncol(pd_data), rep=100, cent=.05)
+nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
+summary(nS)
+```
+
+Although the Cattel's Scree test suggests that we should use 14 factors, the real fit shows 14 is not enough. Previous PCA results suggest we need around 20 PCs to obtain a cumulative variance of 0.6. After a few trials we find that 19 factors can pass the chi square test for a sufficient number of factors at $0.05$ level.
+
+```{r warning=F, error=F, message=F}
+fa.model<-factanal(pd_data, 19, rotation="varimax")
+fa.model
+```
+
+This data matrix has relatively low correlation. Thus, it is not suitable for ICA. 
+
+```{r warning=F, error=F, message=F}
+cor(pd_data)[1:10, 1:10]
+
+# generate some random categorical labels for all N observations
+class <- pd_data$Dx
+df <- as.data.frame(pd_data[1:5], class=class)
+
+plot_ly(df) %>%
+    add_trace(type = 'splom', dimensions = list( list(label=colnames(pd_data)[1], values=~L_caudate_ComputeArea),
+                                                 list(label=colnames(pd_data)[2], values=~L_caudate_Volume),
+                                                 list(label=colnames(pd_data)[3], values=~R_caudate_ComputeArea),
+                                                 list(label=colnames(pd_data)[4], values=~R_caudate_Volume),
+                                                 list(label=colnames(pd_data)[5], values=~L_putamen_ComputeArea)),
+              text=~class, marker = list(line = list(width = 1, color = 'rgb(230,230,230)'))) %>%
+    layout(title= 'Parkinsons Disease (PD) Data Pairs Plot', hovermode='closest', dragmode= 'select',
+        plot_bgcolor='rgba(240,240,240, 0.95)')
+```
+
+## t-SNE
+
+Next, let's try the t-Distributed Stochastic Neighbor Embedding method on the [PD data](https://wiki.socr.umich.edu/index.php/SOCR_Data_PD_BiomedBigMetadata).
+
+```{r warning=F, error=F, message=F}
+# install.packages("Rtsne")
+library(Rtsne)
+
+# If working with post-processed PD data above: remove duplicates (after stripping time)
+# pd_data <- unique(pd_data[,])
+
+# If working with raw PD data: reload it
+pd_data <- html_table(html_nodes(wiki_url, "table")[[1]])
+
+# Run the t-SNE, tracking the execution time (artificially reducing the sample-size to get reasonable calculation time)
+execTime_tSNE <- system.time(tsne_PD <- Rtsne(pd_data, dims = 3, perplexity=30, verbose=TRUE, max_iter = 1000)); execTime_tSNE
+
+# Plot the result 2D map embedding of the data
+# table(pd_data$Sex)
+# plot(tsne_PD$Y, main="t-SNE Clusters", col=rainbow(length(unique(pd_data$Sex))), pch = 1)
+#legend("topright", c("Male", "Female"), fill=rainbow(length(unique(pd_data$Sex))), bg='gray90', cex=0.5)
+
+table(pd_data$Dx)
+
+# Either use the DX label column to set the colors col = as.factor(pd_data$Dx) 
+#plot(tsne_PDs$Y, main="t-SNE Clusters", col=as.factor(pd_data$Dx), pch = 15)
+#legend("topright", c("HC", "PD", "SWEDD"), fill=unique(as.factor(pd_data$Dx)), bg='gray90', cex=0.5)
+
+
+# Or to set the colors explicitly
+CharToColor = function(input_char){ 
+    mapping = c("HC"="blue", "PD"="red", "SWEDD"="yellow")
+    mapping[input_char]
+}
+pd_data$Dx.col = sapply(pd_data$Dx, CharToColor)
+
+# plot(tsne_PD$Y, main="t-SNE Clusters", col=pd_data$Dx.col, pch = 15)
+# legend("topright", c("HC", "PD", "SWEDD"), fill=unique(pd_data$Dx.col), bg='gray90', cex=0.5)
+
+df3D <- data.frame(tsne_PD$Y, pd_data$Dx.col)
+plot_ly(df3D, x = ~df3D[, 1], y = ~df3D[, 2], z= ~df3D[, 3], type="scatter3d",  mode = 'markers', 
+        color = pd_data$Dx.col, name=pd_data$Dx) %>%
+  layout(title = "PD t-SNE 3D Embedding", 
+         scene = list(xaxis = list(title=""),  yaxis=list(title=""), zaxis=list(title="")))
+```
+
+## Uniform Manifold Approximation and Projection (UMAP)
+
+Similarly, we can try the UMAP method on the PD data.
+
+```{r warning=F, error=F, message=F}
+execTime_UMAP <- system.time(umap_PD_3D <- umap(pd_data[, -c(27, 34)]))   # remove "Dx.col" & 
+execTime_UMAP
+
+cols <- palette(rainbow(3)) 
+
+# 2D UMAP Plot
+dfUMAP <- data.frame(umap_PD_3D$layout, df3D$pd_data.Dx.col)
+plot_ly(dfUMAP, x = ~X1, y = ~X2, mode = 'text') %>%
+  add_text(text=pd_data$Dx, textfont=list(color=dfUMAP$df3D.pd_data.Dx.col)) %>%
+  layout(title="UMAP PD (32D->2D) Embedding", xaxis = list(title = ""),  yaxis = list(title = ""))
+```
+
+The results of the PCA, ICA, FA, t-SNE, and UMAP methods on the [PD data](https://wiki.socr.umich.edu/index.php/SOCR_Data_PD_BiomedBigMetadata) imply that the data is complex and intrinsically high-dimensional, which prevents explicit embeddings into a low-dimensional (e.g., 2D or 3D) space. More advanced methods to interrogate this dataset will be demonstrated later. The [SOCR publications site](https://www.socr.umich.edu/people/dinov/publications.html) provides additional examples of Parkinson's disease studies.
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number <img class="statcounter"
+								src="https://c.statcounter.com/5714596/0/038e9ac4/0/" 
+								alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

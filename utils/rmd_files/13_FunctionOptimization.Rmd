@@ -1,0 +1,3117 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Function Optimization</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+# Function Optimization
+
+Most data-driven scientific inference, qualitative, quantitative and visual analytics involve formulating, understanding the behavior of, and optimizing objective (cost) functions. Presenting the mathematical foundations of representation and interrogation of diverse spectra of objective functions provides mechanisms for obtaining effective solutions to complex big data problems. (Multivariate) *function optimization* (minimization or maximization) is the process of searching for variables $x_1, x_2, x_3, \ldots, x_n$ that either minimize or maximize the multivariate cost (objective) function $f(x_1, x_2, x_3, \ldots, x_n)$. In this Chapter, we will specifically discuss (1) constrained and unconstrained optimization, (2) Lagrange multipliers, (3) linear, quadratic and (general) nonlinear programming, and (4) data denoising.
+
+## General optimization approach
+
+In its most general framework most continuous optimization algorithms involve iterative traversing the domain and assessing the change of the objective function. The process may start by specifying specific initial conditions or randomly choosing the starting point in the domain, the traversal pattern and the updates of the cost-function estimates. The last part is computed step-wise using some fixed update mechanism that leads to the iterative estimation of the next domain point. The updating function typically involves the relative change of the objective function, e.g., gradient computed at past and current locations. *Gradient descent optimization* relies on updates computed using the negative gradient, whereas the updating of the points in *momentum-based optimization*, an alternative to [stochastic gradient descent](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), uses a scaled exponential moving average of the gradients. The main differences between alternative optimization algorithms are the *objective function* and the *update protocol*. The pseudo code below defines the general algorithmic framework for unconstrained continuous optimization. Following the (random or seeded) initialization of the algorithm ($x_o$) in the domain of the objective function, we traverse the domain by iteratively updating the current location ($x_i$) step-by-step using a predefined *learning rate*, or step-size, ($\gamma$), a momentum decay factor ($\alpha$), a *functor* ($\phi$) of the objective function ($f$), and its gradient ($\nabla f$), as well as the current location ($x_{i-1}$) and all the past locations $\left ( \{x_j\}_{j=o}^{i-1} \right)$:
+
+$$\begin{array}{rcl} 
+\textbf{Generic} & \textbf{Pseudo Optimization} & \textbf{Algorithm} \\
+Initialization: & \text{Objective function: } f, & \text{random (seeded) point in domain: } x_o  \\ 
+Iterator: & \textbf{for } i=1, 2, 3,... & \textbf{do} \\ 
+ & \Delta x = & \phi\left ( \{x_j, f(x_j), \nabla f(x_j) \}_{j=0}^{i-1}\right )= \begin{cases} 
+      \text{gradient descent:} & \phi(.)=-\gamma\nabla f(x_{i-1}) \\
+      \text{stochastic gradient descent:} & \phi(.)=-\gamma\nabla f(x_{i-1})+\xi (i-1), \ \xi (i-1) \text{ is stochastic noise} \\
+      \text{momentum method:} & \phi(.)=-\gamma \left ( \sum_{j=0}^{i-1}{\alpha^{(i-j-1)} \nabla f(x_{j})} \right ) \\
+      \text{neural net ML:} & \phi(.): \ W_{i,j}^{layer}=W_{i,j}^{layer}-\gamma \frac{\partial J}{\partial W_{i,j}^{layer}},\ J=\text{NN error},\ W_{i,j}^{layer}=\text{weight coefficients}
+   \end{cases} \\
+ & \text{If stopping criterion is met,} & \text{then return location: } x_{i-1} \\
+ & \text{Otherwise,} & \text{update the location: } x_i = x_{i-1}+\Delta x \\
+ & \text{End} & \textbf{for } \text{   loop}
+\end{array}$$
+
+Various performance metrics may be used to drive the `learning` in the optimization process. Such loss metrics reward good optimizers or penalize bad optimizers, respectively. When minimizing an objective function, the loss representing the sum of the objective values over all iterations, i.e., the cumulative regret, leads to good optimizers that converge rapidly.
+
+### First-order Gradient-based Optimization
+
+First-order gradient-based methods for solving unconstrained optimization problems are applicable for twice continuously differentiable (multivariate) functions. The solutions $x^*\in \mathbb{R}^n$  satisfy:
+
+ * the gradient (vector) of the objective function at $x^*$, $\nabla f(x^*)=0$, i.e., $\frac{\partial f(x^*)}{\partial x_j}=0,\ \forall 1\leq j\leq n$.
+ * the Hessian matrix of the objective function at $x^*$ is positive definite, $\nabla^2 f(x^*)>0$, i.e., $u'\nabla^2 f(x^*)u>0,\ \forall u\in \mathbb{R}^n-\{0\}$, where the *prime* notation, $'$, denotes the transpose (matrix or vector).
+
+Gradient-based optimization involves 4 steps:
+
+ - Set iteration index $k=0$, choose a starting point $x_o$, and specify a convergence criterion,
+ - Check if convergence conditions are satisfied; If yes, stop and declare current location $x_k$ as the solution; If not, continue.
+ - Propose a step direction (descent direction in $\mathbb{R}^n$) by defining a vector $\nu_k \in \mathbb{R}^n-\{0\}$) that reduces the value of the objective function relative to its value at the current location $x_k$.
+ - Calculate the step-size, $a_k>0$, in the direction $\nu_k$ that yields $f(x_k +a_k\nu_k)<f(x_k)$.
+ - Update the current solution $x_k \rightarrow x_{k+1}=x_k +a_k\nu_k$ and the iteration index $k \rightarrow (k+1)$ and continue repeating the process (step 2).
+
+
+Different gradient-based methods may utilize alternative strategies to calculating the descent direction (step 3) or the estimation of the step-size, learning-rate, in step 4. For instance:
+
+ - The **steepest descent method** (gradient descent) uses at each iteration the normalized negative gradient vector as the search direction. Specifically, the search direction is $\nu_k = \frac{\nabla f(x_k)}{||\nabla f(x_k)||}$ and the step-size is 
+ $a_k= \arg\min_{a} {f(x_k-a \nu_k)}$.
+ - The **conjugate descent method** attempts to move more directly towards
+the optimum by taking into account the history of the prior gradients. Although there are many alternative formulations, the general search direction is computed by $\nu_k=\begin{cases} -\nabla f(x_k) & \text{if k=0} \\ -\nabla f(x_k)+\gamma_k\nu_{k-1} & \text{if k>0} \end{cases}$, where one option for the coefficients is the Fletcher–Reeves estimate $\gamma_k =\frac{||\nabla f(x_k)||^2}{||\nabla f(x_{k-1})||^2}$. And the learning-rate is a number that satisfies $\begin{cases} f(x_k)-f(x_k +a_k \nu_k) \ge -\delta a_k (\nabla f(x_{k}))' \nu_k \\ ||(\nabla f(x_{k}+a_k\nu_k))'||\leq -\sigma (\nabla f(x_{k}))' \nu_k   \end{cases}$, for some pair of positive real values $0<\delta<\sigma<1$.
+
+### Second-order Hessian-based Optimization
+
+Second, and higher-order, optimization methods require more intensive calculations of the *search direction* and *step-size* that typically involve the Hessian matrix.
+
+#### Newton's method
+
+The [Newton’s method](https://doi.org/10.1137/1037125) is often an improvement over first-order gradient descent optimization methods as it also utilizes the second-order Hessian to estimate the search descent direction and the learning rate as follows:
+
+ * The descent direction is computed by $\nu_k=[\nabla^2 f(x_{k})]^{-1}\times [\nabla f(x_{k})]$.
+ * The learning-rate is calculated by $a_k= \arg\min_{a} {f(x_k-a \nu_k)}$.
+ 
+
+#### Broyden–Fletcher–Goldfarb–Shanno (BFGS) method
+
+The Hessian matrix computation is generally expensive and there are several alternatives to the brute-force Newton’s method that improve the computational efficiency. The [Broyden–Fletcher–Goldfarb–Shanno (BFGS) method](https://doi.org/10.1016/0009-2614(85)80574-1) represents one such alternative using the gradient to  *approximate* the inverse of the Hessian matrix $H^{-1}_k=[\nabla^2 f(x_{k})]^{-1}$ at each iteration index $k$ and at each point $x_k$.
+
+$$H^{-1}_k=[\nabla^2 f(x_{k})]^{-1}=\left(I_{n\times n}-\frac{s_ky_k'}{s_k'y_k}\right)\times H^{-1}_{k-1} \times \left(I_{n\times n}-\frac{s_ky_k'}{s_k'y_k}\right) +\frac{s_ky_k'}{s_k'y_k},$$
+where the vectors $s_x=x_k-x_{k-1}$ and $y_k=\nabla f(x_{k})-\nabla f(x_{k-1})$.
+
+### Gradient-free Optimization
+
+As we saw above, gradient-based methods heavily rely on information about the gradient and the Hessian of the objective-function to estimate both the search-direction and the learning-rate. This makes such techniques applicable only to multiply continuously differentiable cost functions.  Alternative strategies are required for solving more elaborate optimization problems involving multivariate objective functions that may not be continuous, differentiable, or possessing multiple minima.
+
+The [Nelder–Mead method](https://doi.org/10.1080/00401706.1975.10489269) represents an example of a convex simplex technique that yields effective and computationally tractable solutions to complex unconstrained optimization problems. [Simulated annealing (SANN)](https://doi.org/10.1126/science.220.4598.671) is an alternative strategy that tracks the proximity of the initial point to the optimal point. It can't always guarantee a global minimum is reached since the iterative dynamics mimic physical cooling of a material in a heath bath, a process that allows uphill and downhill search-directional moves. Most simulated annealing implementations utilize the Metropolis algorithm, which simulates the change in the system energy subject to the cooling process. The optimization tends to converge to a final frozen steady-state with a low energy.
+
+
+## Free (unconstrained) optimization
+
+Unconstrained function optimization refers to searching for extrema without restrictions for the domain of the cost function, $\Omega \ni \{x_i\}$. The [extreme value theorem](https://en.wikipedia.org/wiki/Extreme_value_theorem) suggests that a solution to the free optimization processes, $\min_{x_1, x_2, x_3, \ldots, x_n}{f(x_1, x_2, x_3, \ldots, x_n)}$ or $\max_{x_1, x_2, x_3, \ldots, x_n}{f(x_1, x_2, x_3, \ldots, x_n)}$, may be obtained by a gradient vector descent method. This means that we can minimize/maximize the objective function by finding solutions to $\nabla f = \{ \frac{\partial f}{\partial x_1}, \frac{\partial f}{\partial x_2}, \ldots, \frac{\partial f}{\partial x_n} \}=\{0, 0, \ldots, 0\}$.  Solutions to this equation, $x_1, \ldots, x_n$, will present candidate (local) minima and maxima.
+
+In general, identifying critical points using gradients or tangent planes, where the partial derivatives are trivial, may not be sufficient to determine the *extrema* (*minima* or *maxima*) of multivariate objective functions. Some critical points may represent inflection points, or local extrema that are far from the global *optimum* of the objective function. The eigen-values of the [Hessian matrix](https://en.wikipedia.org/wiki/Second_partial_derivative_test), which includes the second order partial derivatives at the critical points, provide clues to pinpoint extrema. For instance, invertible Hessian matrices that are positive definite (i.e., all eigenvalues are positive) yield a local minimum at the critical point, whereas negative definite Hessians (i.e., all eigenvalues are negative) at the critical point suggests that the objective function has a local maximum. Hessians with both positive and negative eigenvalues yield a saddle point for the objective function at the critical point where the gradient is trivial.
+
+There are two complementary strategies to avoid being trapped in *local* extrema. First, we can run many iterations with different initial vectors. At each iteration, the objective function may achieve a (local) maximum/minimum/saddle point. Finally, we select the overall minimal (or maximal) value from all iterations. Another adaptive strategy involves either adjusting the step sizes or accepting solutions *in probability*, e.g., [simulated annealing](https://en.wikipedia.org/wiki/Simulated_annealing) is one example of an adaptive optimization.
+
+### Example 1: minimizing a univariate function (inverse-CDF)
+
+The cumulative distribution function (CDF) of a real-valued random process $X$, also known as the distribution function of $X$, represents the probability that the random variable $X$ does not exceed a certain level. Mathematically speaking, the CDF of $X$ is $F_X(x) = P(X\leq x)$. Recall the [Chapter 1](https://socr.umich.edu/DSPA2/DSPA2_notes/01_Introduction.html) discussions of Uniform, Normal, Cauchy, Binomial, Poisson and other discrete and continuous distributions. Try the [Probability Distributome Navigator](http://distributome.org/V3/). Also explore the [dynamic representations of density and distribution functions included in the Probability Distributome Calculators](http://www.distributome.org/V3/calc/index.html).
+
+For each $p\in [0,1]$, the *inverse distribution function*, also called *quantile function* (e.g., `qnorm`), yields the critical value ($x$) at which the probability of the random variable is less than or equal to the given probability ($p$). When the CDF $F_X$ is continuous and strictly increasing, the value of the inverse CDF at $p$, $F^{-1}(p)=x$, is the unique real number $x$ such that $F(x)=p$.
+
+Below, we will plot the probability density function (PDF) and the CDF for *Normal* distribution in `R`.
+
+```{r message=F, warning=F}
+library(plotly)
+par(mfrow=c(1,2), mar=c(3,4,4,2))
+
+z<-seq(-4, 4, 0.1)  # points from -4 to 4 in 0.1 steps
+q<-seq(0.001, 0.999, 0.001)  # probability quantile values from 0.1% to 99.9% in 0.1% steps
+
+dStandardNormal <- data.frame(Z=z, Density=dnorm(z, mean=0, sd=1), Distribution=pnorm(z, mean=0, sd=1)) 
+
+# plot(z, dStandardNormal$Density, col="darkblue",xlab="z", ylab="Density", type="l",lwd=2, cex=2, main="Standard Normal PDF", cex.axis=0.8)
+# could also do
+# xseq<-seq(-4, 4, 0.01); density<-dnorm(xseq, 0, 1); plot (density, main="Density")
+# plot_ly(x=~z, y=~dStandardNormal$Density, type="scatter", mode="lines", name="N(0,1) Density")
+z <- seq(-4, 4, 0.01)
+density<-dnorm(z, 0, 1)
+plot_ly(x=~z, y=~density, type="scatter", mode="lines", name="N(0,1) Density") %>%
+  layout(title="N(0,1) Density")
+
+# Compute the CDF
+xseq<-seq(-4, 4, 0.01); CDF<-pnorm(xseq, 0, 1) 
+# plot (cumulative, main="CDF")
+# plot(xseq, CDF, col="darkred", xlab="", ylab="Cumulative Probability", type="l",lwd=2, cex=2, main="CDF of (Simulated) Standard Normal", cex.axis=.8)
+plot_ly(x=~xseq, y=~CDF, type="scatter", mode="lines", name="N(0,1) CDF") %>%
+  layout(title="N(0,1) Cumulative Distribution Function")
+```
+
+The example below shows a semi-interactive standard normal distribution calculator using `plot_ly`. You can see many other probability distribution calculators on the [Distributome site](http://www.distributome.org/V3/calc/index.html).
+
+```{r message=F, error=F, warning=F}
+library(plotly)
+library(quantmod)
+
+z<-seq(-4, 4, 0.1)  # points from -4 to 4 in 0.1 steps
+q<-seq(0.001, 0.999, 0.01)  # probability quantile values from 0.1% to 99.9% in 0.1% steps
+
+dStandardNormal <- data.frame(Z=z, Density=dnorm(z, mean=0, sd=1), Distribution=pnorm(z, mean=0, sd=1)) 
+
+# plot(z, dStandardNormal$Density, col="darkblue",xlab="z", ylab="Density", type="l",lwd=2, cex=2, main="Standard Normal PDF", cex.axis=0.8)
+# polygon(z, dStandardNormal$Density, col="red", border="blue")
+
+dStandardNormal$ID <- seq.int(nrow(dStandardNormal))
+
+aggregate_by <- function(dataset, feature) {
+  feature <- lazyeval::f_eval(feature, dataset)
+  levels <- plotly:::getLevels(feature)
+  aggData <- lapply(seq_along(levels), function(x) {
+    cbind(dataset[feature %in% levels[seq(1, x)], ], frame = levels[[x]])
+  })
+  dplyr::bind_rows(aggData)
+}
+
+dStandardNormal <- dStandardNormal %>% aggregate_by(~ID)
+
+plotMe <- dStandardNormal %>%
+  plot_ly(
+    x = ~Z, 
+    y = ~Density, 
+    frame = ~frame,
+    type = 'scatter', 
+    mode = 'lines', 
+    fill = 'tozeroy', 
+    fillcolor="red",
+    line = list(color = "blue"),
+    text = ~paste("Z: ", Z, "<br>Density: ", Density,
+                  "<br>CDF: ", Distribution), 
+    hoverinfo = 'text'
+  ) %>%
+  layout(
+    title = "Standard Normal Distribution",
+    yaxis = list(
+      title = "N(0,1) Density", 
+      range = c(0,0.45), 
+      zeroline = F,
+      tickprefix = "" # density value
+    ),
+    xaxis = list(
+      title = "Z", 
+      range = c(-4,4), 
+      zeroline = T, 
+      showgrid = T
+    )
+  ) %>% 
+  animation_opts(
+    frame = 100, 
+    transition = 1, 
+    redraw = FALSE
+  ) %>%
+  animation_slider(
+    currentvalue = list(
+      prefix = "Z: "
+    )
+  )
+plotMe 
+
+# If you want to create a shareable plotly link to the Interactive Normal Distribution Calculator, see the API for establishing credentials: https://plot.ly/r/getting-started
+# stdNormalCalculator = api_create(p, filename="SOCR/interactiveStdNormalCalculator")
+# stdNormalCalculator
+```
+
+Suppose we are interested in computing, or estimating, the inverse-CDF from first principles. Specifically, to invert the CDF, we need to be able to solve the following equation (representing our objective function):
+$$CDF(x)-p=0.$$
+
+The `stats::uniroot` and `stats::nlm` R functions do *non-linear minimization* of a function $f$ using a [Newton-Raphson algorithm](https://en.wikipedia.org/wiki/Newton%27s_method). Let's test that optimization using $N(\mu=100,\sigma=20)$.
+
+```{r message=F, warning=F}
+set.seed(1234)
+x <- rnorm(1000, 100, 20)
+pdf_x <- density(x)
+
+# Interpolate the density, the values returned when input x values are outside [min(x): max(x)] should be trivial 
+f_x <- approxfun(pdf_x$x, pdf_x$y, yleft=0, yright=0)
+
+# Manual computation of the cdf by numeric integration
+cdf_x <- function(x){
+  v <- integrate(f_x, -Inf, x)$value
+  if (v<0) v <- 0
+  else if(v>1) v <- 1
+  return(v)
+}
+
+# Finding the roots of the inverse-CDF function by hand (CDF(x)-p=0)
+invcdf <- function(p){
+  uniroot(function(x){cdf_x(x) - p}, range(x))$root
+  # alternatively, can use
+  # nlm(function(x){cdf_x(x) - p}, 0)$estimate 	
+  # minimum - the value of the estimated minimum of f.
+  # estimate - the point at which the minimum value of f is obtained.
+}
+invcdf(0.5)
+
+# We can validate that the inverse-CDF is correctly computed: F^{-1}(F(x))==x
+cdf_x(invcdf(0.8))
+```
+
+The ability to compute exactly, or at least estimate, the inverse-CDF function is important for many reasons. For instance, generating random observations from a specified probability distribution (e.g., normal, exponential, or gamma distribution) is an important task in many scientific studies. One approach for such random number generation from a specified distribution evaluates the inverse CDF at random uniform $u\sim U(0,1)$ values. Recall that in [Chapter 10](https://socr.umich.edu/DSPA2/DSPA2_notes/10_SpecializedML_FormatsOptimization.html) we showed an example of generating random uniform samples using atmospheric noise. The key step is the ability to quickly, efficiently and reliably estimate the inverse CDF function, which we just showed one example of.
+
+Let's see why inverting the CDF using random uniform data works. Consider the cumulative distribution function (CDF) of a probability distribution from which we are interested in sampling. If the CDF has a closed form analytic expression and is invertible, then we can generate a random sample from that distribution by evaluating the inverse CDF at $u$, where $u \sim U(0,1)$. This is possible since a continuous CDF, $F$, is a one-to-one mapping of the domain of the CDF (range of $X$) into the interval $[0,1]$. Therefore, if $U$ is a uniform random variable on $[0,1]$, then $X = F^{-1}(U)$ has the distribution $F$. Suppose $U \sim Uniform[0,1]$, then $P(F^{-1}(U) \leq x)= P(U \leq F(x))$, by applying $F$ to both sides of this inequality, since $F$ is monotonic. Thus, $P(F^{-1}(U) \leq x)= F(x)$, since $P(U \leq u) = u$ for uniform random variables.
+
+### Example 2: minimizing a bivariate function
+
+Let's look at the function $f(x_1, x_2) = (x_1-3)^2 + (x_2+4)^2+x_1 x_2$. We define the function in R and utilize the `optim` function to obtain the extrema points in the support of the objective function and/or the extrema values at these critical points. Everyone can optimize in memory or by hand the simpler objective function 
+$g(x_1, x_2) = (x_1-3)^2 + (x_2+4)^2$, which attains its minimum ($0$) at $x_1=3$ and $x_2=-4$.
+
+```{r message=F, warning=F}
+require("stats")
+f <- function(x) { (x[1] - 3)^2 + (x[2] +4)^2 + x[1]*x[2]}
+initial_x <- c(0, -1)
+x_optimal <- optim(initial_x, f, method="CG") # performs minimization
+x_min <- x_optimal$par
+# x_min contains the domain values where the (local) minimum is attained
+x_min   # critical point/vector
+x_optimal$value  # extrema value of the objective function
+```
+
+`optim` allows the use of 6 candidate optimization strategies:
+
+ - **Nelder-Mead**: The [Nelder-Mead](https://en.wikipedia.org/wiki/Nelder%E2%80%93Mead_method) method is robust but relatively slow. It works reasonably well for non-differentiable functions.
+ - **BFGS**: [Broyden–Fletcher–Goldfarb–Shanno](https://en.wikipedia.org/wiki/Broyden%E2%80%93Fletcher%E2%80%93Goldfarb%E2%80%93Shanno_algorithm) quasi-Newton method (also known as a variable metric algorithm), uses function values and gradients to build up a picture of the surface to be optimized.
+ - **CG**: [conjugate gradients method](https://en.wikipedia.org/wiki/Conjugate_gradient_method) is fragile but successful in larger optimization problems because it's unnecessary to save large matrices.
+ - **L-BFGS-B**:  allows box constraints.
+ - **SANN**: a variant of [simulated annealing](https://en.wikipedia.org/wiki/Simulated_annealing), belonging to the class of stochastic global optimization methods.
+ - **Brent**:  [Brent's method](https://en.wikipedia.org/wiki/Brent%27s_method) applies to one-dimensional problems only. It's useful in cases where `optim()` is used inside other functions where only the `method` argument can be specified.
+
+Let's visualize the objective function
+$$f(x_1, x_2) = (x_1-3)^2 + (x_2+4)^2.$$ 
+
+```{r warning=F, error=F, message=F}
+library(magrittr, plotly)
+
+# define the function on a grid (matrix n*n)
+grid_length <- 101
+
+f_function <- function(A) { # input bivariate matrix n*2 (x1, x2)
+  A <- matrix(A, ncol=2)
+  z <- (A[, 1]-3)^2 + (A[, 2]+4)^2 # or the second function + A[, 1] * A[, 2]
+  return(z)
+}
+
+# define the 2D grid to plot function over
+x <- seq(-10, 10, length = grid_length)
+y <- seq(-10, 10, length = grid_length)
+
+A <- as.matrix(expand.grid(x, y))
+colnames(A) <- c("x", "y")
+
+# evaluate function
+z <- f_function(A)
+
+# put x, y and z values in a data.frame for plotting
+df <- data.frame(A, z)
+
+z_label <- list(
+  title = "z=f(x,y)"
+)
+
+fxy = matrix(z, grid_length,grid_length)
+myPlot <- plot_ly(x=~x, y=~y, z=~fxy, 
+                    type="surface", colors = colorRamp(rainbow(8)), 
+                    opacity=0.9, hoverinfo="none") %>%
+  layout(scene = list(zaxis=z_label)) 
+
+myPlot
+```
+
+### Example 3: using simulated annealing to find the maximum of an oscillatory function
+
+Consider the function $f(x) = 10 \sin(0.3 x)\times \sin(1.3 x^2) - 0.00002 x^4 + 0.3 x+35$. Maximizing $f()$ is equivalent to minimizing $-f()$. Let's plot this oscillatory function, find and report its critical points and extrema values.
+
+The function `optim` returns two important results:
+
+ - `par`: the best set of domain parameters found to optimize the function
+ - `value`: the extreme values of the function corresponding to par.
+
+```{r warning=F, error=F, message=F}
+funct_osc <- function (x) { 
+  -(10*sin(0.3*x)*sin(1.3*x^2) - 0.00002*x^4 + 0.3*x+35) 
+}
+res <- optim(16, funct_osc, method = "SANN", control = list(maxit = 20000, temp = 20, parscale = 20))
+res$par
+res$value
+# plot(funct_osc, -50, 50, n = 1000, main = "optim() minimizing an oscillatory function")
+# abline(v=res$par, lty=3, lwd=4, col="red")
+
+library("plotly")
+x <- seq(-50, 50, 0.01);    y <- funct_osc(x)
+df <- as.data.frame(cbind(x,y))
+plot_ly(data=df, x = ~x, y = ~y, name = 'Function', 
+        type = 'scatter', mode = 'lines', 
+        line = list(width = 0.2)) %>%
+  add_segments(x = res$par, xend = res$par, y = -50, yend = 100, 
+               name = 'Min', line = list(width = 1.0))
+```
+
+## Constrained Optimization
+
+### Equality constraints
+
+When there are support restrictions, dependencies or other associations between the domain variables $x_1, x_2, \ldots, x_n$, constrained optimization needs to be applied.
+
+For example, we can have $k$ equations specifying these restrictions, which may represent certain model constraints, e.g., 
+
+$$\begin{cases}
+g_1(x_1, x_2, \ldots, x_n) = 0\\
+\ldots \\
+g_k(x_1, x_2, \ldots, x_n) = 0
+\end{cases} .$$
+
+Note that the right hand sides of these equations may always be assumed to be trivial ($0$), otherwise we can just move the non-trivial parts within the constraint functions $g_i$. [Linear Programming](https://en.wikipedia.org/wiki/Linear_programming), [Quadratic Programming](https://en.wikipedia.org/wiki/Quadratic_programming), and [Lagrange multipliers](https://en.wikipedia.org/wiki/Lagrange_multiplier) may be used to solve such equality-constrained optimization problems. 
+
+### Lagrange Multipliers
+
+We can merge the equality constraints within the objective function ($f \longrightarrow f^*$). Lagrange multipliers represents a typical solution strategy that turns the *constrained* optimization problem ($\min_{x} {f(x)}$ subject to $g_i(x_1, x_2, \ldots, x_n)=0$, $1\leq i\leq k$), into an *unconstrained* optimization problem:
+$$f^*(x_1, x_2, \ldots, x_n; \lambda_1, \lambda_2, \ldots, \lambda_k) = f(x_1, x_2, \ldots, x_n) + \sum_{i=1}^k {\lambda_i g_i(x_1, x_2, \ldots, x_n)}.$$
+
+Then, we can apply traditional unconstrained optimization schemas, e.g., extreme value theorem, to minimize the unconstrained problem:
+
+$$f^*(x_1, x_2, \ldots, x_n; \lambda_1, \lambda_2, \ldots, \lambda_k) = f(x_1, x_2, \ldots, x_n) + \lambda_1 g_1(x_1, x_2, \ldots, x_n) + \cdots + \lambda_k g_k(x_1, x_2, \ldots, x_n).$$
+
+This represents an unconstrained optimization problem using [Lagrange multipliers](https://en.wikipedia.org/wiki/Lagrange_multiplier).
+
+The solution of the constrained problem is also a solution to:
+$$\nabla f^* = \left [\frac{\partial f}{\partial x_1}, \frac{\partial f}{\partial x_2}, \cdots, \frac{\partial f}{\partial x_n}; \frac{\partial f}{\partial \lambda_1}, \frac{\partial f}{\partial \lambda_2}, \cdots, \frac{\partial f}{\partial \lambda_k} \right ] = [0, 0, \cdots, 0].$$
+
+### Inequality constrained optimization
+
+There are no general solutions for arbitrary inequality constraints; however, partial solutions do exist when some restrictions on the form of constraints are present.  
+
+When both the constraints and the objective function are `linear functions` of the domain variables, then the problem can be solved by Linear Programming.
+
+#### Linear Programming (LP)
+
+LP works when the objective function is a linear function. The constraint functions are also linear combinations of the same variables.
+
+Consider the following elementary (`minimization`) example:
+$$ \min_{x_1, x_2, x_3} (-3x_1 -4x_2 -3x_3)$$
+
+subject to:
+$$\left\{
+ \begin{array}{rl}
+   6x_1 + 2x_2 + 4x_3 & \leq 150 \\
+    x_1 +  x_2 + 6x_3 & \geq 0 \\
+   4x_1 + 5x_2 + 4x_3 & = 40 
+ \end{array} \right. $$ 
+
+The exact solution is $x_1 = 0, x_2 = 8, x_3 = 0$, and can be computed using the package `lpSolveAPI` to set up the constraint problem and the generic `solve()` method to find its solutions.
+
+```{r warning=F, error=F, message=F}
+# install.packages("lpSolveAPI")
+library(lpSolveAPI)
+
+lps.model <- make.lp(0, 3) # define 3 variables
+# add the constraints as a matrix of the linear coefficients, relations and RHS
+add.constraint(lps.model, c(6, 2, 4), "<=", 150)
+add.constraint(lps.model, c(1, 1, 6), ">=",   0)
+add.constraint(lps.model, c(4, 5, 4), "=" ,  40)
+# set objective function (default: find minimum)
+set.objfn(lps.model, c(-3, -4, -3))  
+
+# you can save the model to a file
+# write.lp(lps.model, 'c:/Users/LPmodel.lp', type='lp')
+
+# these commands define the constraint linear model 
+# /* Objective function */
+#   min: -3 x1 -4 x2 -3 x3;
+# 
+# /* Constraints */
+# +6 x1 +2 x2 +4 x3 <= 150;
+# +  x1 +  x2 +6 x3 >=   0;
+# +4 x1 +5 x2 +4 x3  =  40;
+#
+# writing it in the text file named 'LPmodel.lp'
+
+solve(lps.model)
+
+# Retrieve the values of the variables from a solved linear program model 
+get.variables(lps.model)  # check against the exact solution x_1 = 0, x_2 = 8, x_3 = 0
+get.objective(lps.model) # get optimal (min) value
+```
+
+In lower dimensional problems, we can also plot the constraints to graphically demonstrate the corresponding support restriction. For instance, here is an example of a simpler 2D constraint and its Venn diagrammatic representation.
+
+$$\left\{
+ \begin{array}{rl}
+   x_1  & \leq \frac{150 -2x_2}{6} \\
+  x_1  & \geq -x_2\\
+ \end{array} \right. .$$ 
+
+
+```{r warning=F, error=F, message=F}
+# library(ggplot2)
+# ggplot(data.frame(x = c(-100, 0)), aes(x = x)) + 
+#   stat_function(fun=function(x) {(150-2*x)/6}, aes(color="Function 1")) + 
+#   stat_function(fun=function(x) { -x }, aes(color = "Function 2")) + 
+#   theme_bw() + 
+#   scale_color_discrete(name = "Function") + 
+#   geom_polygon(
+#     data = data.frame(x = c(-100, -100, 0, 0, Inf), y = c(0,350/6, 150/6, 0, 0)),
+#     aes(x = x, y = y, fill = "Constraint 1"),
+#     inherit.aes = FALSE, alpha = 0.5) + 
+#   geom_polygon(
+#     data = data.frame(x = c(-100, -100, 0, Inf), y = c(0, 100, 0, 0)),
+#     aes(x = x, y = y, fill = "Constraint 2"),
+#     inherit.aes = FALSE, alpha = 0.3) + 
+#   scale_fill_discrete(name = "Constraint Set") + 
+#   scale_y_continuous(limits = c(0, 100))
+
+x = seq(-100, 100, by=1)
+y = (150-2*x)/6
+plot_ly(x = ~x, y = ~y, type = 'scatter', mode = 'lines', fill = 'tonexty', opacity=0.2, name="Constrain 1") %>% 
+  add_trace(x = ~x, y = -100, type = 'scatter', mode = 'lines', opacity=0.2, name="Lower Limit") %>%
+  add_trace(x = ~x, y = ~(-x), type = 'scatter', mode = 'lines', fill = 'tonexty', opacity=0.2, name="Constrain 2") %>%
+  #add_trace(x = ~x, y = -100, type = 'scatter', mode = 'lines', opacity=0.2, name="Lower Limit") %>%
+  add_markers(x=-150/4, y=150/4, mode='markers', marker=list(size=20), name="Intersection Point") %>%
+  add_markers(x=10, y=10, mode='markers', marker=list(size=20), name="Inside Point") %>%
+  layout(title="Venn Diagram of 2D constraints", xaxis = list(title = 'x1'), yaxis = list(title = 'x2'))
+```
+
+Here is another example of `maximization` of a trivariate cost function, $f(x_1, x_2, x_3)=3x_1+ 4x_2 -x_3$, subject to:
+$$\left\{
+ \begin{array}{rl}
+   -x_1 + 2x_2 + 3x_3 & \leq 16 \\
+    3x_1 -  x_2 - 6x_3 & \geq 0 \\
+   x_1 - x_2 & \leq 2 
+ \end{array} \right. . $$ 
+
+```{r warning=F, message=F, error=F}
+lps.model2 <- make.lp(0, 3)
+add.constraint(lps.model2, c(-1, 2, 3), "<=", 16)
+add.constraint(lps.model2, c(3, -1, -6), ">=",  0)
+add.constraint(lps.model2, c(1, -1, 0), "<=",  2)
+set.objfn(lps.model2, c(3, 4, -1), indices = c(1, 2, 3)) 
+lp.control(lps.model2, sense='max')     # changes to max: 3 x1 + 4 x2 - x3
+
+solve(lps.model2)         # 0 suggests that this solution convergences
+get.variables(lps.model2) # get point of maximum
+get.objective(lps.model2) # get optimal (max) value
+```
+
+In 3D we can utilize the `rgl::surface3d()` method to display the constraints. This output is suppressed, as it can only be interpreted via the pop-out 3D rendering window.
+
+```{r eval=F, echo=T, warning=F, message=FALSE}
+library("rgl")
+# install.packages("rglwidget")
+library("rglwidget")
+n <- 100
+x <- y <- seq(-500, 500, length = n)
+region <- expand.grid(x = x, y = y)
+
+z1 <- matrix(((150 -2*region$x -4*region$y)/6), n, n)
+z2 <- matrix(-region$x + 6*region$y, n, n)
+z3 <- matrix(40 -5*region$x - 4*region$y, n, n)
+
+# open3d()
+surface3d(x, y, z1, back = 'line', front = 'line', col = 'red', lwd = 1.5, alpha = 0.4)
+surface3d(x, y, z2, back = 'line', front = 'line', col = 'orange', lwd = 1.5, alpha = 0.4)
+surface3d(x, y, z3, back = 'line', front = 'line', col = 'blue', lwd = 1.5, alpha = 0.4)
+axes3d()
+rglwidget() 
+# the use of rglwidget() allows the embedding of an interactive 3D plot into the HTML report
+```
+
+We can also use `plot_ly` to display the linear constraints (planes) in 3D.
+
+```{r warning=F, error=F, message=F}
+#define the regular x,y grid (in 2D)
+n <- 100
+x <- y <- seq(-500, 500, length = n)
+region <- expand.grid(x = x, y = y)
+
+# define the z values for all three 2D planes
+z1 <- matrix(((150 -2*region$x -4*region$y)/6), n, n)
+z2 <- matrix(-region$x + 6*region$y, n, n)
+z3 <- matrix(40 -5*region$x - 4*region$y, n, n)
+
+#z.seq <- function(x,y) coef.lm.fit[1]+coef.lm.fit[2]*x+coef.lm.fit[3]*y
+# define the values of z = z(x.seq, y.seq), as a Matrix of dimension c(dim(x.seq), dim(y.seq))
+#z <- t(outer(x.seq, y.seq, z.seq))
+
+### Compute and Plot the unique 3D point of the 3 intersecting planes
+library(geometry)
+library(pracma)
+# plane normals and their unitary counterparts
+n1 <- c(2,4,6); n2 <- c(1,-6,1); n3 <- c(5,4,1)
+n1 <- n1/sqrt(dot(n1,n1)); n2 <- n2/sqrt(dot(n2,n2)); n3 <- n3/sqrt(dot(n3,n3))
+# Points on the panes
+P1 <- c(0,0,150/6); P2 <- c(0,0,0); P3 <- c(0,0,-40)
+# compute the normalizing determinant of the normals matrix
+det <- det(as.matrix(cbind(n1, n2, n3)))
+
+# unique point of intersection is https://mathworld.wolfram.com/Plane-PlaneIntersection.html
+intersectPoint <- (dot(P1,n1)*cross(n2,n3) + dot(P2,n2)*cross(n3,n1) + dot(P3,n3)*cross(n1,n2))/det
+iP <- c(round(intersectPoint[1], 3), round(intersectPoint[2], 3), round(intersectPoint[3], 3))
+paste0("Intersection point of all 3 Planes is (", iP[1], ",", iP[2], ",", iP[3], "!)")
+
+library(plotly)
+plot_ly() %>%
+  # 1. Add 3 vectors representing the paired intersections (there are 3 of these) of any pair of planes
+  add_trace(x=c(iP[1], iP[1]+400*cross(n1,n2)[2]), y=c(iP[2], iP[2]+400*cross(n1,n2)[1]), z=c(iP[3], iP[3]+400*cross(n1,n2)[3]),
+            type="scatter3d", mode="lines", name="Planes 1-2", line=list(color = "orange", width=40), opacity=1.0) %>%
+  add_trace(x=c(iP[1], iP[1]+400*cross(n1,n3)[2]), y=c(iP[2], iP[2]+400*cross(n1,n3)[1]), z=c(iP[3], iP[3]+400*cross(n1,n3)[3]),
+            type="scatter3d", mode="lines", name="Planes 1-3", line=list(color = "gray", width=40), opacity=1.0) %>%
+  add_trace(x=c(iP[1], iP[1]+400*cross(n2,n3)[2]), y=c(iP[2], iP[2]+400*cross(n2,n3)[1]), z=c(iP[3], iP[3]+400*cross(n2,n3)[3]),
+            type="scatter3d", mode="lines", name="Planes 2-3", line=list(color = "blue", width=40), opacity=1.0) %>%
+  # 2. Add all 3 planes
+  add_trace(x=~x, y=~y, z=~z1, name="Plane 1",
+      colors = c("blue", "red"), type="surface", opacity=0.3) %>%
+  add_trace(x=~x, y=~y, z=~z2, type="surface", name="Plane 2",
+            colors = "green", opacity=0.3) %>%
+  add_trace(x=~x, y=~y, z=~z3, type="surface", name="Plane 3",
+            colors = "orange", opacity=0.3) %>%
+  # 3. Add common intersection point
+  add_trace(x=~intersectPoint[1], y=~intersectPoint[2], z=~intersectPoint[3], type="scatter3d", mode="markers",
+            name="Common Intersection Point", marker=list(color = "blue", size=30), opacity=1.0) %>%
+  layout(title="Hyperplane constraints in 3D", legend = list(orientation='h'),
+           scene = list(aspectmode = "manual", aspectratio = list(x=1, y=1, z=1),
+                      xaxis = list(title = "X"), yaxis = list(title = "Y"), zaxis = list(title = "ZA"))) %>%
+  hide_colorbar()
+```
+
+It is possible to restrict the domain type to contain only solutions that are:
+
+ - *integers*, which makes it an Integer Linear Programming (ILP), 
+ - *binary/Boolean* values (BLP), or
+ - *mixed* types, Mixed Integer Linear Programming (MILP).
+
+Some examples are included below.
+
+#### Mixed Integer Linear Programming (MILP)
+
+Let's demonstrate MILP with an example where the type of $x_1$ is unrestricted, $x_2$ is dichotomous (binary), and $x_3$ is restricted to be an integer.
+
+```{r warning=F, error=F, message=F}
+lps.model <- make.lp(0, 3)
+add.constraint(lps.model, c(6, 2, 4), "<=", 150)
+add.constraint(lps.model, c(1, 1, 6), ">=", 0)
+add.constraint(lps.model, c(4, 5, 4), "=", 40)
+set.objfn(lps.model, c(-3, -4, -3))
+
+set.type(lps.model, 2, "binary")
+set.type(lps.model, 3, "integer")
+get.type(lps.model) # This is Mixed Integer Linear Programming (MILP)
+
+set.bounds(lps.model, lower=-5, upper=5, columns=c(1))
+
+# give names to columns and restrictions
+dimnames(lps.model) <- list(c("R1", "R2", "R3"), c("x1", "x2", "x3")) 
+
+print(lps.model)
+solve(lps.model)
+get.objective(lps.model)
+get.variables(lps.model)
+get.constraints(lps.model)
+```
+
+The next example limits all three variables to be dichotomous (binary).
+
+```{r warning=F, error=F, message=F}
+lps.model <- make.lp(0, 3)
+add.constraint(lps.model, c(1, 2, 4), "<=", 5)
+add.constraint(lps.model, c(1, 1, 6), ">=", 2)
+add.constraint(lps.model, c(1, 1, 1), "=",  2)
+set.objfn(lps.model, c(2, 1, 2))
+
+set.type(lps.model, 1, "binary")
+set.type(lps.model, 2, "binary")
+set.type(lps.model, 3, "binary")
+
+print(lps.model)
+solve(lps.model)
+get.variables(lps.model)
+```
+
+### Quadratic Programming (QP)
+
+QP can be used for second order (quadratic) objective functions, but the constraint functions are still linear combinations of the domain variables. More details are available in the [Pracma quadprog documentation](https://rdrr.io/rforge/pracma/man/quadprog.html).
+
+A matrix formulation of the problem can be expressed as minimizing an objective function:
+$$f(X) = \frac{1}{2} X^T D X - d^T X, $$
+
+where $X$ is a vector $[x_1, x_2, \ldots, x_n]^T$, $D$ is a [symmetric positive-definite matrix](https://en.wikipedia.org/wiki/Definiteness_of_a_matrix) of weights of each association pair, $x_i, x_j$, and $d$ is a vector of the linear weights for each individual feature, $x_i$. The $\frac{1}{2}$ coefficient ensures that the weights matrix $D$ is symmetric and each $x_i, x_j$ combination pair is unique. This cost function is subject to the constraints: 
+
+$$A X\ \ [ = | \geq ]\ \ b, $$
+where the first $k$ constraints may represent equalities ($=$) and the remaining ones are inequalities ($\geq$), and $b$ a constant vector constraining the right hand size (RHS).
+
+Here is an example of a QP *objective function* and its R optimization:
+$$f(x_1, x_2, x_3) = x_1^2  - x_1x_2 + x_2^2 + x_2 x_3 + x_3^2 -5 x_2 + 3 x_3.$$
+
+We can rewrite $f$ in a slightly modified form to explicitly specify the parameters ($D$ and $d$):
+
+$$f(x_1, x_2, x_3) = \frac{1}{2}\underbrace{(2 x_1^2  - 2 x_1x_2 + 2 x_2^2 + 2 x_2 x_3 + 2 x_3^2)}_{X^TDX} - 
+\underbrace{(5 x_2 - 3 x_3)}_{d^TX}.$$
+
+The symmetric positive definite matrix, $D$, and the linear weights, $d$, are:
+
+$$D=\left (\begin{array}{rcl}
+2 & -1 & 0 \\
+-1 & 2 & 1 \\
+0 & 1 & 2
+\end{array} \right ),\ \ d=(0,5,-3)^t.$$
+
+Subject to the following constraints ($A_{eq}\ X=b_{eq}$ and $AX\leq b$):
+
+$$\begin{array}{rcl}
+-4x_1 -3x_2 = -8 \\
+2x_1 + x_2 = 2 \\
+2x_2 - x_3 \geq 0
+\end{array} .$$
+
+```{r warning=F, error=F, message=F}
+library(quadprog)
+
+Dmat       <- matrix(c( 2, -1, 0, 
+                       -1, 2, 1, 
+                        0, 1, 2), 3, 3)
+dvec       <- c(0, 5, -3)
+Amat       <- matrix(c(-4, -3, 0, 
+                        2, 1, 0, 
+                        0, 2, -1), 3, 3)
+bvec       <- c(-8, 2, 0)
+n.eqs      <- 2 # the first two constraints are equalities
+sol <- solve.QP(Dmat, dvec, Amat, bvec=bvec, meq=2)
+sol$solution # get the (x1, x2, x3) point of minimum
+sol$value  # get the actual cost function minimum
+```
+
+The minimum value, $-11.25$, of the QP solution is attained at $x_1=-1, x_2=4, x_3=-3.5$. Let's double check the solution:
+
+```{r warning=F, error=F, message=F}
+ef <- function(X, D, d, A) {
+  1/2 * t(X) %*% D %*% X - t(d) %*% X
+}
+ef_man <- function(x) {
+   (1/2)*(2*x[1]^2  - 2*x[1]*x[2] + 2*x[2]^2 +2* x[2]*x[3] + 2*x[3]^2) - (5*x[2] - 3*x[3]) 
+}
+X1 <- c(-1.0,  4.0, -3.5); X2 <- c(-2.5, 6, 0)
+ef(X1, Dmat, dvec, Amat); ef(X2, Dmat, dvec, Amat)
+ef_man(X1); ef_man(X2)
+
+```
+
+We can also use [Wolfram Alpha](https://www.wolframalpha.com) to validate the [solution](https://www.wolframalpha.com/input/?i=minimize++(1%2F2)*(2*x%5E2++-+2*x*y+%2B2*y%5E2+%2B+2*y*+z+%2B+2*z%5E2)+-+(5*y+-+3*z)+in+-4*x-3*y%3D-8+and+2*x%2By%3D2+and+2*y-z+%3E%3D0).
+
+When $D$ is a positive definite matrix, i.e., $X^T D X \gt 0$, for all non-zero $X$, the QP problem may be solved in polynomial time. Otherwise, the QP problem is NP-hard. In general, even if $D$ has only one negative eigenvalue, the QP problem is still [NP-hard](https://en.wikipedia.org/wiki/NP-hardness). 
+
+The QP function `solve.QP()` expects a positive definite matrix $D$.
+
+## General Nonlinear Optimization
+The package `Rsolnp` provides a special function `solnp()`, which solves the general nonlinear programming problem
+
+$$\min_x { f(x) }$$
+subject to
+
+$$g(x)=0$$
+$$l_h \leq h(x) \leq u_h$$
+$$l_x \leq x \leq u_x, $$
+where $f(x), g(x), h(x)$ are all smooth functions.
+
+### Dual problem optimization
+
+*Duality* in math really just means having two complementary ways to think about an optimization problem. The *primal problem* represents an optimization challenge in terms of the original decision variable $x$. The *dual problem*, also called *Lagrange dual*, searches for a lower bound of a minimization problem or an upper bound for a maximization problem. In general, the primal problem may be difficult to analyze, or solve directly, because it may include non-differentiable penalty terms, e.g., $l_1$ norms, recall LASSO/Ridge regularization in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html). Hence, we turn to the corresponding *Lagrange dual problem* where the solutions may be more amenable, especially for [convex functions](https://ocw.mit.edu/courses/sloan-school-of-management/15-094j-systems-optimization-models-and-computation-sma-5223-spring-2004/lecture-notes/duality_article.pdf) that satisfy the following inequality:
+$$f(\lambda x +(1-\lambda)y)\leq \lambda f(x) + (1-\lambda)f(y).$$
+
+#### Motivation
+
+Suppose we want to borrow money, $x$, from a bank, or lender, and $f(x)$ represents the borrowing cost to us. There are natural "design constraints" on money lending. For instance, there may be a cap in the interest rate, $h(x)\leq b$, or we can have many other constraints on the loan duration. There may be multiple lenders, including self-funding, that may "charge" us $f(x)$ for lending us $x$. *Lenders' goals are to maximize profits*. Yet, they can't charge you more than the prime interest rate plus some premium based on your credit worthiness. Thus, for a given fixed $\lambda$, a lender may make us an offer to lend us $x$ aiming to minimize $$f(x)+\lambda \times h(x).$$
+
+If this cost is not optimized, i.e., minimized, you may be able to get another loan $y$ at lower cost $f(y)<f(x)$, and the funding agency loses your business. If the cost/objective function is minimized, the lender may maximize their profit by varying $\lambda$ and still get us to sign on the loan.
+
+The customer's strategy represents a *game theoretic interpretation* the **primal problem**, whereas the **dual problem** corresponds to the strategy of the lender.
+
+In solving complex optimization problems *duality* is equivalent to the existence of a saddle point of the Lagrangian. For convex problems, the double-dual is *equivalent* to the primal problem. In other words, applying the convex conjugate (Fenchel transform) twice returns the *convexification* of the original objective function, which is the same as the original function in most situations.
+
+The *dual of a vector space* is defined as the space of all continuous linear functionals on that space. Let $X=\mathbb{R}^n$, $Y=\mathbb{R}^m$, $f:X\longrightarrow \mathbb{R}$, and $h:X\longrightarrow Y$. Consider the following optimization problem:
+
+$$\begin{array}{lcl} \min_x {f(x)} \\ 
+\text{subject to} \\
+x \in X \\
+h(x)\leq 0.
+\end{array} .$$
+
+Then, this *primal problem* has a corresponding *dual problem*:
+
+$$\begin{array}{lcl} \min_{\lambda} { \inf_{x \in X} {\left ( f(x) + \langle \lambda, h(x) \rangle \right )}} \\ 
+\text{subject to} \\
+\lambda_i \geq 0, \forall 0\leq i\leq m.
+\end{array}$$
+
+The parameter $\lambda\in \mathbb{R}^m$ is an element of the dual space of $Y$, i.e., $Y^*$, since the inner product $\langle \lambda, h(x) \rangle$ is a *continuous linear functional on* $Y$. Here $Y$ is finite dimensional and by the [Riesz representation theorem](https://en.wikipedia.org/wiki/Riesz_representation_theorem) $Y^*$ is isomorphic to $Y$. Note that in general, for infinite dimensional spaces, $Y$ and $Y^*$ are not guaranteed to be isomorphic.
+
+#### Example 1: Linear example
+
+Minimize $f(x, y)=5x-3y$, constrained by $x^2+y^2=136$, which has a minimum value of $-68$ attained at $(-10, 6)$. We will use the `Rsolnp::solnp()` method in this example.
+
+```{r, warning=FALSE, message=FALSE}
+# install.packages("Rsolnp")
+library(Rsolnp)
+
+fn1 <- function(x) { # f(x, y) = 5x-3y
+  5*x[1] - 3*x[2]
+}
+
+# constraint z1: x^2+y^2=136
+eqn1 <- function(x) { 
+  z1=x[1]^2 + x[2]^2
+  return(c(z1))
+}
+constraints = c(136)
+
+x0 <- c(1, 1) # setup initial values
+sol1 <- solnp(x0, fun = fn1, eqfun = eqn1, eqB = constraints)
+sol1$values[10]  # sol1$values contains all steps of the iteration algorithm and the last value is the min value
+sol1$pars
+```
+
+#### Example 2: Quadratic example
+
+Minimize $f(x, y) = 4x^2 + 10y^2 + 5$ subject to the inequality constraint $0\leq x^2+y^2 \leq 4$, which has a minimum value of $5$ attained at the origin $(0, 0)$.
+
+```{r warning=F, error=F, message=F}
+fn2 <- function(x) {  # f(x, y) = 4x^2 + 10y^2 +5
+  4*x[1]^2 + 10*x[2]^2 +5
+}
+
+# constraint z1: x^2+y^2 <= 4
+ineq2 <- function(x) { 
+  z1=x[1]^2 + x[2]^2
+  return(c(z1))
+}
+
+lh <- c(0)
+uh <- c(4)
+
+x0 = c(1, 1) # setup initial values
+sol2 <- solnp(x0, fun = fn2, ineqfun = ineq2, ineqLB = lh, ineqUB=uh)
+sol2$values
+sol2$pars
+```
+
+There are a number of parameters that control the `solnp` procedure. For instance, `TOL` defines the tolerance for optimality (which impacts the convergence) and `trace=0` turns off the printing of the results at each iteration.
+
+```{r warning=F, error=F, message=F}
+ctrl <- list(TOL=1e-15, trace=0)
+sol2 <- solnp(x0, fun = fn2, ineqfun = ineq2, ineqLB = lh, ineqUB=uh, control=ctrl)
+sol2$pars
+```
+
+#### Example 3: More complex non-linear optimization
+
+Let's try to minimize 
+$$f(X) = -x_1 x_2 x_3$$
+subject to 
+
+$$\begin{array}{rcl}
+4x_1 x_2 + 2x_2 x_3 + 2x_3x_1 = 100\\
+1 \leq x_i \leq 10, i = 1, 2, 3
+\end{array}$$
+
+```{r warning=F, error=F, message=F}
+fn3 <- function(x, ...){
+  -x[1]*x[2]*x[3]
+}
+
+eqn3 <- function(x, ...){
+	4*x[1]*x[2]+2*x[2]*x[3]+2*x[3]*x[1]
+}
+constraints3 = c(100)
+
+lx <- rep(1, 3)
+ux <- rep(10, 3)
+
+pars <- c(2, 1, 7) # setup: Try alternative starting-parameter vector (pars)
+ctrl <- list(TOL=1e-6, trace=0)
+sol3 <- solnp(pars, fun=fn3, eqfun=eqn3, eqB = constraints3, LB=lx, UB=ux, control=ctrl)
+sol3$values
+sol3$pars
+```
+
+The non-linear optimization is sensitive to the initial parameters (pars), especially when the objective function is not smooth or if there are many local minima. The function `gosolnp()` may be employed to [generate initial (guesstimates of the) parameters](https://cran.r-project.org/web/packages/Rsolnp/index.html).
+
+#### Example 4: Another linear example
+
+Let's try another minimization of a linear objective function $f(x, y, z) = 4y-2z$ subject to 
+
+$$\begin{array}{rcl}
+2x-y-z=2\\
+x^2+y^2=1.
+\end{array} .$$
+
+```{r warning=F, error=F, message=F}
+fn4 <- function(x)  # f(x, y, z) = 4y-2z
+{
+  4*x[2] - 2*x[3]
+}
+
+# constraint z1: 2x-y-z  = 2 
+# constraint z2: x^2+y^2 = 1
+eqn4 <- function(x){ 
+  z1=2*x[1] - x[2] - x[3]
+  z2=x[1]^2 + x[2]^2
+  
+  return(c(z1, z2))
+}
+constraints4 <- c(2, 1)
+
+x0 <- c(1, 1, 1)
+ctrl <- list(trace=0)
+sol4 <- solnp(x0, fun = fn4, eqfun = eqn4, eqB = constraints4, control=ctrl)
+sol4$values
+sol4$pars
+```
+
+The linear algebra and matrix computing [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html) and the regularized parameter estimation in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html) provide additional examples of least squares parameter estimation, regression and regularization.
+
+# Manual vs. Automated Lagrange Multiplier Optimization
+
+Let's manually implement the Lagrange Multipliers procedure and then compare the results to some optimization examples obtained by automatic R function calls. The latter strategies may be more reliable, efficient, flexible, and rigorously validated. The manual implementation provides a more direct and explicit representation of the actual optimization strategy.
+
+We will test a simple example of an objective function:
+
+$$f(x, y, z) = 4y-2z + x^2+y^2, $$
+subject to two constraints: 
+
+$$\begin{array}{rcl}
+2x-y-z  = 2 \\
+x^2+y^2 +z = 1.
+\end{array}. $$
+
+The `R` package `numDeriv` may be used to calculate numerical approximations of partial derivatives.
+
+```{r warning=F, error=F, message=F}
+# define the main Lagrange Multipliers Optimization strategy from scratch
+require(numDeriv)
+
+lagrange_multipliers <- function(x, f, g) {  # Objective/cost function, f, and constraints, g
+    k <- length(x)
+    l <- length(g(x))
+  
+    # Compute the derivatives
+    grad_f <- function(x) { grad(f, x) }
+  
+    # g, representing multiple constraints, is a vector-valued function: its first derivative is a matrix
+    grad_g <- function(x) {  jacobian(g, x) }
+    
+    # The Lagrangian is a scalar-valued function:
+    #   L(x, lambda) = f(x) - lambda * g(x)
+    # whose first derivative roots give the optimal solutions
+    #   h(x, lambda) = c( f'(x) - lambda * g'(x), - g(x) ).
+    h <- function(y) {
+        c(grad_f(y[1:k]) - t(y[-(1:k)]) %*% grad_g(y[1:k]), -g(y[1:k]))
+    }
+    
+    # To find the roots of the first derivative, we can use Newton's method:
+    # iterate  y <- y - h'(y)^{-1} h(y)  until certain convergence criterion is met
+    # e.g., (\delta <= 1e-6)
+    grad_h <- function(y) { jacobian(h, y) }
+    
+    y <- c(x, rep(0, l))
+    previous <- y + 1
+    while(sum(abs(y-previous)) > 1e-6) {
+        previous <- y
+        y <- y - solve( grad_h(y), h(y) )
+    }
+    y[1:k]
+}
+
+x <- c(0, 0, 0)
+
+# Define the objective cost function
+fn4 <- function(x)  # f(x, y, z) = 4y-2z + x^2+y^2
+{
+  4*x[2] - 2*x[3] + x[1]^2+ x[2]^2
+  #sum(x^2)
+}
+# check the derivative of the objective function
+grad(fn4, x)
+
+# define the domain constraints of the problem
+# constraint z1: 2x-y-z  = 2 
+# constraint z2: x^2+y^2 +z = 1
+eqn4 <- function(x){ 
+  z1=2*x[1] - x[2] - x[3] -2
+  z2=x[1]^2 + x[2]^2 + x[3] -1
+  return(c(z1, z2))
+}
+
+# Check the Jacobian of the constraints
+jacobian(eqn4, x)
+
+# Call the Lagrange-multipliers solver
+
+# check one step of the algorithm
+k <- length(x)
+l <- length(eqn4(x)); 
+h <- function(x) {
+    c(grad(fn4, x[1:k]) - t(-x[(1:2)]) %*% jacobian(eqn4, x[1:k]), -eqn4(x[1:k]))
+}
+jacobian(h, x)
+
+# Lagrange-multipliers solver for f(x, y, z) subject to g(x, y, z)
+params <- lagrange_multipliers(x, fn4, eqn4); params
+fn4(params)
+```
+
+Now, let's double-check the above manual optimization results against the automatic `solnp` solution minimizing
+
+$$f(x, y, z) = 4y-2z + x^2+y^2$$ 
+subject to:
+
+$$\begin{array}{rcl}
+2x-y-z=2\\
+x^2+y^2=1.
+\end{array} .$$
+
+```{r warning=F, error=F, message=F}
+library(Rsolnp)
+fn4 <- function(x)  # f(x, y, z) = 4y-2z + x^2+y^2
+{
+  4*x[2] - 2*x[3] + x[1]^2+ x[2]^2
+}
+
+# constraint z1: 2x-y-z  = 2 
+# constraint z2: x^2+y^2 +z = 1
+eqn4 <- function(x){ 
+  z1=2*x[1] - x[2] - x[3]
+  z2=x[1]^2 + x[2]^2 + x[3]
+  return(c(z1, z2))
+}
+constraints4 <- c(2, 1)
+
+x0 <- c(1, 1, 1)
+ctrl <- list(trace=0)
+sol4 <- solnp(x0, fun = fn4, eqfun = eqn4, eqB = constraints4, control=ctrl)
+sol4$values
+sol4$pars
+```
+
+The results of both (manual and automated) experiments identifying the optimal $(x, y, z)$ coordinates minimizing the objective function $f(x, y, z) = 4y-2z + x^2+y^2$ are in agreement.
+
+| Optimization Approach | function call | arg_x | arg_y | arg_z | min_value |
+|----------|---------------|-------|-------|-------|-----------|
+| *Manual*  | `lagrange_multipliers(x, fn4, eqn4)`| 0.3416408 | -1.0652476 | -0.2514708 | -2.506578 |
+| *Automated* | `solnp(x0, fun = fn4, eqfun = eqn4,`<br /> `eqB = constraints4, control=ctrl)` | 0.3416408 | -1.0652476 | -0.2514709 | -2.5065778 |
+
+# Data Denoising
+
+Suppose we are given $x_{noisy}$ with $n$ noise-corrupted data points. The noise may be additive ($x_{noisy}\sim x +\epsilon$) or not additive. We may be interested in denoising the signal and recovering a version of the original (unobserved) dataset $x$, potentially as a smoother representation of the original (uncorrupted) process. Smoother signals suggest less (random) fluctuations between neighboring data points.
+
+One objective function we can design to denoise the observed signal, $x_{noisy}$, may include a *fidelity term* and a *regularization term*, see the regularized linear modeling, [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html).
+
+`Total variation` denoising assumes that for each time point $t$, the observed noisy data $$\underbrace{x_{noisy}(t)}_{\text{observed signal}} \sim \underbrace{x(t)}_{\text{native signal}} + \underbrace{\epsilon(t)}_{\text{random noise}}.$$
+
+To recover the *native signal*, $x(t)$, we can optimize ($\arg\min_x{f(x)}$) the following objective cost function:
+
+$$f(x) = \underbrace{\frac{1}{2} \sum_{t=1}^{n-1} {\|y(t) - x_{noisy}(t)\| ^2}}_{\text{fidelity term}} + \underbrace{\lambda \sum_{t=2}^{n-1} | x(t) - x(t-1)|}_{\text{regularization term}}, $$
+
+where $\lambda$ is the regularization smoothness parameter, $\lambda \rightarrow 0 \implies y \rightarrow x_{noisy}$. Minimizing $f(x)$ provides a minimum total-variation solution to the data denoising problem.
+
+Below is an example illustrating total variation (TV) denoising using a simulated noisy dataset. We start by generating an oscillatory noisy signal. Then, we compute several smoothed versions of the noisy data (using *LOESS*, locally estimated scatterplot smoothing), plot the initial and smoothed signals, define and optimize the TV denoising objective function, which is a mixture of a fidelity term and a regularization term.
+
+```{r warning=FALSE}
+n  <- 1000
+x <- rep(0, n)
+xs <- seq(0, 8, len=n)   # seq(from = 1, to = 1, length)
+noise_level = 0.3  # sigma of the noise, try varying this noise-level
+
+# here is where we add the zero-mean noise
+set.seed(1234)
+
+x_noisy <- function (x) { 
+  sin(x)^2/(1.5+cos(x)) + rnorm(length(x), 0, noise_level)
+}
+
+# initialize the manual denoised signal
+x_denoisedManu <- rep(0, n)
+
+df <- as.data.frame(cbind(xs, x_noisy(xs)))
+# loess fit a polynomial surface determined by numerical predictors,
+# using local fitting
+poly_model1 <- loess(x_noisy(xs) ~ xs, span=0.1, data=df) # tight model
+poly_model2 <- loess(x_noisy(xs) ~ xs, span=0.9, data=df) # smoother model
+# To see some of numerical results of the model-fitting:
+# View(as.data.frame(cbind(xs, x_noisy, predict(poly_model1))))
+
+# plot(xs, x_noisy(xs), type='l')
+# lines(xs, poly_model1$fitted, col="red", lwd=2)
+# lines(xs, poly_model2$fitted, col="blue", lwd=3)
+
+plot_ly() %>%
+  add_trace(x=~xs, y=~x_noisy(xs), type="scatter", mode="lines", name="Noisy Data") %>%
+  add_trace(x=~xs, y=~poly_model1$fitted, type="scatter", mode="lines", line=list(width=5), name="Tight LOESS Smoothing") %>%
+  add_trace(x=~xs, y=~poly_model2$fitted, type="scatter", mode="lines", line=list(width=5), name="Smoother LOESS Model") %>%
+  add_trace(x=~xs, y=~sin(xs)^2/(1.5+cos(xs)), type="scatter", mode="lines", line=list(width=5), name="Original Process") %>%
+  layout(title="Noisy Data and Smoothed Models", legend = list(orientation='h'))
+```
+
+Next, let's initiate the parameters, define the objective function and optimize it, i.e., estimate the parameters that minimize the cost function as a mixture of fidelity and regularization terms.
+
+```{r warning=F, error=F, message=F}
+# initialization of parameters
+betas_0 <- c(0.3, 0.3, 0.5, 1)
+betas <- betas_0
+
+# Denoised model
+x_denoised <- function(x, betas) {
+  if (length(betas) != 4) {
+    print(paste0("Error!!! length(betas)=", length(betas), " != 4!!! Exiting ..."))
+    break();
+  }  
+  # print(paste0("   .... betas = ", betas, "...\n"))
+  # original noise function definition: sin(x)^2/(1.5+cos(x))
+  return((betas[1]*sin(betas[2]*x)^2)/(betas[3]+cos(x)))
+} 
+
+library(Rsolnp)
+
+fidelity <- function(x, y) {
+  sqrt((1/length(x)) * sum((y - x)^2))
+}
+
+regularizer <- function(betas) {
+  reg <- 0
+  for (i in 1:(length(betas-1))) {
+      reg <- reg + abs(betas[i])
+  }
+  return(reg)
+}
+
+# Objective Function
+objective_func <- function(betas)  {
+# f(x) = 1/2 * \sum_{t=1}^{n-1} {|y(t) - x_{noisy}(t)\|^2}} + \lambda * \sum_{t=2}^{n-1} | x(t) - x(t-1)|
+  fid <- fidelity(x_noisy(xs), x_denoised(xs, betas)) 
+  reg <- abs(betas[4])*regularizer(betas)
+  error <- fid + reg
+  # uncomment to track the iterative optimization state
+  # print(paste0(".... Fidelity =", fid, " ... Regularizer = ", reg, " ... TotalError=", error))
+  # print(paste0("....betas=(",round(betas[1],3),",",round(betas[2],3),",",
+  #       round(betas[3],3),",", round(betas[4],3), ")"))
+  return(error)
+}
+
+# inequality constraint forcing the regularization parameter lambda=beta[4]>0
+inequalConstr <- function(betas){
+   betas[4]
+}
+inequalLowerBound <- 0; inequalUpperBound <- 100
+
+# should we list the value of the objective function and the parameters at every iteration (default trace=1; trace=0 means no interim reports)
+# constraint problem 
+# ctrl <- list(trace=0, tol=1e-5)  ## could specify: outer.iter=5, inner.iter=9)
+set.seed(121)
+sol_lambda <- solnp(betas_0, fun = objective_func, ineqfun = inequalConstr, ineqLB = inequalLowerBound, ineqUB = inequalUpperBound, control=ctrl)
+
+# unconstrained optimization
+# ctrl <- list(trace=1, tol=1e-5)  ## could specify: outer.iter=5, inner.iter=9)
+# sol_lambda <- solnp(betas_0, fun = denoising_func, control=ctrl)
+
+# suppress the report of the functional values (too many)
+# sol_lambda$values
+
+# report the optimal parameter estimates (betas)
+sol_lambda$pars
+
+# Reconstruct the manually-denoised signal using the optimal betas
+betas <- sol_lambda$pars
+x_denoisedManu <- x_denoised(xs, betas)
+print(paste0("Final Denoised Model:", round(betas[1],3), "*sin(", 
+             round(betas[2],3), "*x)^2/(", round(betas[3],3), "+cos(x)))"))
+# plot(x_denoisedManu)
+
+plot_ly() %>%
+  add_trace(x=~xs, y=~x_noisy(xs), type="scatter", mode="lines", name="Noisy Data") %>%
+  add_trace(x=~xs, y=~x_denoisedManu/2, type="scatter", mode="lines", name="Manual denoising", line=list(width=5)) %>%
+  add_trace(x=~xs, y=~sin(xs)^2/(1.5+cos(xs)), type="scatter", mode="lines", line=list(width=5), name="Original Process") %>%
+  layout(title="Noisy Data and Smoothed Models", legend = list(orientation='h'))
+```
+
+Finally, we can validate our manual denoising protocol against the automated TV denoising using the `R` package [tvd](https://cran.r-project.org/web/packages/tvd), may need to install the [RTools package](https://cran.r-project.org/bin/windows/Rtools/rtools43/rtools.html) which allows building r-packages from source code (including the linux `make` tool).
+
+```{r warning=F, error=F, message=F}
+# install.packages("tvd")
+library("tvd")
+
+lambda_0 <- 0.5
+x_denoisedTVD <- tvd1d(x_noisy(xs), lambda_0, method = "Condat")
+# lambda_o is the total variation penalty coefficient
+# method is a string indicating the algorithm to use for denoising. 
+# Default method is "Condat"
+
+# plot(xs, x_denoisedTVD, type='l')
+# plot(xs, x_noisy(xs), type='l')
+# lines(xs, poly_model1$fitted, col="red", lwd=2)
+# lines(xs, poly_model2$fitted, col="blue", lwd=3)
+# lines(xs, x_denoisedManu, col="pink", lwd=4)
+# lines(xs, x_denoisedTVD, col="green", lwd=5)
+# # add a legend
+# legend("bottom", c("x_noisy", "poly_model1$fitted", "poly_model2$fitted", "x_denoisedManu", "x_denoisedTVD"), col=c("black", "red", "blue", "pink", "green"), lty=c(1,1, 1,1), cex=0.7, lwd= c(1,2,3,4,5), title="TV Denoising")
+
+plot_ly() %>%
+  add_trace(x=~xs, y=~x_noisy(xs), type="scatter", mode="lines", name="Noisy Data", opacity=0.3) %>%
+  add_trace(x=~xs, y=~x_denoisedManu/2, type="scatter", mode="lines", name="Manual Denoising", line=list(width=5)) %>%
+  add_trace(x=~xs, y=~poly_model1$fitted, type="scatter", mode="lines", name="LOESS Smoothing", line=list(width=5)) %>%
+  add_trace(x=~xs, y=~sin(xs)^2/(1.5+cos(xs)), type="scatter", mode="lines", line=list(width=5), name="Original Process") %>%
+  add_trace(x=~xs, y=~x_denoisedTVD, type="scatter", mode="lines", name="TV Denoising", line=list(width=5)) %>%
+  layout(title="Noisy Data and Smoothed Models", legend = list(orientation='h'))
+```
+
+# Computational Aspects
+
+## Sparse Matrices
+
+In [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html) we saw matrix computing. However, we need a new data structure to efficiently store Big but Sparse matrices, whose elements are mostly trivial (zero). Dense Matrices have the majority of their elements be non-zero, but sparse matrices represent mostly trivial elements. The *sparsity of a matrix* is the proportion of non-zero elements. Even if the original data is not sparse, some data preprocessing may result in sparse data structures. Various techniques to store and process sparse matrices are included in the `R` package `Matrix`.
+
+Here is an example of a large $15000\times 15000$ but sparse diagonal matrix ($SM$) compared to a standard diagonal matrix ($D$) of the same size.
+
+```{r warning=F, error=F, message=F}
+# install.packages("plyr")
+library("Matrix")
+memory.limit(50000) # increase the RAM allocation
+n = 15000
+SM = sparseMatrix(1:n, 1:n, x = 1)
+D = diag(1, n, n)
+
+# Check the sizes of the SM and D:
+object.size(SM); object.size(D)
+
+# Try to invert each of the matrices to see that the SM arithmetic is much more efficient
+solve(SM)[1:10, 1:10] # skip this is very intensive: solve(D)[1:10, 1:10]
+```
+
+The size of the matrix $D$ is $10,000$ times larger than $SM$ despite the fact that both represent $n\times n$ matrices. The difference is that information is sorted differently in *sparse* matrices, where identical values that appear multiple times are only stored once along with pointers to the matrix locations with the same value. 
+
+## Parallel Computing 
+
+Parallel computing is useful for many processes where the algorithm can be partitioned into smaller jobs that can be run in parallel on different compute cores and results integrated at the end, e.g., Monte-Carlo simulations, machine learning tasks, separable transformations. The user creates a virtual cluster of compute nodes where each core runs independently and the resulting information pieces are aggregated at the end. 
+
+Let's try a simple calculation of the mean:
+
+```{r warning=F, error=F, message=F}
+n = 200000
+sapply(1:n, mean)[1:20]
+```
+
+Let's create a private compute cluster using 4 of the available 8 cores and rerun the same script using parallel processing via the R `parallel` package. 
+
+```{r warning=F, error=F, message=F}
+library("parallel")
+
+# check the number of available cores:
+detectCores()
+
+# construct a cluster of 4 cores
+clust = makeCluster(4)
+
+# swapping sapply() with parSapply():
+parSapply(clust, 1:n, mean)[1:20]
+
+stopCluster(clust)
+```
+
+Once done, we should always stop the clusters and release the system resources to avoid memory leaks.
+
+Most computers include multiple processors which can be utilized to optimize the calculations and speed-up performance. Never request, or use, all cores, as this will halt the machine, and do not expect to achieve performance improvement directly proportional to the number of cores used, as there is multi-thread communication overhead.
+
+# Foundational Methods for Function Optimization
+
+Function optimization may not always be possible, i.e., finding *exact* minima or maxima of
+functions are not always analytically tractable. However, there are iterative algorithms to compute *approximate* solutions to such function optimization problems.
+
+## Basics
+
+Let's recall the following Newtonian principles for a given *objective* or *cost* function* $f: \mathbb{R}^n \to \mathbb{R}$, which we want to optimize, i.e., we are looking for solution(s)
+$x^*= \arg\min_{x} \; f(x)$.
+
+ - Maximizing $f$ is the same as minimizing $-f$, as $\arg\max_{x} \; f(x) = \arg\min_{x} \;-f(x)$.
+ - If $\psi$ is strictly increasing (e.g., $\log$, $x^2$, $\exp(x)$), then $\arg\min_{x} \; f(x) = \arg\min_{x}\; \psi(f(x))$.
+ - The *accuracy* (bias) measures how close we get to the optimum point $x^*$.
+ - The *convergence speed* reflects how quickly (in terms of the number of iterations) we get towards $x^*$. 
+ - The *computational complexity* captures how expensive it is to perform a single iteration.
+ - For 1D functions ($n=1$), if $f$ is smooth, then $x^\ast$ is a *local optimum* implies that $f'(x^\ast) = 0$. The sign of the second derivative determines if the optimum is minimum ($f''(x^\ast)>0$) or maximum ($f''(x^*)<0$).
+ - In $\mathbb{R}^n$, for smooth $f: \mathbb{R}^n \to \mathbb{R}$, then at (local) optimal points, $\nabla f(x^\ast) = 0$, where the *gradient* of $f$ is the vector of all partial derivatives $\nabla f(x) =\left(\begin{array}{c} 
+  \frac{\partial f(x)}{\partial x_1} \\
+  \frac{\partial f(x)}{\partial x_2} \\
+  \vdots \\
+  \frac{\partial f(x)}{\partial x_n} 
+  \end{array}\right)$.
+ - In higher dimensions, the second derivative is represented as the [Hessian matrix](https://en.wikipedia.org/wiki/Hessian_matrix), $\nabla^2 f$, which is defined at each point $x$ by $\nabla^2 f(x)= [\nabla^2 f(x)]_{ij} = \frac{\partial^2 f(x)}{\partial x_i \partial x_j}$. At a local minimum $x^*$, the Hessian is [positive definite](https://en.wikipedia.org/wiki/Positive-definite_matrix) ($v^T \nabla^2 f(x^\ast) v > 0, \;\;\; \text{for all $v$}$), for minima, or negative-definite ($v^T \nabla^2 f(x^\ast) v < 0, \;\;\; \text{for all $v$}$), for maxima.
+
+## Gradient Descent
+
+Let's recall the relation between function changes (rise), relative to changes in the argument (run), gradients, and derivatives.
+
+The derivative of a function is defined as the limit of the rise over the run,
+
+$$f'(x_0) = \lim_{x\rightarrow x_0}{\frac{f(x)-f(x_0)}{x-x_0}}.$$
+
+Thus, when $x$ is close to $x_0$, a first-order (linear) approximation of the function at $x$ is obtained by $f(x) \approx f(x_0) + f'(x_0)(x-x_0)$. This linear approximation allows us to approximate (locally) the function extrema by moving down the slope, or gradient, $f'(x_0)$. The higher-dimensional analogue is similar, for $x \sim x_0 \in \mathbb{R}^n$, $f(x) \approx f(x_0) + \nabla f(x_0)^T (x-x_0)$. Effectively, all smooth functions look linear in a small neighborhood around each domain point (including the extrema points). In addition, the gradient $\nabla f(x_0)$ points in the direction of fastest ascent. Therefore, to optimize $f$, we move in direction given by $-\nabla f(x_0)$. Recall that the inner product of two vectors, $\langle a,b \rangle$, is defined by $\langle a,b \rangle = a^T b = \sum_{i=1}^n a_i b_i$.
+
+### Gradient Descent Pseudo Algorithm
+
+Here is a simple illustrative gradient descent algorithm for minimizing $f$ by iteratively moving in the direction of the negative gradient.
+
+ 1. (*Initialization*): Start with initial guess $x_{(0)}$, a step size $\eta$ (aka *learning rate*), and a threshold (tolerance level),
+ 2. (*Iterative Update*) For $k=1,2,3,\ldots$:
+    - Compute the gradient $\nabla f(x_{(k-1)})$
+    - If gradient is close to zero (stopping criterion threshold), then stop, otherwise continue
+    - Update $x_{(k)} = x_{(k-1)} - \eta \nabla f(x_{(k-1)})$,
+ 3. Return final $x_{(k)}$ as approximate solution $x^*$.
+
+
+### Example
+
+Let's demonstrate a simple example performing gradient descent optimization.
+
+```{r warning=F, error=F, message=F}
+# install.packages("numDeriv")
+library(numDeriv)         # to access the gradient calculation function: grad()
+
+gradDescent = function(f, x0, max.iter=500, stepSize=0.01, stoppingCriterion=0.001) {
+  n = length(x0)
+  xmat = matrix(0, nrow=n, ncol=max.iter)
+  xmat[,1] = x0
+  
+  for (k in 2:max.iter) {
+    # Calculate the current gradient
+    currentGrad = grad(f, xmat[,k-1]) 
+    
+    # Check Stopping criterion
+    if (all(abs(currentGrad) < stoppingCriterion)) {
+      k = k-1; break
+    }
+    
+    # Move in the opposite direction of the gradient
+    xmat[,k] = xmat[,k-1] - stepSize * currentGrad
+  }
+
+  xmat = xmat[,1:k]     # remove the initial guess (x0)
+  # return the final solution, the solution path, min.value, and the number of iterations
+  return(list(x=xmat[,k], xmat=xmat, min.val=f(xmat[,k]), k=k))
+}
+```
+
+Let's try one of the earlier examples, $\min f(x_1, x_2) = \min \{(x_1-3)^2 + (x_2+4)^2\}$, which we previously solved using `optim()`.
+
+```{r warning=F, error=F, message=F}
+# Define the function
+f <- function(x) { (x[1] - 3)^2 + (x[2] +4)^2 }
+initial_x <- c(0, -1)
+x_optimal <- optim(initial_x, f, method="CG") # performs minimization
+x_min <- x_optimal$par
+# x_min contains the domain values where the (local) minimum is attained
+x_min   # critical point/vector
+x_optimal$value 
+```
+
+
+```{r warning=F, error=F, message=F}
+# call the gradient descent optimizer
+x0 = c(0, 0)
+optim.f = gradDescent(f, x0)
+# local min x
+optim.f$x
+# optimal value
+optim.f$min.val
+# number of iterations
+optim.f$k
+```
+
+Let's make a 3D plot to visualize the solution path.
+
+```{r warning=F, error=F, message=F}
+surface = function(f, from.x=0, to.x=1, from.y=0, to.y=1, n.x=30, n.y=30, theta=5, phi=80, ...) {
+  # Build the 2d grid
+  x.seq = seq(from=from.x,to=to.x,length.out=n.x)
+  y.seq = seq(from=from.y,to=to.y,length.out=n.y)
+  plot.grid = expand.grid(x.seq,y.seq)
+  z.vals = apply(plot.grid,1,f)
+  z.mat = matrix(z.vals,nrow=n.x)
+
+  # Plot with the persp function
+  orig.mar = par()$mar # Save the original margins
+  par(mar=c(1,1,1,1))  # Make the margins small
+  r = persp(x.seq,y.seq,z.mat,theta=theta,phi=phi,...)
+  par(mar=orig.mar) # Restore the original margins
+  invisible(r)
+}
+
+# # Draw our simple function in 2d, and our gradient descent path on top
+# r = surface(f,from.x=-2,to.x=5,from.y=-6,to.y=5,theta=45,phi=-5,xlab="x1",ylab="x2",zlab="f")
+# points(trans3d(x0[1],x0[2],f(x0),r),col="red",cex=2)
+# lines(trans3d(optim.f$xmat[1,],optim.f$xmat[2,],apply(optim.f$xmat,2,f),r),lwd=4,col="red")
+# points(points(trans3d(optim.f$x[1],optim.f$x[2],f(optim.f$x),r), col="gray",cex=2))
+
+x <- seq(from=-2, to=5, length.out=100)
+y <- seq(from=-6, to=5, length.out=100)
+z_fun <- function(x,y) { return((x - 3)^2 + (y +4)^2 ) }
+z <- outer(x, y, FUN="z_fun")
+
+plot_ly() %>%   
+  add_trace(x=x, y=y, z=t(z), type="surface", opacity=0.7, showlegend = FALSE, name="Function Surface") %>%
+  add_markers(x = optim.f$x[1], y = optim.f$x[2], z = f(optim.f$x), 
+            type = 'scatter3d', mode = 'markers', opacity = 1, 
+            marker = list(size = 20, color = "red"), name = 'Minimum (f)', showlegend=F) %>%
+  add_trace(x = c(optim.f$x[1], optim.f$x[1]), y = c(optim.f$x[2],optim.f$x[2]), z = c(f(optim.f$x),f(optim.f$x)+80), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "orange"), name = 'Min Projection', showlegend=F) %>%
+  layout(title="Graphical Representation of a Quadratic Function Optimization") %>%
+  hide_colorbar()
+```
+
+### Summary of Gradient Descent
+
+There are pros and cons of using gradient descent optimization
+
+*Advantages* of Gradient Descent:
+
+ - Simple and intuitive
+ - Easy to implement
+ - Iterations are usually computationally efficient (involving estimation of the gradient)
+
+*Disadvantages*:
+
+ - The algorithm may be slow and may get trapped into left-right alternating patterns when $\nabla f(x)$ are of
+  very different sizes
+ - It may require a long time to converge to the optimum
+ - For some functions, getting close to the optimum ($x_{(k)} \sim x^*$, where $f(x_{(k)})-f(x*) \leq \epsilon$, may require a large number of iterations, $k\approx 1/\epsilon$. However, for smoother functions this may require $k\approx \log(1/\epsilon)$ iterations. 
+
+## Convexity
+
+There are substantial differences between convex function optimization over convex sets and non-convex function optimization over non-convex domains. The *convexity* assumptions make optimization problems much easier than the general non-convex space optimization problems since (1) local extrema must be global extrema in convex spaces, and (2) [first-order conditions are sufficient conditions for optimality](https://doi.org/10.1137%2F1035044). 
+
+Let's reexamine our simple quadratic convex optimization problem ($\min f(x_1, x_2) = \min \{(x_1-3)^2 + (x_2+4)^2\}$). We can plot a number of gradient descent pathways starting with different initial conditions. If they all merge into each other (convergence), this would suggest robustness and reproducibility of the optimization.
+
+```{r warning=F, error=F, message=F}
+x0 = c(0,0)
+optim.f0 = gradDescent(f,x0)
+x1 = c(-2,-2)
+optim.f1 = gradDescent(f,x1)
+x2 = c(2,1)
+optim.f2 = gradDescent(f,x2)
+x3 = c(3,-1)
+optim.f3 = gradDescent(f,x3)
+x4 = c(4,2)
+optim.f4 = gradDescent(f,x4)
+
+r = surface(f,from.x=-2,to.x=5,from.y=-5,to.y=2, theta=45,phi=-5,xlab="x",ylab="x2",zlab="f")
+
+# Draw our simple function in 2d, and all gradient descent paths on top
+# lines(trans3d(optim.f0$xmat[1,],optim.f0$xmat[2,],apply(optim.f0$xmat,2,f),r),lwd=4,col="red")
+# lines(trans3d(optim.f1$xmat[1,],optim.f1$xmat[2,],apply(optim.f1$xmat,2,f),r),lwd=4,col="green")
+# lines(trans3d(optim.f2$xmat[1,],optim.f2$xmat[2,],apply(optim.f2$xmat,2,f),r), lwd=4,col="blue")
+# lines(trans3d(optim.f3$xmat[1,],optim.f3$xmat[2,],apply(optim.f3$xmat,2,f),r), lwd=4,col="purple")
+# lines(trans3d(optim.f4$xmat[1,],optim.f4$xmat[2,],apply(optim.f4$xmat,2,f),r),lwd=4,col="orange")
+# points(trans3d(3,-4,f(c(3,-4)),r),col="red",cex=2, lwd=4, pch=0)  # optimum solution
+
+x <- seq(from=-2, to=5, length.out=100)
+y <- seq(from=-5, to=2, length.out=100)
+z_fun <- function(x,y) { return((x - 3)^2 + (y +4)^2 ) }
+z <- outer(x, y, FUN="z_fun")
+
+plot_ly() %>%   
+  add_trace(x=x, y=y, z=t(z), type="surface", opacity=0.7, showlegend = FALSE, name="Function Surface") %>%
+  add_markers(x = optim.f$x[1], y = optim.f$x[2], z = f(optim.f$x), 
+            type = 'scatter3d', mode = 'markers', opacity = 1, 
+            marker = list(size = 20, color = "red"), name = 'Minimum (f)', showlegend=F) %>%
+  add_trace(x = c(optim.f$x[1], optim.f$x[1]), y = c(optim.f$x[2],optim.f$x[2]), z = c(f(optim.f$x),f(optim.f$x)+80), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "orange"), name = 'Min Projection', showlegend=F) %>%
+  # Add Solution Paths
+  add_trace(x = ~optim.f0$xmat[1,], y = ~optim.f0$xmat[2,], z = apply(optim.f0$xmat,2,f), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 5), name = 'Solution Path 1', showlegend=F) %>%
+  add_trace(x = ~optim.f1$xmat[1,], y = ~optim.f1$xmat[2,], z = apply(optim.f1$xmat,2,f), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 5), name = 'Solution Path 2', showlegend=F) %>%
+  add_trace(x = ~optim.f2$xmat[1,], y = ~optim.f2$xmat[2,], z = apply(optim.f2$xmat,2,f), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 5), name = 'Solution Path 3', showlegend=F) %>%
+  add_trace(x = ~optim.f3$xmat[1,], y = ~optim.f3$xmat[2,], z = apply(optim.f3$xmat,2,f), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 5), name = 'Solution Path 4', showlegend=F) %>%
+  add_trace(x = ~optim.f4$xmat[1,], y = ~optim.f4$xmat[2,], z = apply(optim.f4$xmat,2,f), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 5), name = 'Solution Path 5', showlegend=F) %>%
+  layout(title="Quadratic Function Optimization Gradient Descent Paths") %>%
+  hide_colorbar()
+```
+
+So, all iterative solution pathways in this convex problem do lead to the optimal point. However, problems are not always convex, and this process can be significantly disrupted.
+
+Let's look at another example, $\displaystyle\min_{x=(x_1,x_2)} {f_1(x)=\min {\left ( (\frac{1}{2} x_1^2-\frac{1}{4} x_2^2+3)\times \cos(2x_1+ 1- e^{x_2}) \right )} }$. 
+
+```{r warning=F, error=F, message=F}
+f1 = function(x) {
+  return((1/2*x[1]^2-1/4*x[2]^2+3)*cos(2*x[1]+1-exp(x[2])))
+}
+
+x0 = c(0.5,0.5)
+optim.f0 = gradDescent(f1,x0,stepSize=0.01)
+x1 = c(-0.1,-1.3)
+optim.f1 = gradDescent(f1,x1,stepSize=0.01,max.iter=400)
+x2 = c(-0.5,-1.3)
+optim.f2 = gradDescent(f1,x2,stepSize=0.01,max.iter=400)
+x3 = c(-0.2,1.4)
+optim.f3 = gradDescent(f1,x3,stepSize=0.01,max.iter=400)
+x4 = c(-0.5,-0.5)
+optim.f4 = gradDescent(f1,x4,stepSize=0.01,max.iter=400)
+x5 = c(-1.7, 1.45)
+optim.f5 = gradDescent(f1,x5,stepSize=0.01,max.iter=400)
+
+# Show the f1 optimization space, and plot all gradient descent pathways
+r = surface(f1,from.x=-2,to.x=2,from.y=-2,to.y=2,theta=-10,phi=70,xlab="x1",ylab="x2",zlab="f1")
+lines(trans3d(optim.f0$xmat[1,],optim.f0$xmat[2,],apply(optim.f0$xmat,2,f1),r),lwd=4,col="red")
+lines(trans3d(optim.f1$xmat[1,],optim.f1$xmat[2,],apply(optim.f1$xmat,2,f1),r),lwd=4,col="green")
+lines(trans3d(optim.f2$xmat[1,],optim.f2$xmat[2,],apply(optim.f2$xmat,2,f1),r),lwd=4,col="blue")
+lines(trans3d(optim.f3$xmat[1,],optim.f3$xmat[2,],apply(optim.f3$xmat,2,f1),r),lwd=4,col="purple")
+lines(trans3d(optim.f4$xmat[1,],optim.f4$xmat[2,],apply(optim.f4$xmat,2,f1),r),lwd=4,col="orange")
+```
+
+Alternatively, we can use the `plot_ly` package to generate an interactive surface plot of the objective function and the solution trajectories. Mind the different optimization trajectories that may either smoothly approach the local minima (surface sulci or valleys) or rapidly switch between neighboring surface slopes or even jump across different crests.
+
+```{r warning=F, error=F, message=F}
+library(magrittr)
+library(plotly)
+
+radius <- 2
+x <- seq(from=-2*radius, to=2*radius+1, by=0.05)
+y <- seq(from=-radius, to=radius+1, by=0.05) 
+z_fun <- function(x,y) { return((1/2*x^2-1/4*y^2+3)*cos(2*x+1-exp(y))) }
+z <- outer(x, y, FUN="z_fun")
+
+plot_ly() %>%   
+  add_trace(x=x, y=y, z=t(z), type="surface", opacity=0.7, showlegend = FALSE) %>%
+  add_trace(x = optim.f0$xmat[1,], y = optim.f0$xmat[2,], z = apply(optim.f0$xmat,2,f1), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "red"), name = 'Solution 1') %>%
+  add_trace(x = optim.f1$xmat[1,], y = optim.f1$xmat[2,], z = apply(optim.f1$xmat,2,f1), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "green"), name = 'Solution 2') %>%
+  add_trace(x = optim.f2$xmat[1,], y = optim.f2$xmat[2,], z = apply(optim.f2$xmat,2,f1), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "blue"), name = 'Solution 3') %>%
+  add_trace(x = optim.f3$xmat[1,], y = optim.f3$xmat[2,], z = apply(optim.f3$xmat,2,f1), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "purple"), name = 'Solution 4') %>%
+  add_trace(x = optim.f4$xmat[1,], y = optim.f4$xmat[2,], z = apply(optim.f4$xmat,2,f1), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "orange"), name = 'Solution 5') %>%
+  add_trace(x = optim.f5$xmat[1,], y = optim.f5$xmat[2,], z = apply(optim.f5$xmat,2,f1), 
+            type = 'scatter3d', mode = 'lines', opacity = 1, 
+            line = list(width = 4, color = "gray"), name = 'Solution 6')
+```
+
+Clearly, the non-convex problem has divergent solution pathways that depend on the initial conditions and the topology of the space. Convexity represents the fundamental difference between these two optimization problems ($f(x)$ and $f_1(x)$). 
+
+If $f(x)$ is a convex real-valued function defined on a convex domain $D$, $f:D \to \mathbb{R}$, then 
+$\forall x_1, x_2 \in D$ and $\forall t \in [0, 1]$:
+
+$$f(tx_1+(1-t)x_2)\leq t f(x_1)+(1-t)f(x_2).$$
+The convex optimization problem is to find a point $x^\ast \in D$ for which $f(x)$ is optimized, i.e., $f(x^\ast) \le f(x), \forall x \in D$.
+
+In finite-dimensional normed spaces, the [Hahn-Banach theorem](https://en.wikipedia.org/wiki/Hahn%E2%80%93Banach_theorem) provides theoretical necessary and sufficient conditions for optimality. [Duality theory](https://doi.org/10.1057/jors.2009.81) generalizes the classical linear programming problem to more complex situations and provides effective computational methods.
+
+### Notes
+
+ - All extrema of convex functions are global, i.e., there are no local extrema. Optimization of convex problems is of polynomial complexity.
+ - Gradient descent optimization provides solutions to most smooth convex functions, subject to selecting appropriate numeric parameters (step-size, i.e., *learning rate*)
+ - Gradient descent may often fail for non-convex functions, where moving downhill locally may not always lead to the optimum,
+ - Non-convex optimization is an NP-hard problem and is much harder in general to solve.
+
+## Newton's Method (Approach)
+
+As a second order method, Newton's optimization is a bit more sophisticated than gradient descent, and may also be more accurate. Let's recall the *second order Taylor expansion* of functions.
+
+$$f(x) \approx f(x_0) + f'(x_0)(x-x_0) + \frac{1}{2}f''(x_0)(x-x_0)^2. $$
+This represents a more accurate approximation of $f(x)$ near $x_0$. This directly generalizes to the multivariate case, $f(x): D\subset \mathbb{R}^n \to \mathbb{R}$:
+$$f(x) \approx \underbrace{f(x_0)}_{c,\ constant} + 
+\underbrace{\nabla f(x_0)^T(\overbrace{x-x_0}^{y})}_{b^T y,\ linear\ term} + 
+\underbrace{\frac{1}{2}(x-x_0)^T \nabla^2 f(x_0) (x-x_0)}_{\frac{1}{2}y^T H y,\ quadratic\ term}.$$
+
+The basic idea of Newton's method is to repeatedly expand the second-order Taylor representation of the objective function, reduce the size of the quadratic term on the right-hand side, and iterate.
+
+The generic quadratic form $q(y)= c + b^T y + \frac{1}{2}y^T H y$ is *minimized* when its gradient is trivial (as a vector), $\nabla q(y) = b^T + H y \equiv 0$. Hence, given that $H$ is positive definite and its inverse exists, $\underbrace{y}_{x-x_0} \equiv - H^{-1} \underbrace{b^T}_{\nabla f(x_0)^T}$. Therefore, assuming we are at location $x_{(k-1)}$, the inductive step in the Newton's optimization scheme provides a mechanism to navigate to the next state point (in $\mathbb{R}^n$) $x_{(k)}$ via:
+
+$$x_{(k)} = x_{(k-1)} - \overbrace{\eta}^{learning\ rate} H^{-1} \nabla f(x_{(k-1)})^T.$$
+Note that the *learning rate*, $\eta$, could be constant or can depend on the iteration index, i.e., $\eta=\eta_k$. Also, recall that the gradient vector for real-valued *linear* $l:\mathbb{R}^n \to \mathbb{R}$ and *quadratic* $q:\mathbb{R}^n \to \mathbb{R}$ functions are given by:
+
+$$l(x)=\underbrace{b^Tx}_{scalar} \equiv x^Tb \longrightarrow \nabla l(x)=b,$$
+$$q(x)=\underbrace{x^T Ax}_{scalar} \longrightarrow \nabla q(x)=A^Tx + Ax.$$
+Similarly, for *vector-valued functions*, $f:\mathbb{R}^n \to \mathbb{R}^m$, $x=(x_1, x_2, \cdots, x_n)^T$, $f(x)=(f_1(x), f_2(x), \cdots, f_m(x))^T$, and $f(x) \approx f(x_0) + J_f(x_0)(x-x_0)$, 
+where the $m\times n$ *Jacobian matrix*, $J_f(x)$,
+represents the first-order partial derivatives of the components of $f$, i.e., 
+$(J_f (x))_{i=1,j=1}^{m,n}=\left (\frac{\partial f_i(x)}{\partial x_j}\right )_{i=1,j=1}^{m,n}$.
+
+#### Newton's method pseudo code
+
+Repeat the formulation and minimization of the quadratic approximation to $f$.
+
+ 1. Start with initial solution guess $x_{(0)}$, a step-size $\eta$ (learning step), and a tolerance level ($\epsilon$),
+ 2. Iterate for $k=1,2,3,\ldots$:
+    - Compute the gradient (vector for real-valued functions, or Jacobian matrix for vector-valued functions) $g=\nabla f(x_{(k-1)})$ and the Hessian matrix $H=\nabla^2 f(x_{(k-1)})$ 
+    - If gradient is close to zero ($||g||<\epsilon$), then stop, otherwise continue on
+    - Update the solution to $x_{(k)} = x_{(k-1)} - \eta H^{-1} g$
+ 3. Return final $x_{(k)}$ as an approximate solution $x^*$.
+
+
+### Advantages and disadvantages of the Newton's method
+
+*Advantages*:
+
+ - Converges faster to a solution than gradient descent, because jointly, the Hessian and
+  gradient together point in a more reliable direction than the gradient does alone
+ - For nice functions, the expected number of iterations to get $f(x_{(k)})-f(x^*) \leq \epsilon$, is $k\approx \log\log(1/\epsilon)$ iterations
+ - Typically, it requires fewer iterations than gradient descent
+ - For quadratic functions, it converges in just one step.
+
+*Disadvantages*:
+
+ - In principle, each Newton iteration is much more expensive than its gradient descent counterpart
+  than a single gradient descent update. Requires inverting the Hessian
+ - If the Hessian isn't invertible (or is close to singular), the algorithm may fail.
+
+
+## Stochastic Gradient Descent
+
+Recall from [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html), that to estimate the linear regression coefficients on $p$ variables, we minimize the fidelity term:
+
+$$f(\beta) = \frac{1}{n} \sum_{i=1}^n (y_i - x_i^T \beta)^2. $$
+For observed responses $y_i$ and predictors $x_i$, $i=1,\ldots , n$, the fidelity represents the standard least squares loss. When $n,p$ are reasonable in size, then we can just solve this using linear algebra:
+
+$$\beta^* = (X^T X)^{-1} X^T y,$$
+where $X_{n\times p}$ (design) predictor matrix (with $i$th row $x_i$), and
+$y_{n\times 1}$ is the response vector (with $i$th component $y_i$).
+
+For extreme sample or parameter sizes, e.g. when $n=10^k$, it may be difficult to compute $X^T X$,
+which will impede the computational solution. Gradient descent may work, but may also be expensive, because the gradient $\nabla f(\beta) = \frac{1}{n} \sum_{i=1}^n x_i(x_i^T \beta - y_i)$ involves a sum of $n$ terms.
+
+This problem leads to the development of *stochastic methods* that overcome that challenge of large-scale statistical optimization. The idea is to simplify the calculations so that each time we need to compute a complex gradient or a Hessian, we can approximate it by a simpler analogue computed by *random estimation*.
+
+For instance, instead of updating the solution using
+$$\beta - t \nabla f(\beta) = \beta - \frac{t}{n} \sum_{i=1}^n x_i(x_i^T \beta - y_i), $$
+
+which may be prohibitively expensive, we can update the solution by
+
+$$\beta - t g = \beta - \frac{t}{m} \sum_{i \in I} x_i (x_i^T \beta - y_i).$$
+
+The range of the sum above is reduced to $I\subset\{1, 2, ..., n\}$, which represents a random subset of $\{1,\ldots n\}$ of size $m\ll n$. In other words, we've replaced the *full gradient* by a stochastic gradient estimate:
+
+$$g = \frac{1}{m} \sum_{i \in I} x_i(x_i^T \beta - y_i).$$
+Note that the latter is an unbiased estimate of the former and is computed over just $m$ data points. This is much more computationally efficient when $m$ is relatively small. In general, stochastic gradient descent makes rapid *initial* progress in minimizing the objective function at the start, however, it may also take longer to get to highly accurate solutions at the end.
+
+#### Stochastic Gradient Descent Pseudo Code
+
+Let's demonstrate the pseudo code implementation of stochastic gradient descent for high-dimensional data with a large number of predictors, $p$. For both statistical as well as optimization reasons, complete search over all $p$ regression parameters may be impractical. In a statistical sense, doing a full search may yield bad estimates (e.g., with high variance), and in a computational sense, the algorithm may be very expensive and slow to converge. Therefore, when we have a large number of features ($p\gg 10^m$), it's likely that most of the predictors may be less important and only a few may be salient features. We can ignore the small effects by shrinking them to zero, just like we did in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html) for regularized linear modeling. Below is an example of a *sparse* stochastic gradient descent pseudocode:
+
+ 1. Start with initial guess $\beta^{(0)}$, step-size $\eta$, and tolerance level $\epsilon$
+ 2. For $k=1,2,3,\ldots$:
+    - Randomly shuffle indices of the cases and select the reduced index set, $I\subset\{1, 2, ..., n\}$
+    - Approximate the true gradient $\nabla f(\beta^{(k-1)})$, by $g = \frac{1}{m} \sum_{i \in I} x_i(x_i^T \beta - y_i)$
+    - Check if gradient is close to zero; if so stop, otherwise continue
+    - Update $\beta^{(k)} = \beta^{(k-1)} - \eta \nabla f(\beta^{(k-1)})$
+    - Correct $\beta^{(k)}$ by thresholding the small components to zero
+ 3. Return final $\beta^{(k)}$ as approximate solution $\beta^*$.
+
+Note that if all $\beta$ get simultaneously smaller as we shrink the small ones to zero, this will guarantee the converge of the algorithm and will yield the *LASSO* solution.
+
+## Simulated Annealing (SANN)
+
+Simulated annealing is another approach for *probabilistic* approximation of the global optimum of an objective function over a large domain (search space). It is very effective for discrete search spaces and for problems where quick identification of an approximate global optimum is more important than finding an accurate local optimum. *Annealing* is a term used in metallurgy to control repeated heating and cooling of materials to increase the size or reduce defects in the materials. In SANN, the *simulation of annealing* refers to finding approximations of the global minimum of a cost function with a large number of variables. This process involves equilibration (annealing) and a simulated walk through the solution space to slow decrease in the probability of accepting worse solutions compared to previously censored solutions.
+
+### SANN Pseudocode
+
+Below is a [simulated annealing pseudocode](https://en.wikipedia.org/wiki/Simulated_annealing) that starts from a state $s_o$ and continues until a maximum of $k_{max}$ steps are completed. At each step, the `neighbor(s)` call generates a randomly chosen neighbor of a given state $s$, and `random(0, 1)` returns a random Uniform distribution value. The annealing schedule is defined by `temperature(r)`, which yields the temperature to use, given the fraction $r$ of the time budget that has been expended so far.
+
+ 1. Initialize the algorithm by setting $s=s_o$
+ 2. For $k\in \{0, ..., k_{max}\}$:
+    - $T\longleftarrow \text{temperature}(k/k_{max})$
+    - Pick a random neighbor, $s_{new} \longleftarrow  neighbor(s)$
+    - If $P(E(s), E(s_{new}), T) \ge random(0, 1)$, then $s \longleftarrow s_{new}$
+ 3. Output: the final state, $s$.
+
+Below is a SANN example to optimize $f(x_1,x_2) = (x_1 - 3)^2 + (x_2 +4)^2$.
+
+```{r warning=F, error=F, message=F}
+f <- function(x) { (x[1] - 3)^2 + (x[2] +4)^2 }
+initial_x <- c(0, -1)
+x_optimal <- optim(initial_x, f, method="SANN") # performs Simulated Annealing minimization
+x_min <- x_optimal$par
+# x_min contains the domain values where the (local) minimum is attained
+x_min   # critical point/vector
+x_optimal$value 
+```
+
+## Bayesian Optimization
+
+Most model-free machine learning and deep network AI techniques rely on implicit optimization solutions for *black box* problems involving cost/objective functions $f(x)$ that are difficult to compute, estimate, may not have close-form analytical expressions, or have singularities, e.g., may be noisy or not differentiable, smooth, or well-posed. These AI methods still assume that the cost function can be evaluated, estimated, or approximated at specific sampling points in the function domain, $x\in \mathcal{D}$.
+
+Typically, Bayesian optimization stochastically partitions the domain and employs  random grid search to identify candidate objective function minima or maxima.
+Consider the example of having to estimate some deep neural network (DNN) *hyper-parameters*, see [Chapter 14](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html). Each iteration or epoch of the DNN learning is expected to take a long time, hence, the hyperparameter search can be expensive and the cost function may be highly non-linear/non-differentiable. In such situations, *Bayesian optimization* provides fast and reliable mechanisms to search for global optima by utilizing a prior model about the objective function $f(\cdot)$, which will be updated using the classical Bayes formula for computing the posterior state using the prior and new data (evidence). The idea is that the posterior estimate of the objective function
+provides a data-tailored (improved) approximation of the difficult objective function. In Bayesian optimization, the *prior model*, or *surrogate model*, is often a Gaussian process used to fit the observed data points and quantify the uncertainty of unobserved areas. In deep neural network training models, such prior models allow us to approximate the typically unknown, or difficult to compute black-box objective (cost) function $f(x)$. The initial approximating the objective function involves an *acquisition function*, which drives subsequent domain sampling towards areas where we can get improvements in the optimization.
+
+A commonly used *prior model* for Bayesian optimization is a [Gaussian process (GP)](https://en.wikipedia.org/wiki/Gaussian_process), which embeds some
+initial beliefs about the enigmatic objective function. The power of GP models is rooted in the fast and efficient algorithms to estimate their posteriors. This guarantees efficiency and reliability in the point search as we scan the domain for points driving the objective function to its optimal value(s).
+
+The task of proposing candidate points in the domain search space, trading off exploitation and exploration, and evaluating their efficacy relies on utilization of appropriate *acquisition functions.*  *Exploitation* suggests sampling points where the prior model yields high probabilities of improvement. *Exploration* implies sampling domain locations where the prediction uncertainty is high. The push-pull between exploitation and exploration leads to high acquisition function values (maximization process) leading to selection of the next candidate domain point.
+
+Symbolically, at iteration step $t$, the objective function $f$ is sampled at
+$$x_t=\arg\max_{x} {\{u(x|D_{(1:t−1)})\}},$$
+where the acquisition function $u$ is maximized over the prior $t-1$ samples drawn from the objective function $f$, and
+$$D_{(1:t−1)}=\{(x_1,y_1),(x_1,y_1),\cdots,(x_{t−1},y_{t−1})\}.$$
+Examples of useful acquisition functions include 
+[maximum probability of improvement (MPI)](https://en.wikipedia.org/wiki/Bayesian_optimization), 
+*expected improvement (EI)*, and *upper confidence bound (UCB)*. 
+
+The *expected improvement* is defined by
+$$EI(x)=\mathbb{E} (\max(f(x)−f(x^+),0)),$$
+
+where $f(x^+)$ is the current *value* of the *best sample* achieved at the current optimal location $x^+$, $x^+=\arg\max_{x_i\in \bf{x}_{(1:t)}} {(f(x_i))}$. 
+
+Under the prior Gaussian Process model, the expected improvement can be 
+quickly evaluated analytically:
+
+$$EI(x)=\begin{cases} 
+\underbrace{\mu(x)−f(x^+)−\lambda)\Phi(Z)}_{exploitation\ term}+
+\underbrace{\sigma(x)\phi(Z)}_{exploration\ term}, & \sigma(x)\geq 0 \\
+0, & \sigma(x)= 0 
+\end{cases}\ ,$$
+
+where $\mu(x)$ and $\sigma(x)$ are the *mean* and *standard deviation* of the GP posterior predictive probability at $x$, $\Phi$ and $\phi$ are the standard normal distribution CDF and PDF, and $Z$ is the standardization of the argument $x$
+$$Z=\begin{cases} 
+\frac{\mu(x)-f(x^+)-\lambda}{\sigma(x)}, & \sigma(x) > 0 \\
+0, & \sigma(x)= 0 
+\end{cases}\ .$$
+
+The extra parameter $\lambda$ controls the balance of *exploration* and *exploitation* during the iterative optimization. Higher $\lambda$ values lead to more exploitation driving the importance of improvements predicted by the *GP posterior mean* $\mu(x)$ decreases, relative to the importance of potential improvements in regions of high prediction uncertainty, represented by large $\sigma(x)$ values, i.e., high exploration. It's common to use a default $\lambda=0.01$ value.
+
+### Bayesian Optimization Pseudo-Algorithm
+
+Below is a pseudo algorithm representing the core of any Bayesian optimization procedure iterating over $t=1,2, 3, \cdots$:
+
+ - Start with some initial estimate of the cost, $f(\cdot)$, e.g., Gaussian process prior,
+ - Estimate, $\{f(x_i)\}_{1\leq i\leq t_o}$ at some domain points according to an initial space-filling experimental design and set the iteration index $t=t_o$,
+ - Iterate until a stopping criterion is met
+   - Update the posterior probability distribution on $f$ using all available data $\{x_t\}$,
+   - Find the next sampling point $x_t^*$ by optimizing the *acquisition function* (maximum probability of improvement (MPI), expected improvement (EI) and upper confidence bound (UCB)) over the Gaussian process $x_t^*=\arg\max_{x} {\{u(x|D_{(1:t)})\}}$. Let $x_t^*$ be a maximizer of the acquisition function over $\{x_t\}$, where the acquisition function is computed using the current posterior distribution.
+   - Compute $y_t^* = f(x_t^*)$. Think of $y_t^*$ as an estimate of a possibly noise-corrupted sample from the objective function, $y_t^* = f(x_t) + \epsilon_t$.
+   - Increment the iteration index $t$. Append the (argument, value) pair to the previous collection of samples $D_{(1:t)}=D_{(1:t-1)}\cup \{(x_{t}^*,y_{t}^*)\} \equiv  \{(x_1,y_1),(x_1,y_1),\cdots,(x_{t−1},y_{t−1}),(x_{t}^*,y_{t}^*)\}$ and update the GP,
+   - Repeat, until the stopping criterion is reached.
+
+The diagram below shows the flow of the iterative Bayesian optimization process.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+# install.packages("DiagrammeR")
+library(DiagrammeR)
+BO_graphStr <- "digraph graph2 { graph [layout = dot, rankdir = LR]
+  # node definitions with substituted label text
+  node [shape = oval]
+  Step1 [label = '@@1']
+  Step2 [label = '@@2']
+  Step3 [label = '@@3']
+  Step4 [label = '@@4']
+  Step5 [label = '@@5']
+  Step1 -> Step2 -> Step3 -> Step4 -> Step5 -> Step1
+  }
+  
+  [1]: 'Observe Data Sample'
+  [2]: 'Build Surrogate Model (e.g., GP)'
+  [3]: 'Optimize (Max) Acquisition Function'
+  [4]: 'Sample Next Data Point'
+  [5]: 'Add New Point to Set of Observations'
+  "
+grViz(BO_graphStr, engine="circo", width = 1000, height = 200)
+```
+
+Additional [details are provided in this Bayesian Optimization Tutorial](https://arxiv.org/pdf/1807.02811.pdf).
+
+Recall that *primary* (constrained) optimization problems can often be converted to *dual* (unconstrained) problems using strategies like *Lagrange multipliers.* Hence, we will formulate the most general form of Bayesian optimization for solving unconstrained problems of the type
+$$\max_{x\in \mathcal{D}} \{f (x)\},$$
+where the feasible set and objective function have the following properties:
+
+ - The argument $x\in \mathcal{D}\subseteq \mathbb{R}^d$, and $d\leq 30$, may be relaxed,
+ - The feasible set $\mathcal{D}\subseteq \mathbb{R}^d$ is not too complex to allow quick validation $x_t \in \mathcal{D}$, but this condition may be relaxed,
+ - The objective function f has to permit local Gaussian process modeling,
+ - $f$ may be *computationally expensive* to evaluate,
+ - $f$ may lack known analytical form and is not required to be convex; $f$ can be a “black box” machine learning method,
+ - Numerically evaluating $f$ only requires estimating $f(x_t)$, but does not require or assume existence of first- or second-order derivatives, i.e., Bayesian optimization is *derivative-free*.
+ - $f(x)$ could be corrupted by noise.
+ - Bayesian optimization searches for a *global*, rather than *local*, optimum.
+
+### Gaussian Process (GP) Regression
+
+Instead of learning *exact values* of a function or estimating the exact values of (hyper)parameters, Gaussian process regression (GPR) is a Bayesian, nonparametric, approach that learns the *probability distribution* of the function, or parameters, over the entire state space. Let’s consider the simplest of all examples of trying to estimate the linear parameter $w$ of a linear function $y=f(x)\equiv wx+\epsilon$. All Bayesian techniques always start with some *prior model*, in this case a prior distribution of the scalar (line slope) parameter $w$, $p(w)$, and then adaptively update the *(posterior) probability distribution*, $p(w|y,X)$, based on new evidence, i.e., observed data $X$, using the Bayesian theorem:
+$$\underbrace{p(w|y,X)}_{posterior} = \frac{\overbrace{p(y|X,w)}^{likelihood}\times \overbrace{p(w)}^{prior}}{\underbrace{p(y|X)}_{marginal\ likelihood}}.$$
+
+Incorporating information from the *prior distribution* $p(w)$ and the observed *data* $p(y|X,w)$, the *posterior distribution* $p(w|y,X)$ facilitates estimation or prediction of evidence-based *optimal parameters* at yet unseen domain
+points, $x^*$. The *predictive posterior distribution* can be calculated by *weight-averaging* all possible predictions by their calculated posterior distribution probabilities:
+
+$$\underbrace{p(f^*|x^*,y,X)}_{predictive\ posterior}=
+\int_w {\underbrace{p(f^*|x^*,w)}_{point\ prediction}\ \underbrace{p(w|y,X)}_{posterior}\ dw}\ ,$$
+where $f^*$ is the predicted cost function value (or label, or estimate) and $x^*$ is a new point, i.e., test observation in the objective domain space.
+
+To ensure quick, efficient, and robust posterior calculations, the *prior* and the *likelihood* may be taken to be *Gaussian* distributions. This Gaussian prior assumption for estimating the posterior predictive distribution facilitates explicit *point predictions* using the *Gaussian mean*, and an variability *uncertainty quantification* using the corresponding *Gaussian variance.* 
+
+Recall that for a *univariate normal distribution* is parameterized by a *scalar mean* and a positive *scalar variance*, whereas as *multivariate normal distribution* is parameterized by a *mean vector* and positive-definite *variance-covariance matrix*. Similarly, a Gaussian process, parameterized by a *mean function* and *covariance function*, is applied to vectors of *inputs* and
+return a *mean vector* and *covariance matrix* that provide the mean and
+covariance of the *outputs* corresponding to the functional values (in the range) assessed at the input points, i.e., functional values are drawn from the posterior process.
+
+*Gaussian process regression*, aka nonparametric *Bayesian optimization*, allows estimating difficult nonlinear objective functions $f(\cdot)$ from a set of observations $X$. 
+
+Even though the GP prior is an infinite dimensional object, the properties of a *Gaussian* distributions alleviate these computational difficulties. For instance,
+a 2D Gaussian distribution can be integrated over the y-axis and yields another (univariate) Gaussian distribution over the x-axis. As we are interested only in the *distribution of the cost function* at a set of locations, ${X}$ and ${X}^*$, we can specify the distribution of the function covering the entire input domain, and analytically integrate over all other locations. This induces a natural Gaussian prior distribution over the output variable:
+
+
+$$\begin{eqnarray*}
+\begin{pmatrix}{y}^\top\\
+{y^*}^\top
+\end{pmatrix} & \sim & N\left(\left[\begin{array}{c}
+{0}\\
+{0}\\
+\end{array}\right],\left[\begin{array}{ccc}
+K({x},{x}) & K({x},{x}^*)\\
+K({x}^*,{x}) & K({x}^*,{x}^*) \\
+\end{array}\right)\right]
+\end{eqnarray*} .$$
+
+
+### Sampling from the prior distribution
+
+Here we show the process of drawing samples from a specific distribution, the prior. Consider a GP for smooth functions with only two hyper-parameters -- a *length-scale* hyper-parameter $l$ controlling the rate of cost function change over the input space, and a process *variance* hyper-parameter, $\sigma$, accounting for the amplitude of the cost function. In this example, we use a *squared exponential covariance function* that is completely defined by its *mean function* and *covariance function* and we'll assume a *zero-mean function* and a *squared exponential covariance function* (kernel):
+
+$k(X,X^\prime) = \sigma^2 \exp\biggl{(}-\frac{(X-X^\prime)^2}{4l^2}\biggr{)}$.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+require(MASS)
+require(plyr)
+require(reshape2)
+require(plotly)
+
+varCov <- function(X1, X2, l=1, sig=1) {   # model 1 var-cov
+  K <- matrix(rep(0, length(X1)*length(X2)), nrow=length(X1))
+  for (i in 1:nrow(K)) {
+    for (j in 1:ncol(K)) {
+      K[i,j] <- sig^2*exp(-(abs(X1[i]-X2[j]))^2 / (4*l^2))
+    }
+  }
+  return(K)
+}
+```
+
+Specifying a Gaussian process effectively defines a distribution over a whole range of functions whose behavior reflects the concrete variance-covariance structure and the vector of hyper-parameters. Let's generate samples from the GP prior over a set of specific $X$ positions.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+x_star <- seq(-5,5, len=300) # Define a set of domain points to evaluate the functions
+sigma <- varCov(x_star, x_star) # Evaluate the variance-covariance function at X*
+y1 <- mvrnorm(1, rep(0, length(x_star)), sigma) # sample from multivariate Gaussian
+y2 <- mvrnorm(1, rep(-1, length(x_star)), sigma)
+y3 <- mvrnorm(1, rep(2, length(x_star)), sigma)
+plot_ly(x=x_star, y=y1, type='scatter', mode="lines", name="Prior y1") %>%
+  add_trace(y=y2, name="Prior y2")  %>%
+  add_trace(y=y3, name="Prior y3")
+```
+
+### Gaussian Process Inference
+
+In linear modeling we strive to estimate the effect sizes ($\beta_i$) of the *covariates* on the *outcome* $y$. For instance, in a simple linear regression, we search for the optimal slope $\beta_1=m$ and intercept $\beta_o=a$ for the model $y=a + mx$. Gaussian process inference represents the (unknown coefficients) of the linear function in terms of the observed data and the model hyper-parameters. We use the prior distribution to represent a class of objective functions over the entire input domain. Inference over noiseless data discards all candidate functions that don't pass through those anchor observations. Whereas inference over noisy data may assign greater weights to functions that *pass close* to the observed anchor data points. The observed data stratifies a subset of the prior candidate functions that kind of fit the need.
+
+Suppose the data input observations $\{X\}$ correspond to cost function outputs $\{y\}$, and are aiming to estimate the values ${f}^*$ at a new set of test locations, $\{X^*\}$ using the posterior distribution of ${f}^*$:
+
+$$p({f}^* | {X}, {y}, {X}^*) = \frac{p({y}, {f}^* | {X}, {X}^*)}{p({y}|{X})}.$$
+
+The Gaussian process advantage is that the predictive distribution is analytically tractable in a Gaussian form:
+
+$${f}^* | {X}, {y}, {X}^* \sim \mathcal{N}(\hat{f}^*,\hat{K}^*)\ .$$
+where,
+
+$$\hat{f}^* = K({X},{X}^*)^\top(K({X},{X})+\sigma^2\mathbb{I})^{-1} {y}\ ,$$
+
+$$\hat{K}^* = K({X}^*,{X}^*) - K({X},{X}^*)^\top (K({X},{X})+\sigma^2\mathbb{I})^{-1} K({X},{X}^*)\ .$$
+
+Suppose we want to recover an unknown function ($\cos(x)$) from samples $X$ of the corresponding functional values, e.g., using evidence from a single observation $x=\pi/3$.
+
+```{r echo=T}
+x <- pi/3
+f <- data.frame(x=x, y=cos(x))
+```
+
+The posterior predictive probability distribution using a Gaussian process based on this single observation is shown below.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+x <- f$x
+k_xx <- varCov(x,x)
+k_xxs <- varCov(x, x_star)
+k_xsx <- varCov(x_star, x)
+k_xsxs <- varCov(x_star, x_star)
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Simulation (single observation)", legend = list(orientation='h'))
+```
+
+Note that the Gaussian process model using a single observation anchors the functions to the observed point. Certainly, with a single observation, we can't expect the model fidelity to be particularly good. The Gaussian process model *uncertainty* is quantified by the (lower and upper) Gaussian confidence bands.
+
+By enhancing the evidence to $5$ data points, $x \in \{-3, -1,0,2,3\}$, we can improve the posterior fit.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+x <- c(-3, -1, 0, 2, 3)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+k_xx <- varCov(x,x)
+k_xxs <- varCov(x, x_star)
+k_xsx <- varCov(x_star, x)
+k_xsxs <- varCov(x_star, x_star)
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Simulation (5 observations)", legend = list(orientation='h'))
+```
+
+Going up to $10$ observation points recovers the (pseudo)unknown trigonometric function well. Note that if you increase the number of data points too much, you can get an overdetermined system, *warning messages* (`In sqrt(diag(cov_f_star)) : NaNs produced`) or *singularities* (`Error in solve.default(k_xx) : system is computationally singular: reciprocal condition number = 1.65426e-16`).
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+n <- 10
+x <- runif(n, min=-5, max=5)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+k_xx <- varCov(x,x)
+k_xxs <- varCov(x, x_star)
+k_xsx <- varCov(x_star, x)
+k_xsxs <- varCov(x_star, x_star)
+
+f_star_bar <- k_xsx %*% solve(k_xx) %*% f$y            # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Model using 10 anchor observation points", legend = list(orientation='h'))
+```
+
+### Marginal Likelihood and Optimization of Hyper-parameters
+
+The Gaussian process (Bayesian optimization) may be used to analytically evaluate the *marginal likelihood*, which is the probability of generating the observed data under the initially specified prior model distribution. In a sense, the marginal likelihood is the probability of seeing the observations ${X}$ under a Gaussian prior distribution, ${N}({0},K({X},{X}))$. The log-marginal likelihood for a *noisy model* (`model-1`) is:
+
+$$\ln p({y}|{X}) = -\frac{1}{2}{y}^\top [K({X},{X})+\sigma_n^2\mathbb{I}]^{-1} {y} -\frac{1}{2} \ln |K({X},{X})+\sigma_n^2\mathbb{I}| - \frac{n}{2}\ln 2\pi\ .$$
+
+To explain this closed form log-likelihood expression, $\ln p({y}|{X})$, start with a set of $m$ random vectors $X=\{x^{(i)}\}_{i=1}^m$, each of size $p$, $x^{(i)}\equiv \left (x^{(i)}_1, x^{(i)}_2, \cdots, x^{(i)}_p \right )$ representing the $m$ observation data points described by $p$ covariates. Bayesian optimization (Gaussian Process) modeling assumes that all data points
+are multivariate Gaussian IID vectors, $x^{(i)}\sim \mathcal{N}_p(\mu,\Sigma)$ with
+*unknown* parameters, the *mean-vector* $\mu$ and *variance-covariance matrix*
+$\Sigma$. We can use maximum likelihood  estimation (MLE) to obtain parameter estimates of the unknown mean and variance by *maximizing* the log-likelihood function.
+
+Since all observed data points (vectors $\{x^{(i)}\}_{i=1}^m$) are assumed to be independent, the *joint probability density* of the entire dataset $X=\{x^{(i)}\}_{i=1}^m$ will factor as the *product of the individual marginal densities*,
+
+$$f_X(x)\equiv \prod_{i=1}^m f_{x^{(i)}}\left (x^{(i)} ; \mu , \Sigma \right ).$$
+
+As the logarithm is a monotonically increasing function, maximization of the joint density over the parameters space $\Theta=(\mu,\Sigma)$ is identical to maximizing the logarithm of the joint density, i.e., the log-likelihood function:
+
+$$\begin{aligned}
+	\ln(f_X(X|\Theta)) & \equiv \ln(f_X(\Theta|X))\equiv \ln(f_X(\mu;\Sigma|X))
+	\equiv  l({ \mu, \Sigma | x^{(i)} }) = 
+	\log \prod_{i=1}^m f_{{X^{(i)}}}({x^{(i)} | \mu , \Sigma }) \\
+	& =  \log  \ \prod_{i=1}^m \frac{1}{(2 \pi)^{p/2} |\Sigma|^{1/2}} \exp \left( - \frac{1}{2} {(x^{(i)} - \mu)^T \Sigma^{-1} (x^{(i)} - \mu) } \right) \\
+	& = \sum_{i=1}^m \left( - \frac{p}{2} \log (2 \pi) - \frac{1}{2} \log |\Sigma|  - \frac{1}{2}   {(x^{(i)} - \mu)^T \Sigma^{-1} (x^{(i)} - \mu) }  \right)
+\end{aligned}\ .$$
+
+And hence,
+$$\begin{aligned}
+l(\mu, \Sigma ; X) & = - \frac{mp}{2} \log (2 \pi) - \frac{m}{2} \log |\Sigma|  - \frac{1}{2}  \sum_{i=1}^m  {(x^{(i)} - \mu)^T \Sigma^{-1} (x^{(i)} - \mu) } 
+\end{aligned}\ .$$
+
+Using the above closed form log-likelihood expression for $\ln p({y}|{X})$  and the `ginv()` matrix inversion function in `R`, we can compute the *marginal likelihood (ML) function*. This yields a recipe to automatically select the *hyper-parameters* over a range of possible values by selectively picking hyper-parameter values that maximize the marginal likelihood. In this example, we incrementally optimize for both hyper-parameters, *length-scale* ($l$) and *process-variance* ($\sigma$), of the *squared exponential covariance function* (kernel)
+
+$$k(X,X') = \sigma^2 \exp\biggl{(}-\frac{(X-X')^2}{4l^2}\biggr{)}\ .$$
+
+Recall that we can use multivariate calculus to estimate the parameters $\Theta=(\mu,\Sigma)$. Differentiating the log-likelihood with respect to $\mu$ and
+setting the derivative, or gradient vector, to zero yields that the population mean (vector) is the sample arithmetic average vector, since for any symmetric matrix such as a variance-covariance matrix $A=\Sigma$, 
+$\frac{\partial w^T A w}{\partial w} = 2Aw$,
+
+$$\begin{aligned}
+\frac{\partial }{\partial \mu} l( \mu, \Sigma | x^{(i)}) & = 
+  \sum_{i=1}^m  { \Sigma^{-1} ( x^{(i)} - \mu ) }  = 0	    \\ 
+	& \text{(Since } \Sigma \text{ is positive definite)} 	    \\
+	0 & = m \mu - \sum_{i=1}^m  {  x^{(i)} } 	\\
+	\hat \mu &=  \frac{1}{m} \sum_{i=1}^m {  x^{(i)} } = {\bar{x}}
+\end{aligned}\ .$$
+
+Also, the trace of a matrix is invariant under cyclic permutations of matrix products: $\mathrm{tr}\left[ABC\right] = \mathrm{tr}\left[CAB\right] = \mathrm{tr}\left[BCA\right]$. Since $x^T A x$ is scalar, its trace is the same scalar value $x^T Ax = tr[x^T Ax]=tr[xx^TA]$. Three additional vector/matrix calculus relations are important: 
+
+ - $\frac{\partial}{\partial A} \mathrm{tr}\left[AB\right] = B^T$; 
+ - $\frac{\partial}{\partial A} \log |A| = (A^{-1})^T = (A^T)^{-1}$, and 
+ - the determinant of the inverse of an invertible matrix is the inverse of the determinant $|A| = \frac{1}{|A^{-1}|}$.
+
+Therefore,
+$$\frac{\partial}{\partial A}  x^TAx =\frac{\partial}{\partial A}  \mathrm{tr}\left[xx^TA\right] = [xx^T]^T = \left(x^{T}\right)^Tx^T = xx^T\ ,$$
+which is the outer product of the vector x with itself, aka cross-product. Finally, we can expand the *log-likelihood function* and compute the derivative with respect to the inverse of the variance-covariance matrix $\Sigma^{-1}$:
+
+$$\begin{aligned}
+	l(\mu, \Sigma | x^{(i)})  & = \underbrace{- \frac{mp}{2} \log (2 \pi)}_{constant} - \frac{m}{2} \log |\Sigma|  - \frac{1}{2}  \sum_{i=1}^m  {(x^{(i)} - \mu)^T \Sigma^{-1} (x^{(i)} - \mu) } \\
+	& = - \frac{mp}{2} \log (2 \pi) + \frac{m}{2} \log |\Sigma^{-1}|  - \frac{1}{2}  
+	\sum_{i=1}^m  {\mathrm{tr}\left[ (x^{(i)} - \mu) (x^{(i)} - \mu)^T \Sigma^{-1}  \right]} \\
+	\frac{\partial }{\partial \Sigma^{-1}} l(\mu, \Sigma | x^{(i)}) & = 
+	\frac{m}{2} \Sigma - \frac{1}{2}  \sum_{i=1}^m {(x^{(i)} - \mu) (x^{(i)} - \mu)}^T \text{;  (Since } \Sigma^T = \Sigma\text {)\ .}
+\end{aligned} .$$
+
+Setting $\frac{\partial }{\partial \Sigma^{-1}} l(\mu, \Sigma | x^{(i)}) =0$ yields the variance-covariance matrix *MLE estimate* in terms of the observed data *sample variance-covariance*
+
+$$\begin{aligned}
+	0 &= m \Sigma -   \sum_{i=1}^m (x^{(i)} - \mu) (x^{(i)} - \mu)^T \\
+	\hat \Sigma & = 
+	\frac{1}{m} \sum_{i=1}^m (x^{(i)} - \hat \mu) (x^{(i)} -\hat  \mu)^T 
+\end{aligned}\ .$$
+
+Below is an example of a *grid search* to identify the optimal hyper-parameters. When the derivative (gradient) of the marginal likelihood with respect to the hyper-parameters is *analytically* tractable, we can optimize it using classical [gradient descent algorithms](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html#19_Foundational_Methods_for_Function_Optimization). This *Gaussian optimization* strategy is useful in all other situations. Again, we are using the $5$ data sample observation case, $X=\{-3, -1, 0, 2, 3\}$:
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+x <- c(-3, -1, 0, 2, 3)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+k_xx <- varCov(x,x)
+k_xxs <- varCov(x, x_star)
+k_xsx <- varCov(x_star, x)
+k_xsxs <- varCov(x_star, x_star)
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f(x)=cos(x)") %>%
+  layout(title="Gaussian Process Simulation (5 data points)", legend = list(orientation='h'))
+```
+
+Next, graph the marginal log-likelihood function, `ML_calc()`, and report the optimal hyper-parameters.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+ML_calc <- function(f, l=1, sig=1) {
+  fT <- t(f)
+  yT <- fT[2,]
+  y  <- f[,2]
+  K <- varCov(f[,1], f[,1], l, sig)
+  ML <- -(0.5)*yT %*% ginv(K+ 0.1^2*diag(length(y))) %*% y-(0.5)*log(det(K+ 0.1^2*diag(length(y)))) -(length(f[,1])/2)*log(2*pi);
+  #sig =0.1
+  return(ML)
+}
+
+par <- seq(.1, 10, by=0.1)
+ML <- matrix(rep(0, length(par)^2), nrow=length(par), ncol=length(par))
+# Specify the plotting
+x_axis <- par
+y_axis <- par
+for(i in 1:length(par)) {
+  for(j in 1:length(par)) {
+    ML[i,j] <- ML_calc(f, par[i], par[j])
+  }
+}
+ind <- which(ML==max(ML), arr.ind=TRUE)
+
+plot_ly(z=~ML, x=~x_axis,y=~y_axis, type="surface", name="Marginal Likelihood (ML) function") %>%
+  add_markers(x=par[ind[, 2]], y=par[ind[, 1]], z=ML[ind[, 1], ind[, 2]], 
+              name="Optim 2 Params") %>%
+  layout(title="Bivariate Marginal Likelihood (ML) function")
+
+print(paste0("The optimal length-scale (l) and process-variance (sigma) hyper-parameters are: (l=",
+             par[ind[, 1]], ", s=", par[ind[, 2]], ")!"))
+print(paste0("And the ML value at the optimal length-scale (l) and process-variance (sigma) hyper-parameters is: ML(l=", 
+             par[ind[, 1]], ", s=", par[ind[, 2]], ")=", ML[ind[, 1], ind[, 2]], "!"))
+```
+
+These hyper-parameter estimates are really close to the default selection $(l=1,\sigma=1)$. Next, we can plot the Gaussian process using these optimized hyper-parameter values, Since the previous hyper-parameter is optimized over $5$ observations, we again experiment with $5$ observations.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+# ind stores the indices of the minimizing point!
+n <- 5
+x <- runif(n, min=-5, max=5)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+
+k_xx <- varCov(x,x, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xxs <- varCov(x, x_star,l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xsx <- varCov(x_star, x, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xsxs <- varCov(x_star, x_star, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Model with Optimized Hyper-parameters", 
+         legend = list(orientation='h'))
+```
+
+### Model Selection
+
+In addition to being useful for selecting hyper-parameters, the marginal likelihood may also be used for *model selection.* For instance, we can compare how well we fit the observed data using two alternative variance-covariance (kernel) functions. Let's compare `model-1`, using a *squared exponential covariance function* ($M_1$), against `model-2`, using a different *periodic covariance function* ($M_2$). Computing the raw *ratio* of the *marginal likelihoods*, or the ratio of the corresponding *log-likelihoods*, we can calculate the [Bayes Factor](https://en.wikipedia.org/wiki/Bayes_factor), `BF`, which determines the better model
+
+$${BF} = \frac{ML(M_1)}{ML(M_2)}\ .$$
+
+High $BF\uparrow$ values indicate strong evidence supporting the first model $M_1$, whereas low $BF\downarrow$ values suggest $M_2$ is better.
+
+**Caution**: To determine the better model we need to be careful! When using the raw *marginal likelihoods*, we compare $BF$ against $1$, $BF>1$ suggests `model-1` is better. Whereas when using the *log-likelihoods*, naturally we compare $BF$ against $0\equiv \ln(1)$, $BF>0$ suggests `model-1` is better.
+
+Revisiting our previous simulation example with the true signal $y = \cos(x)$, we'll fit another Gaussian process using a new *periodic covariance function* (`model-2`). We will compare the new (periodic) `model-2` to the previous (non-periodic) *squared-exponential covariance* `model-1` we used earlier. The quantization of the comparison between the 2 models will utilize the $BF$ as a metric of model performance. Here is the *periodic covariance function* that will be used in the new Gaussian process (`model-2` kernel)
+
+$$k(x, x') = \sigma^2 \exp \left(-\frac{2}{4l^2}\sin^2 \left( \pi \frac{\lvert x - x' \rvert}{p}\right) \right)\  ,$$
+where $\sigma^2$ is the *overall variance*, the standard deviation $\sigma$
+is the *amplitude*, the *length-scale* is $l$, and the *period* $p$ controls the distance between repeated oscillations. Mind that in this case, the length of the hyper-parameter vector is 3, $\theta=(\sigma, l, p)$ and the true period of the *cosine* function is $2\pi$.
+
+The experiment below involves the following 6 steps:
+
+ - Defining the *periodic variance-covariance kernel*, $k(x, x') = \sigma^2 \exp \left(-\frac{2}{4l^2}\sin^2 \left( \pi \frac{\lvert x - x' \rvert}{p}\right) \right)$,
+ - Acquiring some sample data (evidence) to update the Gaussian process prior,
+ - Defining an alternative $M_2$ Gaussian process model, using the above periodic covariance kernel,
+ - Computing the *ratio of the two marginal log-likelihoods*, $\frac{ML(M_1)}{ML(M_2)}$,
+ - Plotting the true process, the observed data points, the two GP models, and their confidence bands,
+ - Computing and reporting the Bayesian Factor $BF$.
+
+Suppose the period is *erroneously* specified to be $p=4$. 
+
+```{r echo=T, warning=FALSE}
+# 1. Define the periodic var-cov function
+# k(x, x') = \sigma^2 \exp \left(-\frac{2}{4l^2}\sin^2 \left( \pi \frac{\lvert x - x' \rvert}{p}\right) \right)
+# Train on fixed data points
+x <- c(-3, -1, 0, 2, 3)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+
+varCovPeriod <- function(X1, X2, l=1, sig=1, p=4) {
+  K_Period <- matrix(rep(0, length(X1)*length(X2)), nrow=length(X1))
+  for (i in 1:nrow(K_Period)) {
+    for (j in 1:ncol(K_Period)) {
+      K_Period[i,j] <- sig^2*exp(-2/ (4*l^2)*sin(pi*(abs(X1[i]-X2[j]))/p)**2)
+    }
+  }
+  return(K_Period)
+}
+
+# 2. get some data (n=1)
+# x <- pi/3
+# f <- data.frame(x=x, y=cos(x))
+
+# 3. Plot the 2 GP models
+# 3.1 Initial M1 GP model (squared exponential covariance function)
+# x <- f$x
+# k_xx <- varCov(x,x)
+# k_xxs <- varCov(x, x_star)
+# k_xsx <- varCov(x_star, x)
+# k_xsxs <- varCov(x_star, x_star)
+# f_star_bar <- k_xsx %*% solve(k_xx) %*% f$y            # Mean
+# cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+# 3.2 Alternative M2 GP model (periodic covariance function)
+k_xxP <- varCovPeriod(x,x)
+k_xxsP <- varCovPeriod(x, x_star)
+k_xsxP <- varCovPeriod(x_star, x)
+k_xsxsP <- varCovPeriod(x_star, x_star)
+# Avoid singularity
+f_star_barP <- k_xsxP %*% solve(k_xxP+ 0.1^2*diag(length(f$y))) %*% f$y              # Mean
+cov_f_starP <- k_xsxsP - k_xsxP %*% solve(k_xxP+ 0.1^2*diag(length(f$y))) %*% k_xxsP # Var
+
+# 4. Compute the ratio of the 2 Marginal Likelihoods: ML(M1) / ML(M2)
+# For Model-1
+# par <- seq(0.1, 10, by=0.1)
+# ML <- matrix(rep(0, length(par)^2), nrow=length(par), ncol=length(par))
+# for(i in 1:length(par)) {
+#   for(j in 1:length(par)) {
+#     ML[i,j] <- ML_calc(f, par[i], par[j])
+#   }
+# }
+# ind <- which(ML==max(ML), arr.ind=TRUE)
+
+# For Model-2 (periodic covariance function) we need to use a different MLcalculator
+ML_calcPeriod <- function(f, l=1, sig=1, p=4) {
+  fT_Period <- t(f)
+  yT_Period <- fT_Period[2,]
+  y  <- f[,2]
+  K_Period <- varCovPeriod(f[,1], f[,1], l, sig, p)
+  # sig=0.1?
+  ML_Period <- -(0.5)*yT_Period %*% ginv(K_Period+ 0.1^2*diag(length(y))) %*% y-(0.5)*log(det(K_Period+ 0.1^2*diag(length(y))))-(length(f[,1])/2)*log(2*pi);
+  return(ML_Period)
+}
+ML_Period <- matrix(rep(0, length(par)^2), nrow=length(par), ncol=length(par))
+for(i in 1:length(par)) {
+  for(j in 1:length(par)) {
+    ML_Period[i,j] <- ML_calcPeriod(f, l=par[i], sig=par[j])  # leave p=4 (default!)
+  }
+}
+ind_Period <- which(ML_Period==max(ML_Period), arr.ind=TRUE)
+
+plot_ly(z=~ML_Period, x=~x_axis,y=~y_axis, type="surface", 
+        name="Model-2: Bivariate Marginal Likelihood (ML) function") %>%
+  add_markers(x=par[ind_Period[, 2]], y=par[ind_Period[, 1]], 
+              z=ML_Period[ind_Period[, 1], ind_Period[, 2]], 
+              name="Optim 2 Params")
+
+paste0("Given a fixed period (p=4), the optimal length-scale (l) and process-variance (sigma) hyper-parameters are: (l=",
+       par[ind_Period[, 1]], ", s=", par[ind_Period[, 2]], ")!")
+```
+
+Next, we can plot both models and compute the Bayesian Factor ($BF$).
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+n <- 5
+x <- runif(n, min=-5, max=5)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+
+k_xx <- varCov(x,x, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xxs <- varCov(x, x_star,l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xsx <- varCov(x_star, x, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xsxs <- varCov(x_star, x_star, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+
+# Recalculation for periodic kernel for consistent comparison
+k_xxP <- varCovPeriod(x,x, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]])
+k_xxsP <- varCovPeriod(x, x_star, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]])
+k_xsxP <- varCovPeriod(x_star, x, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]])
+k_xsxsP <- varCovPeriod(x_star, x_star, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]])
+
+f_star_barP <- k_xsxP %*% solve(k_xxP) %*% f$y              # Mean
+cov_f_starP <- k_xsxsP - k_xsxP %*% solve(k_xxP) %*% k_xxsP # Var
+
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Model-1: Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Model with Optimized Hyper-parameters", 
+         legend = list(orientation='h'))
+
+# 5. Plot the 2 models
+plot_ly(type='scatter', mode="lines") %>%
+  # M1 and M2 models
+  add_trace(x=x_star, y=f_star_bar, name="M1 (Sqr Exp): Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_barP, name="M2 (Periodic): Function Estimate") %>%
+  # Lower and Upper Confidence bands for M1 and M2
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="M1: Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="M1: Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_barP-2*sqrt(diag(cov_f_starP)), 
+              name="M2: Lower Confidence Band (Function Estimate)",
+            line = list(width = 3, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_barP+2*sqrt(diag(cov_f_starP)), 
+              name="M2: Upper Confidence Band (Function Estimate)",
+            line = list(width = 3, dash = 'dash')) %>%
+  # observed data point(s)
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  # actual true function
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f(x)=cos(x)") %>%
+  layout(title="Gaussian Process Model Selection (MOdel-1 vs. Model-2 (p=4)", legend = list(orientation='h'))
+
+# 6. Compute and report the Bayesian Factor
+BF <- ML[ind[, 1], ind[, 2]] / ML_Period[ind_Period[, 1], ind_Period[, 2]]
+print(paste0("BF(M1/M2)=", ML[ind[, 1], ind[, 2]], " / ", 
+               ML_Period[ind_Period[, 1], ind_Period[, 2]], " = ", BF))
+```
+
+Note that $BF>0$, and since we are considering the fraction of the log-likelihoods, this suggests that `model-1` is more likely, better by just a bit. This is mainly because the period is fixed $p=4$ (not optimized!).
+
+If the period is correctly specified by letting the hyper-parameter search include $p$ in the optimization process, then we may get a different result (better or worse?). Note that we will not plot the 4D scene optimization landscape, as it gets more involved.
+
+```{r echo=T, warning=FALSE}
+x <- c(-3, -1, 0, 2, 3)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+
+varCovPeriod <- function(X1, X2, l=1, sig=1, p=4) {
+  K_Period <- matrix(rep(0, length(X1)*length(X2)), nrow=length(X1))
+  for (i in 1:nrow(K_Period)) {
+    for (j in 1:ncol(K_Period)) {
+      K_Period[i,j] <- sig^2*exp(-2/ (4*l^2)*sin(pi*(abs(X1[i]-X2[j]))/p)**2)
+    }
+  }
+  return(K_Period)
+}
+
+ML_calcPeriod <- function(f, l=1, sig=1, p=4) {
+  fT_Period <- t(f)
+  yT_Period <- fT_Period[2,]
+  y  <- f[,2]
+  K_Period <- varCovPeriod(f[,1], f[,1], l, sig, p)
+  # sig=0.1?
+  ML_Period <- -(0.5)*yT_Period %*% ginv(K_Period+ 0.1^2*diag(length(y))) %*% y-(0.5)*log(det(K_Period+ 0.1^2*diag(length(y))))-(length(f[,1])/2)*log(2*pi);
+  return(ML_Period)
+}
+
+
+ML_Period <- array(rep(0, length(par)^2*10), dim=c(length(par), length(par), 10))
+period_search <- array(1:10)
+for(i in 1:length(par)) {
+  for(j in 1:length(par)) {
+    for (k in 1:length(period_search)){
+    ML_Period[i,j,k] <- ML_calcPeriod(f, par[i], par[j], period_search[k])
+    }
+  }
+}
+ind_Period <- which(ML_Period==max(ML_Period), arr.ind=TRUE)
+
+paste0("The optimal length-scale (l), period (p) and process-variance (sigma) hyper-parameters are: (l=",
+       par[ind_Period[, 1]],", p=", period_search[ind_Period[, 3]], ", s=", 
+       par[ind_Period[, 2]], ")!")
+```
+
+As expected, the *estimated* period (for the *cosine* function) is $6\approx 2\pi$ and this should lead to a much better `model-3` (again using the same *periodic variance-covariance kernel*).
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+n <- 5
+x <- runif(n, min=-5, max=5)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+
+k_xx <- varCov(x,x, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xxs <- varCov(x, x_star,l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xsx <- varCov(x_star, x, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+k_xsxs <- varCov(x_star, x_star, l=par[ind[, 1]], sig=par[ind[, 2]]) # Eval var-cov fun at X*
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+
+# Recalculation for periodic kernel for consistent comparison
+k_xxP <- varCovPeriod(x,x, l=par[ind_Period[, 1]], 
+                      sig=par[ind_Period[, 2]],p=period_search[ind_Period[, 3]])
+k_xxsP <- varCovPeriod(x, x_star, l=par[ind_Period[, 1]], 
+                       sig=par[ind_Period[, 2]],p=period_search[ind_Period[, 3]])
+k_xsxP <- varCovPeriod(x_star, x, l=par[ind_Period[, 1]], 
+                       sig=par[ind_Period[, 2]],p=period_search[ind_Period[, 3]])
+k_xsxsP <- varCovPeriod(x_star, x_star, l=par[ind_Period[, 1]], 
+                        sig=par[ind_Period[, 2]],p=period_search[ind_Period[, 3]])
+
+f_star_barP <- k_xsxP %*% solve(k_xxP) %*% f$y              # Mean
+cov_f_starP <- k_xsxsP - k_xsxP %*% solve(k_xxP) %*% k_xxsP # Var
+
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Model with Optimized Hyper-parameters", 
+         legend = list(orientation='h'))
+
+# 5. Plot the 2 models
+plot_ly(type='scatter', mode="lines") %>%
+  # M1 and M2 models
+  add_trace(x=x_star, y=f_star_bar, name="M1 (Squarer Exp Kernel)") %>%
+  add_trace(x=x_star, y=f_star_barP, name="M2 (Periodic Kernel)") %>%
+  # Lower and Upper Confidence bands for M1 and M2
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="M1: Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="M1: Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_barP-2*sqrt(diag(cov_f_starP)), 
+              name="M2: Lower Confidence Band (Function Estimate)",
+            line = list(width = 3, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_barP+2*sqrt(diag(cov_f_starP)), 
+              name="M2: Upper Confidence Band (Function Estimate)",
+            line = list(width = 3, dash = 'dash')) %>%
+  # observed data point(s)
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  # actual true function
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f(x)=cos(x)") %>%
+  layout(title="Model-1 vs. (improved) Model-3", legend = list(orientation='h'))
+
+# 6. Compute and report the Bayesian Factor
+BF <- ML[ind[, 1], ind[, 2]] / ML_Period[ind_Period[, 1], 
+                                         ind_Period[, 2], period_search[ind_Period[, 3]]]
+print(paste0("BF(M1/M2)=", ML[ind[, 1], ind[, 2]], " / ", 
+               ML_Period[ind_Period[, 1], ind_Period[, 2],period_search[ind_Period[, 3]]], " = ", BF))
+```
+
+$BF\gg 0$ and `model-1` outperforms the improved `model-3`. Lastly, let's try to compare two similar *periodic variance-covariance* kernel models corresponding to period parameters, $p=5$ and $p=2\pi$. We expect the second model, corresponding to period $p=2\pi$, to outperform the first one, associated with suboptimal $p=5$.
+
+```{r echo=T, warning=FALSE, error=FALSE, message=FALSE}
+n <- 5
+x <- runif(n, min=-5, max=5)
+f <- data.frame(x=x, y=cos(x))
+x <- f$x
+
+# Model 1: p=5
+k_xx <- varCovPeriod(x,x, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=5)
+k_xxs <- varCovPeriod(x, x_star, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=5)
+k_xsx <- varCovPeriod(x_star, x, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=5)
+k_xsxs <- varCovPeriod(x_star, x_star, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=5)
+
+f_star_bar <- k_xsx %*% solve(k_xx)%*%f$y              # Mean
+cov_f_star <- k_xsxs - k_xsx %*% solve(k_xx) %*% k_xxs # Var
+
+
+# Model 2: p=5; Recalculation for periodic kernel for consistent comparison
+k_xxP <- varCovPeriod(x,x, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=2*pi)
+k_xxsP <- varCovPeriod(x, x_star, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=2*pi)
+k_xsxP <- varCovPeriod(x_star, x, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=2*pi)
+k_xsxsP <- varCovPeriod(x_star, x_star, l=par[ind_Period[, 1]], sig=par[ind_Period[, 2]],p=2*pi)
+
+f_star_barP <- k_xsxP %*% solve(k_xxP) %*% f$y              # Mean
+cov_f_starP <- k_xsxsP - k_xsxP %*% solve(k_xxP) %*% k_xxsP # Var
+
+plot_ly(type='scatter', mode="lines") %>%
+  add_trace(x=x_star, y=f_star_bar, name="Model-1 (p=5)") %>%
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f()=cos(x)") %>%
+  layout(title="Gaussian Process Model-1 (Suboptimal p=5)", 
+         legend = list(orientation='h'))
+
+# 5. Plot the 2 models
+plot_ly(type='scatter', mode="lines") %>%
+  # M1 and M2 models
+  add_trace(x=x_star, y=f_star_bar, name="M1 (p=5): Function Estimate") %>%
+  add_trace(x=x_star, y=f_star_barP, name="M2 (p=2*pi): Function Estimate") %>%
+  # Lower and Upper Confidence bands for M1 and M2
+  add_trace(x=x_star, y=f_star_bar-2*sqrt(diag(cov_f_star)), 
+              name="M1: Lower Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_bar+2*sqrt(diag(cov_f_star)), 
+              name="M1: Upper Confidence Band (Function Estimate)",
+            line = list(width = 1, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_barP-2*sqrt(diag(cov_f_starP)), 
+              name="M2: Lower Confidence Band (Function Estimate)",
+            line = list(width = 3, dash = 'dash')) %>%
+  add_trace(x=x_star, y=f_star_barP+2*sqrt(diag(cov_f_starP)), 
+              name="M2: Upper Confidence Band (Function Estimate)",
+            line = list(width = 3, dash = 'dash')) %>%
+  # observed data point(s)
+  add_markers(x=f$x, y=f$y, name="Obs. Data", marker=list(size=20)) %>%
+  # actual true function
+  add_trace(x=x_star, y=cos(x_star),line=list(width=5), name="True f(x)=cos(x)") %>%
+  layout(title="Model-1 (p=5) vs. Model-2 (p=2*pi)", legend = list(orientation='h'))
+
+# 6. Compute and report the Bayesian Factor
+BF <- ML_Period[ind_Period[, 1], ind_Period[, 2], 5] / ML_Period[ind_Period[, 1], ind_Period[, 2], 2*pi]
+print(paste0("BF(M1/M2)=", ML_Period[ind_Period[, 1], ind_Period[, 2],5], " / ", 
+               ML_Period[ind_Period[, 1], ind_Period[, 2],2*pi], " = ", BF))
+
+# BF <- ML_Period[ind_Period[, 1], ind_Period[, 2], 6] / 
+#   ML_Period[ind_Period[, 1], ind_Period[, 2], 2*pi]
+# print(paste0("BF(M1/M2)=", ML_Period[ind_Period[, 1], ind_Period[, 2], 6], " / ", 
+#                ML_Period[ind_Period[, 1], ind_Period[, 2],2*pi], " = ", BF))
+```
+
+Since $M1\lt 0,\ M2\lt 0,\ BF(M1/M2) > 1$, `model-2` ($p=2\pi$) is much better than `model-1` ($p=5$).
+
+Additional details about Gaussian optimization are available in this article 
+[Maximum Likelihood Estimation in Gaussian Process Regression is Ill-Posed](https://arxiv.org/pdf/2203.09179.pdf).
+
+
+## Examples of Bayesian Optimization
+
+The prototypical form of Bayesian optimization requires two complementary components: 
+ - A method for *statistical inference*, e.g., *Gaussian process (GP)* regression, and
+ - An *acquisition function* for random sampling the domain of the objective (cost) function. There are many alternate acquisition functions, e.g., *knowledge-gradient*, entropy search, predictive entropy search, etc. Alternate acquisition functions are useful in non-convex problems, extrapolating outside regular domains, and for generally difficult optimization problems whose solutions may require heavy computational resources, parallel evaluations, non-linear constraints, fidelity vector evaluations, multiple information sources, random environmental conditions, multitask objectives, and derivative observations.
+
+### Acquisition Functions
+
+#### Upper Confidence Bound (UCB)
+
+One of the simplest acquisition functions is *upper confidence bound* (UCB) which blends (mixes) *exploitation* ($\mu(x)$) and *exploration* ($\sigma(x)$): 
+
+$$UCB(x;\lambda)=\mu(x)+ \lambda \sigma(x)\ .$$
+
+By tuning the mixing parameter $\lambda$, UCB facilitates the *exploitation-exploration* trade off between the expected performance $\mu(x)$ of the Gaussian Process, and of the uncertainty $\sigma(x)$, i.e., the standard deviation of the GP. Small and large $\lambda$ favor *high-performance* or *high-risk* incenting exploration of currently uncharted areas in the search space, respectively.
+
+#### Probability of Improvement (PI)
+
+To iteratively maximize the objective function $f(x)$, assume that the current iteration
+best solution is $x^*$. At the next iteration, an *improvement* can be defined by
+
+$$I(x)=\max_x(f(x)−f(x^*),0)\ .$$
+
+When $f(x)−f(x^*)\lt 0$, there is no improvement and $I(x)=0$. Using a probability of improvement acquisition function assigns to each candidate $x$ the probability, $P(I(x))>0$. 
+
+For a Gaussian process, we have a Gaussian distribution at each point in the domain space and the value of the function $f(x)$ is sampled from a normal distribution with *mean* $\mu(x)$ and *variance* $\sigma^2(x)$, i.e., $f(x)\sim N(\mu(x),\sigma^2(x))$.
+
+Transforming to standard units using normal-standardization we have $z\sim N(0,1)\implies f(x)=\mu(x)+\sigma(x)z \sim N(\mu(x),\sigma^2(x))$. Therefore, the *improvement function* is
+
+$$I(x)=\max_x(f(x)−f(x^*),0) = \max_x(\mu(x)+\sigma(x)z − f(x^*),0),\ \ z\sim N(0,1)\ .$$
+
+If $x\in \mathcal{D}$ is a candidate point in the domain, to check whether it yields an improvement over $f(x^*)$ we calculate the *probability of improvement* using $I(x)\sim N(\mu(x),\sigma^2(x))$:
+
+$$PI(x)= P(I(x)\gt 0) \iff P(f(x)\gt f(x^*))\ .$$
+
+That probability of improvement is 
+
+$$PI(x)= P(I(x)\gt 0)= 1−\Phi(z_0)\equiv \Phi(−z_o) = \Phi(\mu(x)−f(x^*)\sigma(x)),$$
+where $\Phi(z)=CDF(z)$ is the standard normal distribution cumulative distribution function and
+$z_o=f(x^*)−\mu(x)\sigma(x)$ is the standardized critical value.
+
+#### Expected Improvement (EI)
+
+The probability of improvement acquisition function only considers the probability of improving the current best estimate, disregarding the actual *magnitude* of the improvement. Instead, the *expected improvement acquisition function* utilizes the the expected value of the improvement:
+
+$$EI(x)\equiv \mathbb{E}\left [
+\underbrace{I(x)}_{\max_x(\mu(x)+\sigma(x)z − f(x^*),0)}\right ]=
+\int_{-\infty}^{\infty}{ I(x)\phi(z)dz}\ ,$$
+
+where $\phi(z)$ is the normal probability density function, $\phi(z)=\frac{1}{\sqrt{2\pi}} e^{(−z^2/2)}$.
+
+Let's split the $EI(x)$ integral into two parts, one over the domain where $f(x)−f(x^*)\gt 0$
+and its complement. This domain break point is where 
+$f(x)=f(x^*)\implies \mu+\sigma z =f(x^*)\implies z=f(x^*)−\mu \sigma$.
+
+Denote this break point by $z_o=f(x^*)−\mu \sigma$. Then
+
+$$EI(x)\equiv \mathbb{E}\left [I(x)\right ]=
+\int_{-\infty}^{\infty}{ I(x)\phi(z)dz} = 
+\underbrace{\int_{-\infty}^{z_o}{ I(x)\phi(z)dz}}_{0,\ since\ I(x)=0} +
+\int_{z_o}^{\infty}{ I(x)\phi(z)dz}\ ,$$
+
+Hence,
+
+$$\begin{aligned}
+\text{EI}(x)
+&=\int_{z_o}^{\infty} \max(f(x)-f(x^\star),0) \phi(z)\mathop{\mathrm{d}z} =
+\int_{z_o}^{\infty} \left(\mu+\sigma z - f(x^\star)\right)\phi(z) \mathop{\mathrm{d}z}\\
+&= \int_{z_o}^{\infty} \left(\mu - f(x^\star) \right)\phi(z)\mathop{\mathrm{d}z} +
+\int_{z_o}^{\infty} \sigma z \frac{1}{\sqrt{2\pi}}e^{-z^2/2}\mathop{\mathrm{d}z} \\\\
+&=\left(\mu- f(x^\star)\right) \underbrace{\int_{z_o}^{\infty}\phi(z)\mathop{\mathrm{d}z}}_{1-\Phi(z_o)\equiv 1-\text{CDF}(z_o)} + \frac{\sigma}{\sqrt{2\pi}}\int_{z_o}^{\infty}  z e^{-z^2/2}\mathop{\mathrm{d}z}\\
+&=\left(\mu- f(x^\star)\right) (1-\Phi(z_o)) - \frac{\sigma}{\sqrt{2\pi}}\int_{z_o}^{\infty}  \left(e^{-z^2/2}\right)' \mathop{\mathrm{d}z}\\
+&=\left(\mu- f(x^\star)\right) (1-\Phi(z_o)) - \frac{\sigma}{\sqrt{2\pi}} \left[e^{-z^2/2}\right]_{z_o}^{\infty}\\
+&=\left(\mu- f(x^\star)\right) \underbrace{(1-\Phi(z_o))}_{\Phi(-z_o)} + \sigma \phi(z_o) \\
+&=\left(\mu- f(x^\star)\right) \Phi\left(\frac{\mu-f(x^\star)}{\sigma}\right) + \sigma \phi\left(\frac{\mu - f(x^\star)}{\sigma}\right)
+\end{aligned}\ .$$
+
+Above we used the symmetry of the normal distribution, $\phi(z_o)=\phi(−z_o)$. 
+
+Given that $\mu \gt f(x^*)$ and the mean value of the Gaussian Process is high at $x$, $EI(x)\uparrow$. The expected improvement also increases under heavy uncertainty, specifically for large $\sigma \gt 1$.  
+In practice, the expected improvement also depends on the hyper-parameter $\lambda$ which fine tunes the exploitation vs. exploration balance in the Bayesian optimization algorithm. The full version of the EI is:
+
+$$EI(x;\lambda)=\left(\mu- f(x^*)-\lambda\right) \Phi\left(\frac{\mu-f(x^*)-\lambda}{\sigma}\right) + \sigma \phi\left(\frac{\mu - f(x^*)-\lambda}{\sigma}\right)\ .$$
+
+For large $\lambda$, the BO algorithm injects more exploration at the expense of exploitation.
+
+Let's explicate the technical details in deriving the *expected improvement* ($EI$).
+
+$$EI(x) = \mathbb{E}(\max(f(x),f(x^+),0))=\int_{I=f(x^+)}^{\infty}(I-f(x^+))\frac{1}{\sqrt{2\pi}\sigma(x)}\exp(-\frac{(I-\mu(x))^2}{2\sigma^2(x)})dI$$
+
+where the expectation is taken over the density
+
+$$\mathbb{P}(f(x)=I)=\frac{1}{\sqrt{2\pi}\sigma(x)}\exp\left (-\frac{(I-\mu(x))^2}{2\sigma^2(x)}\right ).$$
+
+After a change of variable $t=I-f(x^+)$, this becomes
+
+$$EI(x) =\int_{t=0}^{\infty}t\frac{1}{\sqrt{2\pi}\sigma(x)}
+\exp\left (-\frac{(t+f(x^+)-\mu(x))^2}{2\sigma^2(x)}\right )dt.$$
+
+Let $a = \mu(x)-f(x^+)$, then
+
+$$EI(x) =\int_{t=0}^{\infty}t\frac{1}{\sqrt{2\pi}\sigma(x)}
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt$$
+Let $g(t,a)=\frac{1}{\sqrt{2\pi}\sigma(x)}\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )$ and we apply the Leibniz rule (where the integral boundary is constant)
+
+$$\frac{d}{da}\int_0^{\infty}g(t,a)dt=\int_0^{\infty}\frac{\partial}{\partial a}g(t,a)dt\ .$$
+The *left hand side* is
+
+$$LHS = \frac{d}{da}\int_{0}^{\infty}\frac{1}{\sqrt{2\pi}\sigma(x)}
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt= \frac{d}{da}\int_{-\infty}^{a}\frac{1}{\sqrt{2\pi}\sigma(x)}\exp(-\frac{t^2}{2\sigma^2(x)})dt=\frac{d}{da}(\Phi(\frac{a}{\sigma}))=\frac{1}{\sigma}\phi(\frac{a}{\sigma})\ ,$$
+where the second inequality applies a change of variable $t-a=-t$, and the minus sign flips the integration order.
+
+The *right hand side* is
+
+$$RHS = \int_0^{\infty}\frac{\partial}{\partial a}g(t,a)dt=\int_0^{\infty}\frac{1}{\sqrt{2\pi}\sigma(x)}\frac{(t-a)}{\sigma^2(x)}
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt\\=\frac{1}{\sigma^2(x)}\Bigg(\int_0^{\infty}\frac{1}{\sqrt{2\pi}\sigma(x)}t
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt-\int_0^{\infty}\frac{1}{\sqrt{2\pi}\sigma(x)}a
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt\Bigg)\\=\frac{1}{\sigma^2(x)}\Bigg(\int_0^{\infty}\frac{1}{\sqrt{2\pi}\sigma(x)}t
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt-a\Phi(\frac{a}{\sigma})\Bigg)\ .$$
+
+Combining left hand side and right hand side, we conclude
+
+$$EI(x)=\int_{t=0}^{\infty}t\frac{1}{\sqrt{2\pi}\sigma(x)}
+\exp\left (-\frac{(t-a)^2}{2\sigma^2(x)}\right )dt=a\Phi(\frac{a}{\sigma})+\sigma\phi(\frac{a}{\sigma})\\=\Big(\mu(x)-f(x^+)\Big)\Phi\Big(\frac{\mu(x)-f(x^+)}{\sigma}\Big)+\sigma\phi\Big(\frac{\mu(x)-f(x^+)}{\sigma}\Big)\ .$$
+
+# Practice examples
+
+## Example 1: Healthcare Manufacturer Product Optimization
+
+To improve the return on investment for their shareholders, a healthcare manufacturer needs to optimize their production line. The organization's data-analytics team is tasked with determining the optimal production quantities of two products to maximize the company's bottom line. The pair of core company products include:
+
+ - A new non-invasive colonoscopy testkit (CTK) that retails at $\$339$ per kit, 
+ - A novel [statistical data obfuscation software tool (DataSifter)](https://datasifter.org/) that enables the secure sharing of sensitive data, which costs $\$399$ per year. 
+  
+The production cost of the healthcare company to make, and support each of these products is $\$195$ per CTK set and $\$225$ per DataSifter License. Additional company operational fixed costs include $\$400,000$ per year. In competitive market conditions, the number of sales of these healthcare products (a testkit and a software license) does affect the sale prices. Assume for each product, the sales price drops by one cent ($\$0.01$) for each additional item sold. There is also an association between the sales of the CTK and DataSifter products. The company's historical sales suggest that the CTK unit price is reduced by an additional $\$0.003$ for each DataSifter license purchased. Similarly, the price for the DataSifter license decreases by $\$0.004$ for each CTK sold. These product price fluctuations are due to partnerships with wholesale vendors and package deals with academic and research institutions. The healthcare manufacturer believes that stable market conditions, constant production and support of their two flagship products, along with these above assumptions, would maximize the volume of sales. The key question the analytics team needs to resolve is: what is the optimal level of production? That is, *how many units of each type of product should the healthcare company plan to manufacture and support (this includes R&D and product support) to maximize the company profit?*
+
+Let's first translate the problem formulation into a mathematical optimization framework using this notation:
+
+ - $s_1$: the number of CTK units produced annually by the healthcare company, $s_1\geq 0$
+ - $s_2$: the number of DataSifter licenses issued/sold each year, $s_2\geq 0$
+ - $p_1$: the CTK sale price per unit ($\$$),
+ - $p_2$:	the DataSifter price per license ($\$$),
+ - $C$:	the R&D plus manufacturing costs ($\$$/year), 
+ - $R$:	total sales revenue ($\$$/year),  
+ - $P$:	total profit from all sales ($\$$/year).
+
+The provided market estimates result in the following model equations,
+
+$$\begin{array}{lcl}
+  p_1 & = & 339 - 0.01s_1 - 0.003s_2 \\
+  p_2 & = & 399 - 0.004s_1 - 0.01s_2 \\
+  R  & = & s_1 p_1 + s_2 p_2 \\
+  C  & = & 400,000 + 195s_1 + 225 s_2 \\
+  P & = & R-C
+ \end{array}.$$
+
+By plugging in and expressing $P$ as a function of $s_1$ and $s_2$, the objective cost function (*profit*) is a nonlinear function of the two product sales $(s_1, s_2)$):
+
+$$f =P (s_1, s_2) = -400,000 + 144s_1 + 174s_2 - 0.01s_1^2 - 0.01s_2^2 - 0.007s_1s_2.$$
+
+### Unconstrained Optimization
+
+Let's assume there are no constraints other than, $s_1, s_2\geq 0$. To solve the unconstrained optimization problem means find the $s_1$ and $s_2$ sales numbers that maximize the profit ($P$) in the first quadrant, $\{(s_1,s_2)\in \mathbb{R}^2 | s_i \geq 0\}$. To identify candidate extreme point $(s_1,s_2)$ that maximizes $P$, we set the partial derivatives to zero and solve the following linear system of equations:
+
+$$\begin{array}{lcl}
+  \frac{\partial P}{\partial s_1} & = & 144 - 0.02s_1 - 0.007s_2 & = 0\\
+  \frac{\partial P}{\partial s_2} & = & 174 - 0.007s_1 - 0.02s_2 & = 0
+\end{array} .$$
+
+The unique solution of is $(s_1^o,\ s_2^o) = (4,735,\ 7,043)$, which yields a maximum profit value 
+$P^o(s_1^o,s_1^o) =553,641$. As $s_i^o \geq 0$, the solution is indeed in the feasible region (first planar quadrant). To examine the type of extremum (min or max), let's inspect the (symmetric) Hessian matrix, $H_P(s_1^o,\ s_2^o)$, including the second order derivatives of the Profit:
+
+$$H_P(s_1^o,\ s_2^o) = 
+\begin{bmatrix}
+    \frac{\partial^2 P}{\partial s_1^2} & \frac{\partial^2 P}{\partial s_1 \partial s_2} \\
+    \frac{\partial^2 P}{\partial s_2 \partial s_1} & \frac{\partial^2 P}{\partial s_2^2}
+\end{bmatrix}
+= \begin{bmatrix}
+    -0.02 & -0.007 \\
+    -0.007 & -0.02
+\end{bmatrix}.$$
+
+As the problem is convex, a sufficient condition for *maximizing* the profit at $(s_1^o,\ s_2^o) = (4,735,\ 7,043)$ is that the Hessian, $H_P(s_1^o,\ s_2^o)$, is *negative semi-definite*, i.e., $X^T H_P(s_1^o,\ s_2^o) X\leq 0$, for all 2D vectors $X=(x_1,x_2),\text{ where }  x_1,x_2\geq 0$:
+
+$$X^T H_P(s_1^o,\ s_2^o) X = 
+\begin{bmatrix}
+    x_1 & x_2 
+\end{bmatrix}
+\begin{bmatrix}
+    -0.02 & -0.007 \\
+    -0.007 & -0.02
+\end{bmatrix}
+\begin{bmatrix}
+    x_1 \\ x_2 
+\end{bmatrix} =
+ \begin{bmatrix}
+    x_1 & x_2 
+\end{bmatrix}
+\begin{bmatrix}
+    -0.02x_1 -0.007x_2 \\
+    -0.007x_1 -0.02x_2
+\end{bmatrix} =$$
+$$=-0.02x_1^2 -0.014x_1 x_2 -0.02x_2^2\leq 0, \ \forall x_1,x_2\geq 0.$$
+
+Let's display a 3D surface plot of the profit objective function, $P (s_1, s_2)$. As you move the mouse over the interactive surface, note that profit *isolines* form closed curves surrounding the maximum at $(s_1^o,\ s_2^o) = (4,735,\ 7,043)$.
+
+```{r warning=F, error=F, message=F}
+grid_length <- 101
+
+Profit_function <- function(x) { # input bivariate x is a matrix n*2
+  x <- matrix(x, ncol=2)
+  z <- -400000 + 144*x[ ,1] + 174*x[ ,2] - 0.01*x[ ,1]^2 - 0.01*x[ ,2]^2 - 0.007*x[ ,1]*x[ ,2]
+  return(z)
+}
+
+# define the 2D grid to plot f=P around the optimal value $(s_1^o,\ s_2^o) = (4,735,\ 7,043)$
+x <- seq(4700, 4800, length = grid_length)
+y <- seq(7000, 7100, length = grid_length)
+A <- as.matrix(expand.grid(x, y))
+colnames(A) <- c("s1", "s2")
+# evaluate function
+z <- Profit_function(A)
+# put X and y values in a data.frame for plotting
+df <- data.frame(A, z)
+library(plotly)
+x_label <- list(title = "s1")
+y_label <- list(title = "s2")
+z_label <- list(title = "z=P(s1,s2)")
+
+# Define vertical Line at arg_Max{Profit}
+count <- 300
+xl <- c(); yl <- c(); zl <- c()
+for (i in 1:count) {   xl <- 4735; yl <- 7043 }
+zl <- seq(553541, 553641, length.out=count)
+vert_line <- data.frame(xl, yl, zl)
+
+myPlotly <- plot_ly(x=~x, y=~y, z=~matrix(z, grid_length,grid_length), 
+                    type="surface", colors = colorRamp(rainbow(8)), 
+                    opacity=1.0, hoverinfo="none") %>%
+  # add a line at arg_Max{P} = P(x = 4735, y = 7043)=553641
+  add_trace(vert_line, x = ~xl, y = ~yl, z = ~zl, type = 'scatter3d', mode = 'lines',
+        line = list(width = 4, color = "gray", colorscale = list(c(0,'gray'), c(1,'black')))) %>%
+  # add a Ball centered at arg_max
+  add_trace(x=4735, y=7043, z=553641, type="scatter3d", mode="markers") %>%
+  layout(scene = list(xaxis=x_label, yaxis=y_label, zaxis=z_label), showlegend = FALSE)
+
+myPlotly
+```
+
+
+### Constrained Optimization
+
+Next, we will explore more realistic scenarios where the company has *limited resources* restricting the number of products that can annually be produced and supported to $0\leq s_1 \leq 5,000$, $0\leq s_2 \leq 8,000$, and $0\leq s_1 + s_2 \leq 10,000$.
+
+Note that the current optimum production plan that maximizes the profit already satisfies the first two constraints, $(s_1^o=4,735 \leq 5,000$ and $s_2^o = 7,043\leq 8,000$, however it violates the last constraint $s_1^o + s_2^o = 4,735 + 7,043 =11,778\geq 10,000$. Thus, the global Profit maximum point is not outside the *feasible region* and the *constraint problem optimal* (max Profit) must be on the boundary of the convex domain. We will apply nonlinear constrained optimization to maximize the Profit:
+
+$$f =P (s_1, s_2) = -400,000 + 144s_1 + 174s_2 - 0.01s_1^2 - 0.01s_2^2 - 0.007s_1s_2.$$
+subject to
+
+$$constraint(s_1, s_2):\ s_1 + s_2 - 10,000 = 0.$$
+
+### Manual Solution
+
+Let's first solve the problem by hand using first-principles. We can translate the primary problem to a dual problem using Lagrange multipliers. The *dual Profit function* will be $P^*(s_1, s_2, \lambda) = P(s_1, s_2)+\lambda\times constraint(s_1, s_2)$. To optimize it, we set $\nabla P^*=0$. This yields $\nabla P= -\lambda \nabla constraint$, i.e., 
+
+$$\begin{array}{lcl}
+    \frac{\partial}{\partial s_1}: & 144 -0.02s_1 -0.007s_2 & = & -\lambda \\
+    \frac{\partial}{\partial s_2}: &174 -0.007s_1 -0.02s_2 & = & -\lambda
+\end{array} .$$
+
+We can substitute $\lambda$ to get a single linear relation between $s_1$ and $s_2$, $-0.013s_1+0.013s_2=30$. Pairing this linear equation with the additional boundary constraint ($s_1 + s_2 = 10,000$) yields a system of *two* linear equations with *two* unknowns $(s_1, s_2)$, which may have a unique solution that maximizes the Profit objective function given all the restrictions on the operations of the healthcare company:
+
+$$\begin{array}{lcl}
+    -0.013s_1& +& 0.013s_2 & = & 30 \\
+    s_1 & + &s_2&  = & 10,000
+\end{array} .$$
+
+Substituting $s_2$, or $s_1$, from the second constraint equation into the first one yields a ($\arg\min$) solution 
+$$(s_1',\ s_2') = (3,846,\ 6,154),$$
+with a corresponding Profit value $P'(3,846,\ 6,154) = 532,308$. The latter profit is **less** than the *global* profit maximum at $(s_1^o,\ s_2^o) = (4,735,\ 7,043)$. Recall that the global maximum profit was: $$P^o(s_1^o,s_1^o)=P^o(4,735,\ 7,043) =553,641.$$
+
+### R-based Automated solution
+
+Next we will solve the constraint optimization problem using `Rsolnp::solnp()` and confirm that the two approaches yield the same results - maximum profit subject to production limitations for the CTK and the DataSifter healthcare products. Recall the formulation of this quadratic Profit optimization problem and its linear constraint:
+
+$$f =P (s_1, s_2) = -400,000 + 144s_1 + 174s_2 - 0.01s_1^2 - 0.01s_2^2 - 0.007s_1s_2.$$
+$$\min_{(s_1,s_2)} {\left ( - P (s_1, s_2)\right )} = \max_{(s_1,s_2)} {P (s_1, s_2)},$$
+subject to
+$$constraint(s_1, s_2):\ s_1 + s_2 \leq 10,000.$$
+Mind that in the earlier *manual solution*, we used multivariate calculus knowledge to argue that extrema must occur at points where the gradient of the Profit objective is trivial, *or* at points of discontinuity or non-differentiability, *or* on the boundary. Hence, the constraint used equality, $constraint(s_1, s_2):\ s_1 + s_2 = 10,000$. Here, as we are using the generic non-linear optimization, we need to specify the *real (inequality) constraint* $constraint(s_1, s_2):\ s_1 + s_2 \leq 10,000$.
+
+```{r warning=F, error=F, message=F}
+library(Rsolnp)
+# define objective profit to min: -P(s1, s2) = -(-400,000 + 144s_1 + 174s_2 - 0.01s_1^2 - 0.01s_2^2 - 0.007s_1 s_2)
+Profit_function <- function(x) { # input bivariate x is a matrix n*2
+  x <- matrix(x, ncol=2)
+  z <- -(-400000 + 144*x[ ,1] + 174*x[ ,2] - 0.01*x[ ,1]^2 - 0.01*x[ ,2]^2 - 0.007*x[ ,1]*x[ ,2])
+  return(z)
+}
+# constraints s1, s2 >=0, and z1: s1 + s2 <= 10,000
+ineqn1 <- function(x) { 
+  z1=x[1]
+  z2=x[2]
+  z3=x[1] + x[2]
+  return(c(z1, z2, z3))
+}
+
+lh <- c(0, 0, 0)                  # x1, x2 and x1 + x2 >=0
+uh <- c(10000, 10000, 10000)      # x1, x2 and x1 + x2 <= 10,000
+
+x0 = c(4000, 5000) # setup initial values
+sol2 <- solnp(x0, fun = Profit_function, ineqfun = ineqn1, ineqLB=lh, ineqUB=uh)
+cat("Max Profit = $", -sol2$values[length(sol2$values)], "\n")  # last value is the optimal value
+cat ("Location of Profit Max = (s1(#CTK)=", sol2$pars[1], ", s2(#DataSifter)=", sol2$pars[2], ")!\n")  # argmin (s1,s2)
+```
+
+## Example 2: Optimization of the Booth's function
+
+Find the extrema of the Booth's function $f(x,y)=(x + 2y -7)^2 + (2x+y - 5)^2$ on the square $S=\{(x,y)\in \mathbb{R}^2 | -10\leq x,y\leq 10\}$.
+
+```{r warning=F, error=F, message=F}
+grid_length <- 101
+
+Booth_function <- function(A) { # input bivariate x is a matrix n*2
+  A <- matrix(A, ncol=2)
+  z <- ((A[,1] + 2*A[,2] -7)^2 + (2*A[,1]+A[,2] - 5)^2)
+  return(z)
+}
+
+# define the 2D grid to plot f over
+x <- seq(-10, 10, length = grid_length)
+y <- seq(-10, 10, length = grid_length)
+A <- as.matrix(expand.grid(x, y))
+colnames(A) <- c("x", "y")
+# evaluate function
+z <- Booth_function(A)
+# put X and y values in a data.frame for plotting
+df <- data.frame(A, z)
+library(plotly)
+z_label <- list(
+  title = "z=f(x,y)"
+)
+
+myPlotly <- plot_ly(x=~x, y=~y, z=~matrix(z, grid_length,grid_length), 
+                    type="surface", colors = colorRamp(rainbow(8)), 
+                    opacity=1.0, hoverinfo="none") %>%
+layout(scene = list(zaxis=z_label))
+
+myPlotly
+```
+
+## Example 3: Extrema of the bivariate Goldstein-Price Function
+
+Minimize and maximize the *Goldstein-Price* function 
+
+$$f(x,y) \sim \left (1+(x+y+1)^2(19-14x+3x^2-14y+6xy+3y^2)\right )\times \left (30+(2x-3y)^2(18-32x+12x^2+48y-36xy+27y^2)\right ).$$
+Use `Nelder-Mead`, `Simulated Annealing`, and `conjugate gradient` optimization methods. Then report a table with the extrema points and corresponding functional values. 
+
+`NM_min <- optim(c(1,1), GP_function, method = "Nelder-Mead")`
+
+```{r warning=F, error=F, message=F}
+GP_function <- function(A) { # input bivariate x is a matrix n*2
+  A <- matrix(A, ncol=2)
+  x <- A[ , 1]
+  y <- A[ , 2]
+  # calculate the function value for each row of x
+  z_xy <- ((1+(x+y+1)^2*(19-14*x+3*x^(2)-14*y+6*x*y+3*y^(2))))*
+    (30+(2*x-3*y)^2*(18-32*x+12*x^2+48*y-36*x*y+27*y^2))/(10^5)
+  # return function value
+  return(z_xy)
+}
+x <- seq(-5, 5, length = grid_length)
+y <- seq(-5, 5, length = grid_length)
+# plot the function
+A <- as.matrix(expand.grid(x, y))
+colnames(A) <- c("x", "y")
+# evaluate function
+z <- GP_function(A); length(z)
+df <- data.frame(A, z)
+# plot the function
+
+library(plotly)
+myPlotly <- plot_ly(x=~x, y=~y, z=~matrix(df$z, grid_length,grid_length), 
+                    type="surface", colors = colorRamp(rainbow(8)), opacity=0.9) %>%
+  layout(scene = list(zaxis=z_label))
+myPlotly
+```
+
+## Example 4: Bivariate Oscillatory Function
+
+Determine the extrema of a complicated oscillatory function 
+
+$$f(x,y) = -(y+50)\cos\left (\sqrt{\left |y+x+50 \right |}\right ) - x\sin \left ( \sqrt{\left |x-y-50 \right |}\right ).$$
+
+```{r warning=F, error=F, message=F}
+BO_function <- function(A) {
+  A <- matrix(A, ncol=2)
+  x <- A[ , 1]
+  y <- A[ , 2]
+  # calculate the function value for each row of x
+  z_xy <- -(y+50)*cos(sqrt(abs(y+x+50)))-x*sin(sqrt(abs(x-(y+50))))
+  return(z_xy)
+}
+
+x <- seq(-200, 200, length = grid_length)
+y <- seq(-200, 200, length = grid_length)
+A <- as.matrix(expand.grid(x, y))
+colnames(A) <- c("x", "y")
+# evaluate function
+z <- BO_function(A)
+# put X and y values in a data.frame for plotting
+df <- data.frame(A, z)
+library(plotly)
+z_label <- list(
+  title = "z=f(x,y)"
+)
+myPlotly <- plot_ly(x=~x, y=~y, z=~matrix(df$z, grid_length,grid_length), 
+                    type="surface", colors = colorRamp(rainbow(8)), 
+                    opacity=0.8, hoverinfo="none", showscale=FALSE ) %>%
+  layout(scene = list(zaxis=z_label), showlegend = FALSE)
+myPlotly
+```
+
+## Nonlinear Constraint Optimization Problem
+
+Maximize this objective function (a mixture of polynomial and exponential components): 
+
+$$f(x,y,z)=x^3 + 5y -2^z$$  
+subject to 
+
+$$D = \begin{cases}
+x -\frac{y}{2}+z^2 \leq 50\\
+\mod(x, 4) + \frac{y}{2} \leq 1.5
+\end{cases} .$$
+
+Alternatively, *minimize* $f^*(x,y,z)=-(x^3 + 5y -2^z)$. It's difficult to plot a 4D surface in 2D or 3D space, but we can try animating or cross-sectioning the $w=f(x,y,z)$ surface. The code below can be used, or modified, to generate a dynamic surface or a volume rendering of the objective function, $f^*(x,y,z)$. This code is not executed here (`eval=F`) to reduce the size of the output HTML output file.
+
+It's difficult to visualize this complicated objective function, however, we can use time as the 4th dimension to show the dynamic nature of the singularities of the function. Below are two alternative displays of the surface and the point-cloud representation of the 4D object.
+
+ - Degenerate surface representation (due to singularities).
+
+```{r echo=T, eval=T}
+library(plotly)
+grid_length <- 101
+BO_function <- function(A) {
+  A <- matrix(A, ncol=3)
+  x <- A[ , 1]
+  y <- A[ , 2]
+  z <- A[ , 3]
+  # calculate the function value for each row of x
+  w_xyz <- -(x^3 + 5*y -2^z)
+  return(w_xyz)
+}
+
+x <- seq(-50, 50, length = grid_length)
+y <- seq(-50, 50, length = grid_length)
+z <- seq(-50, 50, length = grid_length)
+A <- as.matrix(expand.grid(x, y, z))
+colnames(A) <- c("x", "y", "z")
+
+# evaluate function
+w <- log(abs(BO_function(A)))   # apply log(abs()) to tamper the the large w values
+# put x, y and z values in a data.frame for plotting
+df <- data.frame(A, w); str(df)
+# Show that the histogram has a lower bound (corresponding to a minimum)
+# hist(df$w, xlim=c(-20000000000, 10000000000), freq=T, breaks = 10, 
+#     main="Histogram of f has a lower bound\n (corresponding to a minimum)")
+
+z_label <- list(title = "w=f(x,y_o,z)")
+myPlotly <- plot_ly(df, x=~x, y=~y, z=~matrix(df$w, grid_length,grid_length,grid_length), 
+                    frame = ~df$z,
+                    type="surface", colors = colorRamp(rainbow(8)), 
+                    opacity=0.8, hoverinfo="none", showscale=T ) %>%
+  layout(scene = list(zaxis=z_label), showlegend = FALSE)  %>%
+  animation_opts(500, easing = "elastic", redraw = F) %>% 
+  animation_slider(active = 50, currentvalue = list(prefix = "Z ", font = list(color="red")))
+  
+myPlotly
+
+# # 3D Volume rendering
+# library(brainR)
+# vol_surface <- array(df$w, c(grid_length,grid_length,grid_length)); dim(vol_surface)
+# contour3d(vol_surface, level = c(-10,-8,0), color =c("red", "green", "blue"), alpha = 0.1, draw = TRUE)
+```
+
+ - Point-cloud representation of the objective function as a 4D object with temporal dynamics.
+ 
+```{r warning=F, error=F, message=F}
+fig <- df %>%
+  plot_ly(
+    x = ~x,
+    y = ~y,
+    z = ~w,
+    frame = ~df$z, type = "scatter3d", mode = "markers", opacity=0.1, scene="scene"
+    # type="surface", colors = colorRamp(rainbow(8))
+  ) %>%
+  layout(title = "3D Subplots",
+         scene = list(domain=list(x=c(-50,50),y=c(-50,50)),
+                      aspectmode='cube',
+                      zaxis = list(title = "f", range = c(-40,40))
+                      ))
+fig
+```
+
+Next, we can use `solnp` to optimize the objective function.
+
+```{r warning=F, error=F, message=F}
+fun3 <- function (x){
+  -(x[1]^3 + 5*x[2] - 2^x[3])
+}
+
+# constraint z1:
+# constraint z2:
+# constraint z3: z<=10
+ineq3 <- function(x){
+  z1 = x[1] - (x[2]/2) + (x[3]^2)
+  z2 = (x[1] %% 4) + (x[2]/2)
+  z3 = x[3]
+  return(c(z1, z2, z3))
+}
+
+lb = c(-1000,-1000,-1000)
+ub = c(1000,1000,100)
+lh <- c(-Inf, -Inf, -Inf) # tested lower bound and it doesn't change with c = -100 and c = -1000
+uh <- c(50, 1.5, Inf)
+
+x0 <- c(1,0,1) # setup: Try alternative starting-parameter vector (pars)
+sol3 <- solnp(x0, fun=fun3, ineqfun=ineq3, ineqLB=lh, ineqUB=uh)   #, LB=lb, UB=ub)
+cat("Min is attained at: (", sol3$pars[1], ", ", sol3$pars[2], ", ", sol3$pars[1], ")\n")
+cat("Min_f = ", sol3$values[length(sol3$values)])
+```
+
+Finally, we can also try the `optim()` method using *simulated annealing*, a slower stochastic global optimization optimizer that works well with difficult functions, e.g., non-differentiable, non-convex. We will use two different initialization points $(0.01, 2, -2)$ and $(0, 2, -3)$.
+
+```{r warning=F, error=F, message=F}
+# Define the constraints with conditions returning NA to restrict SANN stochastic walk
+fun3_constraints <- function(x) {
+  if (x[1] - (x[2]/2)+x[3]^2 > 50) {NA}       # constraint 1
+  else if ((x[1] %% 4) + (x[2]/2) > 1.5) {NA} # constraint 2
+  else { fun3(x) }                            # the objective function, 
+}
+
+# Case 1: Initial conditions, chosen analytically
+x0 <- c(0.01, 2, -2)
+
+# Initialize optimization using dummy variables
+x_optimal_value <- Inf
+x_optimal_point <- c(NA, NA)
+
+# Run 50 iterations of SANN and choose the optimal result
+for (i in 1:50) {
+    x_optimal <- optim(x0, fun3_constraints)
+    if (x_optimal$value < x_optimal_value) {
+        x_optimal_value <- x_optimal$value
+        x_optimal_point <- x_optimal$par
+    }
+}
+
+cat("Init: x_o = (0.01, 2, -2); fun3 minimum estimate is=", x_optimal_value, " which is attained at (", 
+    x_optimal_point[1], ", ", x_optimal_point[2], ", ", x_optimal_point[3], ")!\n")
+
+
+# Case 2: Initial conditions, chosen analytically
+x0 <- c(0, 2, -3)
+
+# Initialize optimization using dummy variables
+x_optimal_value <- Inf
+x_optimal_point <- c(NA, NA)
+
+# Run 50 iterations of SANN and choose the optimal result
+for (i in 1:50) {
+  x_optimal <- optim(x0, fun3_constraints, method="SANN")
+  if (x_optimal$value < x_optimal_value) {
+    x_optimal_value <- x_optimal$value
+    x_optimal_point <- x_optimal$par
+  }
+}
+
+cat("Init: x_o = (0, 2, -3); fun3 minimum estimate is=", x_optimal_value, " which is attained at (", 
+    x_optimal_point[1], ", ", x_optimal_point[2], ", ", x_optimal_point[3], ")!\n")
+```
+
+Check your solution against the [Wolfram Alpha solution](https://www.wolframalpha.com/input/?i=minimize+-(x%5E3+%2B+5*y+-2%5Ez)++subject+to+x+-0.5*y%2Bz%5E2+%3C%3D+50+AND+mod(x,+4)+%2B+y%2F2+%3C%3D+1.5): 
+$$\min_{D} f(x,y,z)=f(x=0, y=3, z=-3.6)=-15.$$
+
+The [Convex Optimization in R paper](https://dx.doi.org/10.18637/jss.v060.i05) provides lots of additional examples and [Wikipedia provides a number of interesting optimization test functions](https://en.wikipedia.org/wiki/Test_functions_for_optimization).
+
+# Examples of explicit optimization use in AI/ML
+
+Most [advanced DSPA techniques](https://dspa2.predictive.space/) rely on some form of optimization strategies to tune parameters, estimate likelihoods, approximate unknown values, derive unobserved characteristics, or obtain solutions to various problems.
+
+Examples of explicit optimization methods used in artificial intelligence and machine learning include:
+
+ - [LASSO Regularized Linear Modeling](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html), the regularization penalty term is not differentiable, which requires an optimization-based solution for estimating the effects and the penalty-weight.
+ - Training [Neural Networks](https://socr.umich.edu/DSPA2/DSPA2_notes/06_ML_NN_SVM_RF_Class.html) with backpropagation requires minimizing the total aggregate error to estimate the weights of the specific NN nodes.
+ - [Boosting](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html) requires minimization of an objective function of weighted average of weaker classifiers.
+ - The [SVM](https://socr.umich.edu/DSPA2/DSPA2_notes/06_ML_NN_SVM_RF_Class.html) search for the Maximum Margin Hyperplane (MMH) requires optimization of an objective function whose extrema lead to optimal separation of the samples.
+ - [RandomForest](https://socr.umich.edu/DSPA2/DSPA2_notes/06_ML_NN_SVM_RF_Class.html) relies on optimization to obtain an optimal `mtry` parameter (representing the number of variables randomly sampled as candidates at each tree-node split) that minimizes the Out-of-Bag error estimate of the classifier, see `randomForest::tuneRF()`.
+
+# Practice Problems
+
+Try different optimization methods to solve the following problems. For each problem, you can report your solutions including min values and the optimal location, execution-time, performance under alternative initialization points, etc.
+
+ - $\min_{{\bf{x}}=(x_1,x_2)} {f(x_1, x_2) = \min_{{\bf{x}}=(x_1,x_2)} \{(x_1-3)^2 + (x_2+4)^2 + x_1x_2}\}$.
+ - Find the extrema of the Booth’s function $f(x,y)=(x + 2y -7)^2 + (2x+y - 5)^2$ constrained to 
+$S=\{(x,y)\in \mathbb{R}^2 | -10\leq x,y\leq 10\}$. To start. use *plot_ly* to render the objective function as a 3D surface over the domain, $S$, `f(x)=(x[1]+2*x[2]-7)^2 + (2*x[1]+x[2]-5)^2`. Try `library(quadprog)` and/or `library(Rsolnp)`. Compare your solution to the [Wolfram Alpha Optimizer](https://www.wolframalpha.com/input/?i=minimize+(x+%2B+2*y+-7)%5E2+%2B+(2*x%2By+-+5)%5E2+subject+to+x%3E%3D-10,+y%3E%3D-10,+x%3C%3D10,+y%3C%3D10).
+ - The [quantile function](https://en.wikipedia.org/wiki/Quantile_function) of a probability distribution is the inverse function of the cumulative distribution function. Review the [optimization example using the Normal distribution](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html) and try the [Probability Distributome Navigator](http://distributome.org/V3/). For [Cauchy](http://www.distributome.org/V3/calc/CauchyCalculator.html) and [Poisson](http://www.distributome.org/V3/calc/PoissonCalculator.html) distributions, use first principles and optimization theory to compute (estimate) the inverse CDF (quantile function) for each distribution. Plot your estimates against the corresponding exact quantile functions ([qpois](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/Poisson.html), and [qcauchy](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/Cauchy.html)). Generate creative and informative R plots. Note that in general, (1) the Cauchy distribution has two parameters that are defaulted to $location = 0$ and $scale = 1$, and (2) the Poisson distribution has one parameter, non-negative mean, e.g., $\lambda=5$. You can either take the default parameters or specify other appropriate alternatives.
+ - *Google Trends*: To tie data science with optimization, gather data, model the temporal patterns, and try to predict various trends based on other factors. For instance, we will use **Google Trends** to select 5-10 relevant (interesting?) themes, phrases, or keywords, and investigate the corresponding temporal dynamics of the Google searches of these themes for the past 10-15 years. Use the [DSPA Chapter 12 example](https://socr.umich.edu/DSPA2/DSPA2_notes/12_LongitudinalDataAnalysis.html) as a starting point. Retrieve the trends data, plot the data, and write a few sentences summarizing the visual analytics (what is your inference in the context of the themes you chose?) Run some quantitative longitudinal data analytics to showcase some statistical inference, forecasting, or specific models of these trends or the differences between these trajectories of search popularity. Try to predict one theme trend using information about the others.
+
+# References
+
+ - The [Efficient R programming](https://csgillespie.github.io/efficientR/performance.html), by Colin Gillespie & Robin Lovelace, includes a number of tricks to improve performance and enhance computational processing.
+ - [CRAN Optimization & Math Programming Site](https://cran.r-project.org/web/views/Optimization.html) provides details about a broad range of R optimization functions.
+ - [Vincent Zoonekynd's Optimization Blog](http://zoonek.free.fr/blosxom/R/2012-06-01_Optimization.html).
+ - [Convex Optimization in R (DOI: 10.18637/jss.v060.i05)](https://dx.doi.org/10.18637/jss.v060.i05).
+ - [Hyperparameter Bayesian Optimization R Package](https://cran.r-project.org/web/packages/ParBayesianOptimization/index.html).
+ 
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->
+

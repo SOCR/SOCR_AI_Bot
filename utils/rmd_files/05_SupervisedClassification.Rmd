@@ -1,0 +1,2202 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Supervised Classification</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+In this chapter we will present various progressively supervised machine learning, classification and clustering techniques. There are two categories of machine learning techniques - unsupervised and supervised (human-guided). In general, supervised *classification* methods aim to identify or predict predefined classes and label new objects as members of specific classes. Whereas unsupervised *clustering* approaches attempt to group objects into subsets, without knowing a priori labels, and determine relationships between objects.
+
+In the context of machine learning and artificial intelligence, classification and clustering apply mostly for supervised and unsupervised problems, respectively.
+
+**Unsupervised classification** refers to methods where the outcomes (groupings with common characteristics) are automatically derived based on intrinsic affinities and associations in the data without human indication of clustering. Unsupervised learning is purely based on input data ($X$) without corresponding output labels. The goal is to model the underlying structure, affinities, or distribution in the data in order to learn more about its intrinsic characteristics. It is called unsupervised learning because there are no *a priori* correct answers and there is no human guidance. Algorithms are left to their own devices to discover and present the interesting structure in the data. *Clustering* (discover the inherent groupings in the data) and *association* (discover association rules that describe the data) represent the core unsupervised learning problems. The **k-means** clustering and the **Apriori association rule** provide solutions to unsupervised learning problems.
+
+```{r echo=FALSE}
+# install.packages("magrittr")
+# install.packages("kableExtra")
+library(kableExtra)
+library(magrittr)
+library("knitr")
+
+dt <- as.data.frame(cbind("Bayesian Classifier has high computational 
+requirements. As there are a priori given labels, some prior is needed/specified to train the classifier, which is in turn used to label new data. Then, the newly labeled samples are subsequently used to train a new (supervised) classifier, i.e.,  
+decision-directed unsupervised learning. If the initial classifier is not appropriate, the process may diverge", 
+  "Chinese restaurant process (CRP), infinite Hidden Markov Model (HMM)",
+  "Principal Direction Divisive Partitioning (PDDP)", 
+  "Start with each case in a separate cluster and repeatedly join the closest pairs into clusters, until a stopping criterion is matched: (1) there is only a single cluster for all cases, (2) predetermined number of clusters is reached, (3) the distance between the closest clusters exceeds a threshold", 
+  "SpecC", 
+  "kmeans, hkmeans", 
+  "Growing Neural Gas", 
+  "mclust"))
+
+colnames(dt) <- c("Decision Based", "Non-parametric", "Divisive (Top-Down)", "Agglomerative (Bottom-Up)", "Spectral", "K-Means / Centroid", "Graph-Theoretic", "Model Based")
+
+kable(dt, "html") %>%
+  kable_styling("striped", bootstrap_options = "bordered") %>%
+  add_header_above(c("Bayesian" = 2, "Hierarchical" = 2, "Partitioning Based" = 4)) %>%
+  add_header_above(c("Unsupervised Clustering Approaches" = 8))
+```
+  
+**Supervised classification** methods utilize user provided labels representative of specific classes associated with concrete observations, cases or units. These training classes/outcomes are used as references for the classification. Many problems can be addressed by decision-support systems utilizing combinations of supervised and unsupervised classification processes. Supervised learning involves input variables ($X$) and an outcome variable ($Y$) to learn mapping functions from the input to the output: $Y = f(X)$. The goal is to approximate the mapping function so that when it is applied to new (validation) data ($Z$) it (accurately) predicts the (expected) outcome variables ($Y$). It is called supervised learning because the learning process is supervised by initial training labels guiding and correcting the learning until the algorithm achieves an acceptable level of performance.
+
+*Regression* (output variable is a real value) and *classification* (output variable is a category) problems represent the two types of supervised learning. Examples of supervised machine learning algorithms include *Linear regression* and *Random forest*, both provide solutions for regression-type problems, but *Random forest* also provides solutions to classification problems.
+
+Just like categorization of exploratory data analytics, [Chapter 3](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/03_DataVisualization.html), is challenging, so is systematic codification of machine learning techniques. The **table** below attempts to provide a rough representation of common machine learning methods. However, it is not really intended to be a gold-standard protocol for choosing the best analytical method. Before you settle on a specific strategy for data analysis, you should always review the data characteristics in light of the assumptions of each technique and assess the potential to gain new knowledge or extract valid information from applying a specific technique. 
+
+Inference | Outcome |     Supervised          | Unsupervised
+----------|---------|-------------------------|------------------------
+Classification & Prediction | Binary | Classification-Rules, OneR, kNN, NaiveBayes, Decision-Tree, C5.0, AdaBoost, XGBoost, LDA/QDA, Logit/Poisson, SVM | *Apriori*, Association-Rules, k-Means, NaiveBayes
+Classification & Prediction | Categorical | Regression Modeling & Forecasting | *Apriori*, Association-Rules, k-Means, NaiveBayes
+Regression Modeling | Real Quantitative | (MLR) Regression Modeling, LDA/QDA, SVM, Decision-Tree, NeuralNet | Regression Modeling Tree, *Apriori*/Association-Rules
+
+Many of these will be discussed in later chapters. In this chapter, we will present step-by-step the *k-nearest neighbor (kNN)* algorithm. Specifically, we will demonstrate (1) data retrieval and normalization, (2) splitting the data into *training* and *testing* sets, (3) fitting models on the training data, (4) evaluating model performance on testing data, (5) improving model performance, and (6) determining optimal values of $k$. 
+
+In [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html), we will present detailed strategies, and evaluation metrics, to assess the performance of all clustering and classification methods.
+
+# k-Nearest Neighbor Approach
+
+Classification tasks could be very difficult for a large number of complex and heterogeneous features and target classes. In those scenarios, where the items of similar class type tend to be homogeneous, nearest neighbor classification may be appropriate because assigning unlabeled cases to their most similarly labeled neighbors may be fairly easy to accomplish. 
+
+Such classification methods can help us understand the story behind the unlabeled data using known data and avoiding analyzing those complicated features and target classes. This is because these techniques have no prior distribution assumptions. However, this non-parametric approach makes the methods rely heavy on the training instances, which explains their *lazy algorithms* designation.
+
+The KNN algorithm involves the following steps:
+
+ 1. Create a training dataset that has classified examples labeled by nominal variables and different features in ordinal or numerical variables.
+ 2. Create a *testing* dataset containing unlabeled examples with similar features as the *training* data.
+ 3. Given a predetermined number $k$, match each *test case* with the $k$ closest *training* records that are "nearest" to the test case, according to a certain similarity or distance measure.
+ 4. Assign a *test case* class label according to the majority vote of the $k$ nearest training cases.
+
+Mathematically, for a given $k$, a specific similarity metric $d$, and a new testing case $x$, the kNN classifier performs two steps ($k$ is typically *odd* to avoid ties):
+
+ - Runs through the whole training dataset ($y$) computing $d(x,y)$. Let $A$ represent the $k$ closest points to $x$ in the training data $y$.
+ - Estimates the conditional probability for each class, which corresponds to the fraction of points in $A$ with that given class label. If $I(z)$ is an indicator function $I(z) = \begin{cases} 1 & z= true \\ 0 & otherwise \end{cases}$, then the testing data input $x$ gets assigned to the class with the largest probability, $P(y=j|X=x)$:
+
+$$P(y=j|X=x) =\frac{1}{k} \sum_{i\in A}{I(y^{(i)}=j)}.$$
+
+## Distance Function and Dummy coding
+
+How to measure the similarity between records? We can think of similarity measures as the distance metrics between the two records or cases. There are many distance functions to choose from. Traditionally, we use *Euclidean distance* as our similarity metric.
+
+If we use a line to connect the two points representing the testing and the training records in $n$ dimensional space, the length of the line is the Euclidean distance. If $a, b$ both have $n$ features, the coordinates for them are $(a_1, a_2, \cdots, a_n)$ and $(b_1, b_2, \cdots, b_n)$. Our distance could be:
+
+$$dist(a, b)=\sqrt{(a_1-b_1)^2+(a_2-b_2)^2+\cdots+(a_n-b_n)^2}.$$
+
+When we have nominal features, it requires a little trick to apply the Euclidean distance formula. We could create dummy variables as indicators of all the nominal feature levels. The dummy variable would equal one when we have the feature and zero otherwise. We show two examples:
+
+$$Gender= \left\{
+\begin{array}{ll}
+      0 & X=male \\
+      1 & X=female \\
+\end{array} 
+\right. $$
+
+$$Cold= \left\{
+\begin{array}{ll}
+      0 & Temp \geq 37F \\
+      1 & Temp < 37F \\
+\end{array} 
+\right. $$
+
+This allows only binary expressions. If we have multiple nominal categories, just make each one as a dummy variable and apply the Euclidean distance. 
+
+## Estimation of the hyperparameter *k*
+
+The parameter *k* could not be too large or too small. If our *k* is too large, the test record tends to be classified as the most popular class in the training records, rather than the most similar one. On the other hand, if the *k* is too small, outliers, noise, or mislabeled training data cases might lead to errors in predictions.
+
+The common practice is to calculate the square root of the number of training cases and use that number as (initial) estimate of *k*.
+
+A more robust way would be to choose several *k* values and select the one with the optimal (best) classifying performance.
+
+## Rescaling of the features
+
+Different features might have different scales. For example, we can have a measure of pain scaling from 1 to 10 or 1 to 100. Some similarity or distance measures assume the same measuring unit in all feature dimensions. This requires that the data may need to be transferred into the same scale. Re-scaling can make each feature contribute to the distance in a relatively equal manner, avoiding potential bias. 
+
+## Rescaling Formulas
+
+There are many alternative strategies to rescale the data.
+
+### *min-max normalization*
+
+$$X_{new}=\frac{X-min(X)}{max(X)-min(X)}.$$
+
+After re-scaling the data, $X_{new}$ would range from 0 to 1, representing the distance between each value and its minimum as a percentage. Larger values indicate further distance from the minimum, 100% means that the value is at the maximum.
+
+### *z-score standardization*
+
+$$X_{new}=\frac{X-\mu}{\sigma}=\frac{X-Mean(X)}{SD(X)}$$
+
+This is based on the properties of normal distribution that we have talked about in [Chapter 2](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/02_ManagingData.html). After z-score standardization, the re-scaled feature will have unbounded range. This is different from the min-max normalization which always has a finite range from 0 to 1. Following z-score standardization, the transformed features are *uniteless* and may resemble standard normal distribution.
+
+## Case Study: Youth Development
+
+### Step 1: Collecting Data
+
+The data we are using for this case study is the "Boys Town Study of Youth Development", which is [the second case study, CaseStudy02_Boystown_Data.csv](https://umich.instructure.com/courses/38100/files/folder/Case_Studies).
+
+Variables:
+
+ - **ID**: Case subject identifier
+ - **Sex**: dichotomous variable (1=male, 2=female) 
+ - **GPA**: Interval-level variable with range of 0-5 (0-"A" average, 1- "B" average, 2- "C" average, 3- "D" average, 4-"E", 5-"F"")
+ - **Alcohol use**: Interval level variable from 0-11 (drink everyday - never drinked)
+ - **Attitudes on drinking in the household**: Alcatt - Interval level variable from 0-6 (totally approve - totally disapprove)
+ - **DadJob**: 1-yes, dad has a job and 2- no
+ - **MomJob**: 1-yes and 2-no 
+ - **Parent closeness** (example: In your opinion, does your mother make you feel close to her?) 
+    + Dadclose: Interval level variable 0-7 (usually-never) 
+    + Momclose: interval level variable 0-7 (usually-never)
+ - **Delinquency**:
+    + larceny (how many times have you taken things >$50?): Interval level data 0-4 (never - many times), 
+    + vandalism: Interval level data 0-7 (never - many times)
+
+### Step 2: Exploring and preparing the data
+
+First, we need to load and do some data manipulation. We are using the Euclidean distance so dummy variables (one hot encoding) should be used. The following codes transferred `sex`, `dadjob` and `momjob` into dummy variables.
+
+```{r eval=T, warning=F, error=F, message=F}
+library(class)
+library(gmodels)
+boystown<-read.csv("https://umich.instructure.com/files/399119/download?download_frd=1", sep=" ")
+boystown$sex<-boystown$sex-1
+boystown$dadjob <- -1*(boystown$dadjob-2)
+boystown$momjob <- -1*(boystown$momjob-2)
+str(boystown)
+```
+
+The `str()` function tells us that we have 200 observations and 11 variables. However, the ID variable is not important in this case study so we can delete it. In this case-study, we can focus on academic performance, *GPA*, recidivism, *vandalism* and *larceny*, *alcohol use*, or other outcome variables. One concrete example involves trying to predict *recidivism* and use `knn` to classify participants in two categories. 
+
+Let's focus on a specific outcome variable representing two or more infractions of *vandalism* and *larceny*, which can be considered as "**Recidivism**". Participants with one or no infractions can be labeled as "Controls". First we can use [PCA](https://socr.umich.edu/DSPA2/DSPA2_notes/04_DimensionalityReduction.html) to explore the data and then construct the new derived *recidivism* variable and split the data into training and testing sets.
+
+```{r eval=T, warning=F, error=F, message=F}
+# GPA study
+# boystown <- boystown[, -1]
+# table(boystown$gpa)
+# boystown$grade <- boystown$gpa %in% c(3, 4, 5)    # GPA: (1-“A” average, 2-“B” average, 3-“C” average, 4+ below “C” average)
+# boystown$grade <- factor(boystown$grade, levels=c(F, T), labels = c("above_avg", "avg_or_below"))
+# table(boystown$grade)
+
+# You can also try with alternative outcomes, e.g., alcohol use
+# Outcome Alcohol Use 6 categories (1- everyday, 2- once or twice/wk, 3- once or twice/month, 4- less than once or twice per month, 5- once or twice, 6- never)
+# Y <- as.factor(ifelse(boystown$Alcoholuse > 3, "1"Heavy Alcohol Use", "0"low Alcohol Use)); table(Y)
+# Y <- as.factor(boystown$Alcoholuse); table(Y)
+# X <- boystown[, -c(1, 4)]
+
+# First explore the data by running a PCA
+rawData <- boystown[ , -1]; head(rawData)
+pca1 <- prcomp(as.matrix(rawData), center = T)
+summary(pca1)
+pca1$rotation
+
+Y <- ifelse (boystown$vandalism + boystown$larceny > 1, "Recidivism", "Control")  # more than 1 vandalism or larceny conviction
+X <- boystown[, -c(1, 10, 11)]  # covariate set excludes these 3 columns index/ID, vandalism, and larceny
+
+boystown_z <- as.data.frame(lapply(X, scale))
+bt_train <- boystown_z[1:150, ]
+bt_test  <- boystown_z[151:200, ]
+bt_train_labels <- Y[1:150]  
+bt_test_labels  <- Y[151:200]
+table(bt_train_labels)
+```
+
+Let's look at the proportions for the two categories in both the training and testing sets.
+
+```{r eval=T, warning=F, error=F, message=F}
+round(prop.table(table(bt_train_labels)), digits=2)
+round(prop.table(table(bt_test_labels)), digits=2)
+```
+
+We can see that most of the participants have incidents related to recidivism (~70-80%). 
+
+The remaining 8 features use different measuring scales. If we use these features directly, variables with larger scale may have a greater impact on the classification performance. Therefore, re-scaling may be useful to level the playing field.
+
+### Step 3: Normalizing Data
+
+First let's create a function of our own using the min-max normalization formula. We can check the function using some trial vectors.
+
+```{r eval=T, warning=F, error=F, message=F}
+normalize<-function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+
+# some test examples:
+normalize(c(1, 2, 3, 4, 5))
+normalize(c(1, 3, 6, 7, 9))
+```
+
+After confirming the function definition, we can use `lapply()` to apply the normalization transformation to each element in a "list" of predictors of the binary `outcome=recidivism`.
+
+```{r eval=T, warning=F, error=F, message=F}
+boystown_n <- as.data.frame(lapply(bt_train, normalize))
+
+# alternatively we can use "scale", as we showed above
+#boystown_z <- as.data.frame(lapply(X, scale))
+```
+
+Let's compare the two alternative normalization approaches on one of the features, *Alcohol use.*
+
+```{r eval=T, warning=F, error=F, message=F}
+summary(boystown_n$Alcoholuse)
+summary(boystown_z$Alcoholuse)
+```
+
+### Step 4: Data preparation - creating training and test datasets
+
+We have 200 observations in this dataset. The more data we use to train the algorithm, the more precise the prediction would be. We can use $3/4$ of the data for training and the remaining $1/4$ for testing. For simplicity, we will just take the first cases as training and the remaining as testing. Alternatively, we can use a randomization strategy to split the data into testing and training sets.
+
+```{r eval=T, warning=F, error=F, message=F}
+# may want to use random split of the raw data into training and testing
+# subset_int <- sample(nrow(boystown_n),floor(nrow(boystown_n)*0.8))  
+# 80% training + 20% testing
+# bt_train<- boystown_n [subset_int, ]; bt_test<-boystown_n[-subset_int, ] 
+
+# Note that the object boystown_n already excludes the outcome variable (Delinquency), index 11!
+bt_train <- boystown_z[1:150, ]
+bt_test  <- boystown_z[151:200, ]
+```
+
+Then let's extract the *recidivism* labels or classes for the training and testing sets.
+
+```{r eval=T, warning=F, error=F, message=F}
+bt_train_labels <- Y[1:150]  
+bt_test_labels  <- Y[151:200]
+```
+
+### Step 5 - Training a model on the data
+
+First, we will use the `class::knn()` method.
+
+```{r eval=T, warning=F, error=F, message=F}
+#install.packages('class', repos = "https://cran.us.r-project.org")
+library(class)
+```
+
+The function `knn()` has following components:
+
+`p <- knn(train, test, class, k)`
+
+ - train: data frame containing numeric training data (features)
+ - test: data frame containing numeric testing data (features)
+ - class/cl: class for each observation in the training data
+ - *k*: predetermined integer indication the number of nearest neighbors
+
+We can first test with $k=7$, which is less than the square root of our number of observations: $\sqrt{200}\approx 14$.
+
+```{r eval=T, warning=F, error=F, message=F}
+bt_test_pred <- knn(train=bt_train, test=bt_test, cl=bt_train_labels, k=7)
+```
+
+### Step 6 - Evaluating model performance
+
+We utilize the `CrossTable()` function in [Chapter 2](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/02_ManagingData.html) to evaluate the KNN model. We have two classes in this example. The goal is to create a $2\times 2$ table that shows the matched true and predicted classes as well as the unmatched ones. However chi-square values are not needed so we use option `prop.chisq=False` to get rid of it.
+
+```{r eval=T, warning=F, error=F, message=F}
+# install.packages("gmodels", repos="https://cran.us.r-project.org")
+library(gmodels)
+CrossTable(x=bt_test_labels, y=bt_test_pred, prop.chisq = F)
+```
+
+In this table, the cells in the first row-first column and the second row-second column contain the number for cases that have predicted classes matching the true class labels. The other two cells are the counts for unmatched cases. The *accuracy* of this classifier is calculated by: $\frac{cell[1, 1]+cell[2, 2]}{total}=\frac{37}{50}=0.72$. Note that this value may slightly fluctuate each time you run the classifier, due to the stochastic nature of the algorithm.
+
+### Step 7 - Improving model performance
+
+The normalization strategy may play a role in the classification performance. We can try alternative standardization methods - standard Z-score centralization and normalization (via `scale()` method). Let's try standardization prior to training the kNN and predicting and assessing the accuracy of the results.
+
+```{r eval=T, warning=F, error=F, message=F}
+# bt_train <- bt_z[1:150, ]
+# bt_test  <- bt_z[151:200, ]
+# bt_train_labels <- boystown[1:150, 11]
+# bt_test_labels  <- boystown[151:200, 11]
+# bt_test_pred <- knn(train=bt_train, test=bt_test, cl=bt_train_labels, k=7)
+# CrossTable(x=bt_test_labels, y=bt_test_pred, prop.chisq = F)
+
+# bt_test_pred <- knn(train=bt_train, test=bt_test,  cl=bt_train_labels, prob=T, k=18) # retrieve Probabilities
+# getTraingDataThreshold <- quantile(attributes(bt_test_pred)$prob, c(table(bt_train_labels)[1]/length(bt_train_labels), 0.5))[1]
+# bt_test_predBin <- ifelse(attributes(bt_test_pred)$prob > getTraingDataThreshold, 1, 0)          # Binarize the probabilities
+bt_test_pred <- knn(train=bt_train, test=bt_test,  cl=bt_train_labels, prob=T, k=14) # retrieve Probabilities
+bt_test_predBin <- ifelse(attributes(bt_test_pred)$prob > 0.6, "Recidivism", "Control")          # Binarize the probabilities
+CT <- CrossTable(x=bt_test_labels, y=bt_test_predBin, prop.chisq = F)
+# CT 
+print(paste0("Prediction accuracy of model 'bt_test_pred' (k=14) is ", (CT$prop.tbl[1,1]+CT$prop.tbl[2,2]) ))
+
+```
+
+Under the z-score method, the prediction result is similar to the previous result using the normalization strategy. Albeit, in general, there may be marginal differences, e.g., a few more cases may be correctly labeled based on one of the standardization or normalization approaches.
+
+### Testing alternative values of *k*
+
+Originally, we used the square root of 200 as our *k*. However, this might not be the best *k* in this study. We can test different *k*'s for their predicting performances.
+
+```{r eval=TRUE}
+# bt_train <- boystown_n[1:150, ]
+# bt_test  <- boystown_n[151:200, ]
+# bt_train_labels <- boystown[1:150, 11]
+# bt_test_labels  <- boystown[151:200, 11]
+# bt_test_pred1   <- knn(train=bt_train, test=bt_test, cl=bt_train_labels, k=1)
+# bt_test_pred9   <- knn(train=bt_train, test=bt_test, cl=bt_train_labels, k=9)
+# bt_test_pred11  <- knn(train=bt_train, test=bt_test,  cl=bt_train_labels, k=11)
+# bt_test_pred21  <- knn(train=bt_train, test=bt_test,  cl=bt_train_labels, k=21)
+# bt_test_pred27  <- knn(train=bt_train, test=bt_test, cl=bt_train_labels, k=27)
+# ct_1  <- CrossTable(x=bt_test_labels, y=bt_test_pred1, prop.chisq = F)
+# ct_9  <- CrossTable(x=bt_test_labels, y=bt_test_pred9, prop.chisq = F)
+# ct_11 <- CrossTable(x=bt_test_labels, y=bt_test_pred11, prop.chisq = F)
+# ct_21 <- CrossTable(x=bt_test_labels, y=bt_test_pred21, prop.chisq = F)
+# ct_27 <- CrossTable(x=bt_test_labels, y=bt_test_pred27, prop.chisq = F)
+
+bt_test_pred <- knn(train=bt_train, test=bt_test,  cl=bt_train_labels, prob=T, k=18)        # retrieve Probabilities
+bt_test_predBin <- ifelse(attributes(bt_test_pred)$prob > 0.6, "Recidivism", "Control")     # Binarize the probabilities
+CT <- CrossTable(x=bt_test_labels, y=bt_test_predBin, prop.chisq = F)
+# CT 
+print(paste0("Prediction accuracy of model 'bt_test_pred' (k=18) is ", (CT$prop.tbl[1,1]+CT$prop.tbl[2,2]) ))
+```
+
+The choice of $k$ in KNN clustering is very important and it can be fine-tuned using the `e1071::tune.knn()` of the `caret::train()` methods. Note that using the `tune.knn()` method without explicit control over the class-probability cutoff does not generate good results. Specifying that probability exceeding $0.6$ corresponds to *recidivism* significantly improves the *kNN* performance using `caret::train()` and `caret::predict()` methods.
+
+```{r fig.height=6, fig.width=6, error=F, message=F, warning=F}
+# install.packages("e1071")
+library(e1071)
+knntuning = tune.knn(x= bt_train, y = as.factor(bt_train_labels), k = 1:30)
+knntuning
+summary(knntuning)
+
+library(caret)
+knnControl <- trainControl(
+    method = "cv", ## cross validation
+    number = 10,   ## 10-fold
+    summaryFunction = twoClassSummary,
+    classProbs = TRUE,
+    verboseIter = FALSE
+)
+# bt_train_stringLabels <- ifelse (bt_train_labels==1, "Recidivism", "Control")
+knn_model <- train(x=bt_train, y=bt_train_labels , metric = "ROC", method = "knn", tuneLength = 20, trControl = knnControl)
+print(knn_model)
+
+# Here we are providing a cutoff of 60% probability for derived class label=Recidivism
+library(dplyr)
+summaryPredictions <- predict(knn_model, newdata = bt_test, type = "prob") # %>% mutate('knnPredClass'=names(.)[apply(., 1, which.max)])
+summaryPredictionsLabel <- ifelse (summaryPredictions$Recidivism > 0.6, "Recidivism", "Control")
+testDataPredSummary <- as.data.frame(cbind(trueLabels=bt_test_labels, controlProb=summaryPredictions$Control, 
+                                           recidivismProb=summaryPredictions$Recidivism, knnPredLabel=summaryPredictionsLabel))
+print(paste0("Accuracy = ", 2*as.numeric(table(testDataPredSummary$trueLabels == testDataPredSummary $knnPredLabel)[2]), "%"))
+```
+
+It's useful to visualize the `error rate` against the value of $k$. This can help us select the optimal $k$ parameter that minimizes the cross-validation (CV) error, see [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html).
+
+```{r fig.height=6, fig.width=6, warning=F, message=F, error=F}
+library(class)
+library(ggplot2)
+library(reshape2)
+# define a function that generates CV folds
+cv_partition <- function(y, num_folds = 10, seed = NULL) {
+  if(!is.null(seed)) {
+    set.seed(seed)
+  }
+  n <- length(y)
+  
+  # split() divides the data into the folds defined by gl().
+  # gl() generates factors according to the pattern of their levels
+
+  folds <- split(sample(seq_len(n), n), gl(n = num_folds, k = 1, length = n))
+  folds <- lapply(folds, function(fold) {
+    list(
+      training = which(!seq_along(y) %in% fold),
+      test = fold
+    )
+  })
+  names(folds) <- paste0("Fold", names(folds))
+  return(folds)
+}
+
+# Generate 10-folds of the data
+folds = cv_partition(bt_train_labels, num_folds = 10)
+
+# Define a training set_CV_error calculation function
+train_cv_error = function(K) {
+  #Train error
+  #### knnbt = knn(train = bt_train, test = bt_train, cl = bt_train_labels, k = K)
+  #### train_error = mean(knnbt != bt_train_labels)
+  knn_model <- train(x=bt_train, y=bt_train_labels , metric = "ROC", method = "knn", tuneLength = 20, trControl = knnControl)
+  summaryPredictions <- predict(knn_model, newdata = bt_train, type = "prob")
+  summaryPredictionsLabel <- ifelse (summaryPredictions$Recidivism > 0.6, "Recidivism", "Control")
+  train_error = mean(summaryPredictionsLabel != bt_train_labels)
+
+  #CV error
+  cverrbt = sapply(folds, function(fold) {
+    ###  knnbt = knn(train = bt_train[fold$training,], cl = bt_train_labels[fold$training], test = bt_train[fold$test,], k=K)
+    knn_model <- train(x=bt_train[fold$training,], y=bt_train_labels[fold$training] , metric = "ROC", method = "knn", tuneLength = 20, trControl = knnControl)
+    summaryPredictions <- predict(knn_model, newdata = bt_train[fold$test,], type = "prob")
+    summaryPredictionsLabel <- ifelse (summaryPredictions$Recidivism > 0.6, "Recidivism", "Control")
+    mean(summaryPredictionsLabel != bt_train_labels[fold$test])
+    # mean(bt_train_labels[fold$test] != knn(train = bt_train[fold$training,], 
+    #                                        cl = bt_train_labels[fold$training], 
+    #                                        test = bt_train[fold$test,], k=K))
+    }
+  )
+
+  cv_error = mean(cverrbt)
+
+  #Test error
+  knn.test = knn(train = bt_train, test = bt_test, cl = bt_train_labels, k = K)
+  test_error = mean(knn.test != bt_test_labels)
+  return(c(train_error, cv_error, test_error))
+}
+
+k_err = sapply(1:30, function(k) train_cv_error(k))
+df_errs = data.frame(t(k_err), 1:30)
+colnames(df_errs) = c('Train', 'CV', 'Test', 'K')
+dataL <- melt(df_errs, id="K")
+
+# require(ggplot2)
+# library(reshape2)
+# ggplot(dataL, aes_string(x="K", y="value", colour="variable",
+#    group="variable", linetype="variable", shape="variable")) +
+#    geom_line(size=0.8) + labs(x = "Number of nearest neighbors (k)",
+#            y = "Classification error",
+#            colour="", group="",
+#            linetype="", shape="") +
+#   geom_point(size=2.8) +
+#   geom_vline(xintercept=4:5, colour = "pink")+
+#   geom_text(aes(4,0,label = "4", vjust = 1)) +
+#   geom_text(aes(5,0,label = "5", vjust = 1))
+
+library(plotly)
+plot_ly(dataL, x = ~K, y = ~value, color = ~variable, type = "scatter", mode = "markers+lines") %>% 
+  add_segments(x=25, xend=25, y=0.0, yend=0.33, type = "scatter", name="k=9",
+               line=list(color="darkgray", width = 2, dash = 'dot'), mode = "lines", showlegend=FALSE) %>% 
+  add_segments(x=14, xend=14, y=0.0, yend=0.33, type = "scatter", name="k=14",
+               line=list(color="lightgray", width = 2, dash = 'dot'), mode = "lines", showlegend=FALSE) %>% 
+  add_segments(x=18, xend=18, y=0.0, yend=0.36, type = "scatter",  name="k=18",
+               line=list(color="gray", width = 2, dash = 'dot'), mode = "lines", showlegend=FALSE) %>% 
+  layout(title='K-NN Training, CV, and Testing Error Rates against k', 
+           legend=list(title=list(text='<b> Samples </b>')), 
+           xaxis=list(title='Number of nearest neighbors (k)'), yaxis=list(title='Classification error'))
+```
+
+### Quantitative Assessment
+
+First review the [fundamentals of hypothesis testing inference](https://wiki.socr.umich.edu/index.php/AP_Statistics_Curriculum_2007_Hypothesis_Basics#Type_I_Error.2C_Type_II_Error_and_Power) and recall that:
+
+Confusion Matrix | Negative | Positive
+--------------------|----|----
+kNN Fails to reject | TN | FN
+kNN rejects | FP | TP 
+Metrics  | Specificity: TN/(TN+FP) | Sensitivity: TP/(TP+FN)
+
+Suppose we want to evaluate the kNN model ($k=12$) as to how well it predicts **recidivism**. Let's report manually some of the accuracy metrics for the kNN model ($k=12$). Combining the results, we get the following model sensitivity and specificity.
+
+```{r eval=F, echo=F}
+# bt_test_pred9 <- knn(train=bt_train, test=bt_test, cl=bt_train_labels, k=9)
+# ct_9  <-  CrossTable(x=bt_test_labels, y=bt_test_pred9, prop.chisq = F)
+# mod9_TN <- ct_9$prop.row[1, 1]  
+# mod9_FP <- ct_9$prop.row[1, 2]
+# mod9_FN <- ct_9$prop.row[2, 1]
+# mod9_TP <- ct_9$prop.row[2, 2]
+```
+
+```{r eval=T, echo=T, message=F, warning=F}
+bt_test_pred <- knn(train=bt_train, test=bt_test,  cl=bt_train_labels, prob=T, k=12) # retrieve Probabilities
+bt_test_predBin <- ifelse(attributes(bt_test_pred)$prob > 0.6, "Recidivism", "Control")          # Binarize the probabilities
+CT <- CrossTable(x=bt_test_labels, y=bt_test_predBin, prop.chisq = F)
+mod12_TN <- CT$prop.row[1, 1]  
+mod12_FP <- CT$prop.row[1, 2]
+mod12_FN <- CT$prop.row[2, 1]
+mod12_TP <- CT$prop.row[2, 2]
+
+mod12_sensi <- mod12_TN/(mod12_TN+mod12_FP) 
+mod12_speci <- mod12_TP/(mod12_TP+mod12_FN)
+print(paste0("kNN model k=12 Sensitivity=", mod12_sensi))
+print(paste0("kNN model k=12 Specificity=", mod12_speci))
+
+
+table(bt_test_labels, bt_test_predBin)
+```
+
+<!-- Combining the results, we get the following table: -->
+
+<!-- k value | Total unmatched counts| Accuracy -->
+<!-- --------|-----------------------|---------- -->
+<!-- 1|9|0.82 -->
+<!-- **5**|**5**|**0.90** -->
+<!-- 11|9|0.82 -->
+<!-- 21|12|0.76 -->
+<!-- 27|14|0.72 -->
+
+Therefore, `model12`, corresponding to $k=12$, yields a marginal accuracy on the testing cases.
+
+Another strategy for model validation and improvement involves the use of the `caret::confusionMatrix()` method, which reports several complementary metrics quantifying the performance of the prediction model.
+
+Let's examine deeper the performance of `model12` to predict *recidivism*.
+
+```{r eval=TRUE}
+# corr12 <- cor(as.numeric(bt_test_labels), as.numeric(bt_test_predBin))
+# corr12
+# plot(as.numeric(bt_test_labels), as.numeric(bt_test_pred9))
+# table(as.numeric(bt_test_labels), as.numeric(bt_test_pred9))
+
+# install.packages("caret")
+library("caret")
+
+# compute the accuracy, LOR, sensitivity/specificity of 3 kNN models
+
+# Model 12: bt_test_predBin
+#confusionMatrix(as.numeric(bt_test_labels), as.numeric(bt_test_pred1))
+confusionMatrix(as.factor(bt_test_labels), as.factor(bt_test_predBin))
+```
+
+Finally, we can use a 3D plot to display the `confusionMatrix()` results of `model12` (mod12_TN, mod12_FN, mod12_FP, mod12_TP).
+
+```{r eval=TRUE}
+# install.packages("scatterplot3d")
+library(scatterplot3d)
+grid_xy <- matrix(c(0, 1, 1, 0), nrow=2, ncol=2)
+intensity <- matrix(c(mod12_TN, mod12_FN, mod12_FP, mod12_TP), nrow=2, ncol=2)
+
+# scatterplot3d(grid_xy, intensity, pch=16, highlight.3d=TRUE, type="h", main="3D Scatterplot") 
+
+s3d.dat <- data.frame(cols=as.vector(col(grid_xy)), 
+      rows=as.vector(row(grid_xy)), 
+      value=as.vector(intensity))
+scatterplot3d(s3d.dat, pch=16, highlight.3d=TRUE, type="h", xlab="real", ylab="predicted", zlab="Agreement", 
+              main="3D Scatterplot: Model12 Results (FP, FN, TP, TN)") 
+
+# scatterplot3d(s3d.dat, type="h", lwd=5, pch=" ", xlab="real", ylab="predicted", zlab="Agreement", main="Model9 Results (FP, FN, TP, TN)")
+
+plot_ly(x = c("TN", "FN", "FP", "TP"),
+  y = c(mod12_TN, mod12_FN, mod12_FP, mod12_TP),
+  name = c("TN", "FN", "FP", "TP"), type = "bar", color=c("TN", "FN", "FP", "TP")) %>% 
+  layout(title="Confusion Matrix", 
+           legend=list(title=list(text='<b> Model k=12; Performance Metrics </b>')), 
+           xaxis=list(title='Metrics'), yaxis=list(title='Probability'))
+
+# plot_ly(type = 'barpolar', r = c(0.2, 0.8, 0.2, 0.85),theta = c(0, 90, 180, 360)) %>%
+#     layout(polar = list(radialaxis = list(visible = T,range = c(0,10)),
+#       sector = c(0,360), radialaxis = list(tickfont = list(size = 45)),
+#       angularaxis = list(tickfont = list(size = 10))))
+```
+
+## Case Study: Predicting Galaxy Spins
+
+Let's now use the [SOCR Case-Study 22 (22_SDSS_GalaxySpins_Case_Study)](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/22_SDSS_GalaxySpins_Case_Study) to train a kNN classifier on $49,122$ (randomly selected out of a total $51,122$) training cases and test the accuracy of predicting the Galactic Spin (L=left or R=right hand spin) on the remaining (randomly chosen testing $2,000$ galaxies). Evaluate and report the classifier performance. Try to compare and improve the performance of several independent classifiers, e.g., kNN, [naive Bayesian](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/07_NaiveBayesianClass.html), [LDA](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/07_NaiveBayesianClass.html).
+
+Report/graph the training, testing and [CV error rates](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/06_LazyLearning_kNN.html#38_testing_alternative_values_of_k) for different k parameters and justify your "optimal" choice for $k=k_o$. How good is your Galactic spin classifier? Provide some visual and numeric evidence. 
+
+Some sample code to get you started is included below.
+
+```{r message=F, error=F, eval=T, warning=F}
+#loading libraries
+library(e1071); library(caret); library(class); library(gmodels)
+
+#loading Galaxy data
+galaxy_data <- read.csv("https://umich.instructure.com/files/6105118/download?download_frd=1", sep=",")
+
+#View(head(galaxy_data))
+dim(galaxy_data)
+
+#dropping Galaxy ID
+galaxy_data <- galaxy_data[ , -1]
+str(galaxy_data)
+
+#randomly assigning 2k for validation purposes
+subset_int <- sample(nrow(galaxy_data), 2000) 
+
+#training data, dropping the label
+galaxy_data_train <- galaxy_data[-subset_int, -3]; dim(galaxy_data_train) # test
+galaxy_data_test <- galaxy_data[subset_int, -3]; dim(galaxy_data_test);
+
+#summary(galaxy_data_train)
+# labels
+galaxy_train_labels <- as.factor(galaxy_data[-subset_int, 3])
+galaxy_test_labels <- as.factor(galaxy_data[subset_int, 3])
+
+#summary(galaxy_data_test)
+# trying to figure out the best K for this kNN model
+# testing alternative values of K
+gd_test_pred1<-knn(train=galaxy_data_train, test=galaxy_data_test,
+                   cl=galaxy_train_labels, k=1)
+gd_test_pred10<-knn(train=galaxy_data_train, test=galaxy_data_test,
+                    cl=galaxy_train_labels, k=10)
+gd_test_pred20<-knn(train=galaxy_data_train, test=galaxy_data_test,
+                     cl=galaxy_train_labels, k=20)
+gd_test_pred50<-knn(train=galaxy_data_train, test=galaxy_data_test,
+                    cl=galaxy_train_labels, k=50)
+ct_1<-CrossTable(x=galaxy_test_labels, y=gd_test_pred1, prop.chisq = F)
+confusionMatrix(galaxy_test_labels, gd_test_pred1)
+
+#Alternatively we can use the tuning function
+knn.tune = tune.knn(x= galaxy_data_train, y = galaxy_train_labels, k = 1:20,
+                    tunecontrol=tune.control(sampling = "fix") , fix=10)
+
+#Summarize the resampling results set
+summary(knn.tune)
+# plot(knn.tune)
+df <- as.data.frame(cbind(x=knn.tune$performance$k, y=knn.tune$performance$error))
+plot_ly(df, x = ~x, y = ~y, type = "scatter", mode = "markers+lines") %>% 
+  add_segments(x=1, xend=1, y=0.0, yend=0.45, type = "scatter", 
+               line=list(color="gray", width = 2, dash = 'dot'), mode = "lines", showlegend=FALSE) %>% 
+  add_segments(x=5, xend=5, y=0.0, yend=0.45, type = "scatter", 
+               line=list(color="lightgray", width = 2, dash = 'dot'), mode = "lines", showlegend=FALSE) %>% 
+  layout(title='Galaxy-spin k-NN Prediction - Error Rate against k', 
+           xaxis=list(title='Number of nearest neighbors (k)'), yaxis=list(title='Classification error'))
+```
+
+
+# Probabilistic Learning - Naive Bayes Classification
+
+In the previous section, we described the types of machine learning methods and presented a lazy learning classification of numerical data using k-nearest neighbors. What about nominal features or textual data? In this section, we will begin to explore some classification techniques for categorical data. Specifically, we will (1) present the Naive Bayes algorithm, (2) review its assumptions, (3) discuss Laplace estimation, and (4) illustrate the naive Bayesian classifier on a Head and Neck Cancer Medication case-study. Later, in [Chapter 7](https://socr.umich.edu/DSPA2/DSPA2_notes/07_NLP_TM_QualLearning_AprioriAssocRuleLearning.html), we will also discuss text mining and natural language processing of unstructured text data.
+
+## Overview of the Naive Bayes Method
+
+It may be useful to first review the [basics of probability theory and Bayesian inference](https://wiki.socr.umich.edu/index.php/AP_Statistics_Curriculum_2007_Prob_Rules). Bayes classifiers use training data to calculate an observed probability of each class based on all the features. The probability links feature values to classes like a map. When labeling the test data, we utilize the feature values in the test data and the "map" to classify our test data with the most likely class. This idea seems simple but the corresponding algorithmic implementations might be very sophisticated.
+
+The best scenario of accurately estimating the probability of an outcome-class map is when all features simultaneously contribute to the Bayes classifier. The naive Bayes algorithm is frequently used for text classifications. The maximum *a posteriori* assignment to the class label is based on obtaining the conditional probability density function for each feature given the value of the class variable.
+
+## Model Assumptions
+
+The method name, Naive Bayes, suggests the dependence of the technique on some simple ("naive") assumptions. Its most important assumption is that all of the features are expected to be *equally important* and *independent*. This rarely happens in real world data. However, sometimes even when the assumptions are violated, Naive Bayes still performs fairly well, particularly when the number of features $p$ is large. This is why the Naive Bayes algorithm is often used as a powerful text classifier.
+
+There are interesting [relations between QDA (Quadratic Discriminant Analysis), LDA (Linear Discriminant Analysis) and Naive Bayes classification](https://wiki.math.uwaterloo.ca/statwiki/index.php?title=stat841f10#LDA_x_QDA). Additional information about [LDA and QDA is available here ](https://wiki.socr.umich.edu/index.php/SMHS_BigDataBigSci_CrossVal_LDA_QDA).
+
+## Bayes Formula
+
+Let's first define the set-theoretic Bayes formula. We assume that $B_i$'s are mutually exclusive events, for all $i= 1, 2, \cdots, n$, where *n* represents the number of features. If $A$ and $B$ are two events, the Bayes conditional probability formula is as follows:
+$$Posterior\, Probability=\frac{likelihood\times Prior\, Probability}{Marginal\, Likelihood}$$
+
+Symbolically,
+
+$$P(A|B)=\frac{P(B|A)P(A)}{P(B)}.$$
+When $B_i's$ represent a partition of the event space, $S=\cup {B_i}$ and $B_i\cap B_j = \emptyset,\ \forall  i\not= j$. So we have:
+
+$$P(A|B)=\frac{P(B|A)\times P(A)}{P(B|B_1)\times P(B_1) + P(B|B_2)\times P(B_2) + \cdots + P(B|B_n)\times P(B_n)}.$$
+
+Now, let's represent the Bayes formula in terms of classification using observed features. Having observed $n$ features, $F_i$, for each of $K$ possible `class` outcomes, $C_k$.  Using the Bayes' theorem, by decomposing the conditional probability, the Bayesian classifier may be reformulated to make it more tractable.
+
+$$ P(C_k \mid F_1, \dots, F_n)= \frac{P(F_1, \dots, F_n|C_k)P(C_k)}{P(F_1, \dots, F_n)}.$$
+
+In the above expression, only the numerator depends on the class label, $C_k$, as the values of the features $F_i$ are observed (or imputed) making the denominator constant. Let's focus on the numerator.
+
+The numerator essentially represents the `joint probability model`:
+
+$$P(F_1, \dots, F_n|C_k)P(C_k) = \underbrace{P(F_1, \cdots, F_n, C_k)}_{\text{joint model}}.$$
+
+Repeatedly using the chain rule and the definition of conditional probability simplifies this to:
+
+$$P(F_1, \dots ,F_n, C_{k})=P(F_1| F_2, \dots ,F_n, C_{k})\times P(F_2, \dots ,F_n, C_{k})=$$ 
+$$=P(F_1| F_2, \dots ,F_n, C_{k})\times P(F_2|F_3, \dots ,F_n, C_{k})\times P(F_3, \dots ,F_n, C_{k})=$$ 
+$$=P(F_1| F_2, \dots ,F_n, C_{k})\times P(F_2|F_3, \dots ,F_n, C_{k})\times P(F_3|F_4, \dots ,F_n, C_{k})\times P(F_4, \dots ,F_n, C_{k})=$$ 
+$$=\cdots=$$
+$$=P(F_1| F_2, \dots ,F_n, C_{k})\times P(F_2|F_3, \dots ,F_n, C_{k})\times P(F_3|F_4, \dots ,F_n, C_{k})\times \cdots \times P(F_n| C_{k})\times P(C_k)$$
+
+Note that the "naive" qualifier in the method name, *Naive Bayes classifier*, is attributed to the oversimplification of the conditional probability. Assuming each feature $F_i$ is conditionally statistical independent of every other feature 
+$F_j, \ \forall j\neq i$, given the category $C_k$, we get:
+
+$$P(F_i | F_{i+1}, \dots , F_{n}, C_k ) = P(F_i | C_k).$$
+
+This reduces the joint probability model to:
+
+$$P(F_1, \dots ,F_n, C_{k})=
+P(F_1| C_{k})\times P(F_2| C_{k})\times P(F_3| C_{k})\times \cdots \times P(F_n| C_{k})\times P(C_k)$$
+
+Therefore, the joint model is:
+
+$$P(F_1, \dots ,F_n, C_{k})=
+P(C_k) \prod_{i=1}^n {P(F_i| C_{k})}$$
+
+Essentially, we express the probability of class level $L$ given an observation, represented as a set of *independent features* $F_1, F_2, \cdots, F_n$. Then the posterior probability that the observation is in class $L$ is equal to:
+
+$$P(C_L|F_1, \cdots, F_n)=\frac{P(C_L)\prod_{i=1}^nP(F_i|C_L)}{\prod_{i=1}^nP(F_i)},$$
+where the denominator, $\prod_{i=1}^nP(F_i)$, is a scaling factor that represents the marginal probability of observing all features jointly.
+
+For a given case $X=(F_1, F_2, \cdots, F_n)$, i.e., given vector of *features*, the naive Bayes classifier assigns the **most likely class** $\hat{C}$ by calculating $\frac{P(C_L)\prod_{i=1}^nP(F_i|C_L)}{\prod_{i=1}^nP(F_i)}$ for all class labels $L$, and then assigning the class $\hat{C}$ corresponding to the maximum posterior probability. Analytically, $\hat{C}$ is defined by:
+$$ \hat{C} = \arg\max_L{\frac{P(C_L)\prod_{i=1}^nP(F_i|C_L)}{\prod_{i=1}^nP(F_i)}}.$$
+
+As the denominator is static for $L$, the posterior probability above is maximized when the numerator is maximized, i.e., 
+$\hat{C} = \arg\max_L {P(C_L)\prod_{i=1}^nP(F_i|C_L)}.$
+
+The contingency table below illustrates schematically how the Bayesian, marginal, conditional, and joint probabilities may be calculated for a finite number of features (columns) and classes (rows).
+
+$Features\\Classes$ | $F_1$ | $F_2$ | $\cdots$ | $F_n$ | Total
+--------|-------|-------|-------|-------|------
+ $C_1$  | $\cdots$ | $\cdots$ | $\cdots$ | $\cdots$ | Marginal $P(C_1)$
+ $C_2$  | $\cdots$ | $\cdots$ | $\cdots$ | Joint $P(C_2, F_n)$ |  $\cdots$ 
+ $\cdots$  | $\cdots$ | $\cdots$ | $\cdots$ | $\cdots$ | $\cdots$ 
+ $C_L$  | Conditional $P(F_1\mid C_L)=\frac{P(F_1,C_L)}{P(C_L)}$ | $\cdots$ | $\cdots$ | $\cdots$  | $\cdots$ 
+ Total | | Marginal $P(F_2)$ | $\cdots$ | $\cdots$ | $N$
+  
+In the [DSPA2 Appendix](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_01_BayesianInference_MCMC_Gibbs.html), we provide additional technical details, code, and applications of Bayesian simulation, modeling and inference.
+
+## The Laplace Estimator
+
+If at least one $P(F_i|C_L)=0$ then $P(C_L|F_1, \cdots, F_n)=0$, which means the probability of being in this class is 0. However, $P(F_i|C_L)=0$ could happen by random chance, e.g., when selecting the training data.
+
+One of the solutions to this scenario is **Laplace estimation**, also known as **Laplace smoothing**, which can be accomplished in two ways. One is to add a small number to each count in the frequency table, which allows each class-feature combination to be at least one in the training data. Then $P(F_i|C_L)>0$ for all $i$ and we avoid degenerate cases. Another strategy is to add some small value, $\epsilon$, to the numerator and denominator when calculating the posterior probability. Note that these small perturbations of the denominator should be larger than the changes in the numerator to avoid trivial ($0$) posterior for another class.
+
+## Case Study: Head and Neck Cancer Medication
+
+### Step 1: Collecting Data
+
+We utilize the Inpatient Head and Neck Cancer Medication data for this case study, which is the case study 14 in our data archive.
+
+Variables:
+
+ - **PID:** coded patient ID 
+ - **ENC_ID:** coded encounter ID 
+ - **Seer_stage:** SEER cancer stage (0 =In situ, 1=Localized, 2=Regional by direct extension, 3=Regional to lymph nodes, 4=Regional (both codes 2 and 3), 5=Regional, NOS, 7= Distant metastases/systemic disease, 8=Not applicable, 9=Unstaged, unknown, or unspecified). See: [SSM](https://seer.cancer.gov/tools/ssm). 
+ - **Medication_desc:** description of the chemical composition of the medication 
+ - **Medication_summary:** brief description about medication brand and usage 
+ - **Dose:** the dosage in the medication summary 
+ - **Unit:** the unit for dosage in the Medication_summary
+ - **Frequency:** the frequency of use in the Medication_summary
+ - **Total_dose_count:** total dosage count according to the Medication_summary
+
+### Step 2: Exploring and preparing the data
+
+Let's first load the cancer dataset.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med<-read.csv("https://umich.instructure.com/files/1614350/download?download_frd=1", stringsAsFactors = FALSE)
+str(hn_med)
+```
+
+Change the `seer_stage` (cancer stage indicator) variable into a factor.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med$seer_stage <- factor(hn_med$seer_stage)
+str(hn_med$seer_stage)
+table(hn_med$seer_stage)
+```
+
+#### Data preparation - processing text data for analysis
+
+As you can see, the `medication_summary` contains a great amount of text. We should do some text mining to prepare the data for analysis. In R, the `tm` package is a good choice for text mining.
+
+```{r eval=T, message=F, warning=F}
+# install.packages("tm", repos = "https://cran.us.r-project.org")
+# requires R V.3.3.1 +
+library(tm)
+```
+
+First step for text mining is to convert text features (text elements) into a `corpus` object, which is a collection of text documents.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med_corpus <- Corpus(VectorSource(hn_med$MEDICATION_SUMMARY))
+print(hn_med_corpus)
+```
+
+After we constructed the `corpus` object, we could see that we have 662 documents. Each document represents an encounter (e.g., notes on medical treatment) for a patient.
+
+```{r eval=T, warning=F, error=F, message=F}
+inspect(hn_med_corpus[1:3])
+hn_med_corpus[[1]]$content
+hn_med_corpus[[2]]$content
+hn_med_corpus[[3]]$content
+```
+
+There are unwanted punctuations and other symbols in the corpus document that we want to remove. We use the `tm_map()` function for the cleaning.
+
+```{r eval=T, warning=F, error=F, message=F}
+corpus_clean <- tm_map(hn_med_corpus, tolower)
+corpus_clean <- tm_map(corpus_clean, removePunctuation)
+# corpus_clean <- tm_map(corpus_clean, stripWhitespace)
+corpus_clean <- tm_map(corpus_clean, removeNumbers)
+corpus_clean <- tm_map(corpus_clean, stripWhitespace)
+# corpus_clean <- tm_map(corpus_clean, PlainTextDocument)
+```
+
+The above lines of code changed all the characters to lowercase, removed all punctuations and extra white spaces (typically created by deleting punctuations), and removed numbers (we could also convert the corpus to plain text).
+
+```{r eval=T, warning=F, error=F, message=F}
+inspect(corpus_clean[1:3])
+corpus_clean[[1]]$content
+corpus_clean[[2]]$content
+corpus_clean[[3]]$content
+```
+
+`DocumentTermMatrix()` function can successfully tokenize the medication summary into words. It can count frequent terms in each document in the corpus object.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med_dtm <- DocumentTermMatrix(corpus_clean)
+```
+
+#### Data preparation - creating training and test datasets
+
+Just like in [the kNN method](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html), we need to separate the dataset into training and test subsets. We have to subset the raw data with other features, the corpus object and the document term matrix.
+
+```{r eval=T, warning=F, error=F, message=F}
+set.seed(12345)
+subset_int <- sample(nrow(hn_med),floor(nrow(hn_med)*0.8))  # 80% training + 20% testing
+hn_med_train <- hn_med[subset_int, ]
+hn_med_test <- hn_med[-subset_int, ]
+hn_med_dtm_train <- hn_med_dtm[subset_int, ]
+hn_med_dtm_test <-hn_med_dtm[-subset_int, ]
+corpus_train <- corpus_clean[subset_int]
+corpus_test  <- corpus_clean[-subset_int]
+
+# hn_med_train<-hn_med[1:562, ]
+#hn_med_test<-hn_med[563:662, ]
+# hn_med_dtm_train<-hn_med_dtm[1:562, ]
+# hn_med_dtm_test<-hn_med_dtm[563:662, ]
+#corpus_train<-corpus_clean[1:562]
+#corpus_test<-corpus_clean[563:662]
+```
+
+Let's examine the distribution of **seer stages** in the training and test datasets.
+
+```{r eval=T, warning=F, error=F, message=F}
+prop.table(table(hn_med_train$seer_stage))
+prop.table(table(hn_med_test$seer_stage))
+```
+
+We can separate (dichotomize) the [seer_stage](https://seer.cancer.gov/tools/ssm/intro.pdf) into two categories: 
+
+* *no stage* or *early stage* cancer (seer in [0;4]), and 
+* *later stage* cancer (seer in [5;9]). 
+
+Of course, other binarizations are possible as well. Note that `a %in% b` is an intuitive interface to `match` and acts as a binary operator returning a logical vector (T or F) indicating if there is a match between the left and right operands. 
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med_train$stage <- hn_med_train$seer_stage %in% c(5:9)
+hn_med_train$stage <- factor(hn_med_train$stage, levels=c(F, T), labels = c("early_stage", "later_stage"))
+hn_med_test$stage  <- hn_med_test$seer_stage %in% c(5:9)
+hn_med_test$stage  <- factor(hn_med_test$stage, levels=c(F, T), labels = c("early_stage", "later_stage"))
+prop.table(table(hn_med_train$stage))
+prop.table(table(hn_med_test$stage))
+```
+
+#### Visualizing text data - word clouds
+
+A word cloud can help us visualize text data. More frequent words would have larger fonts in the figure, while less common words are appearing in smaller fonts. There is a `wordcloud` package in R that is commonly used for creating these figures.
+
+```{r eval=T, warning=F, error=F, message=F}
+# install.packages("wordcloud", repos = "https://cran.us.r-project.org")
+library(wordcloud)
+wordcloud(corpus_train, min.freq = 40, random.order = FALSE, colors=brewer.pal(5, "Dark2"))
+```
+
+The `random.order=FALSE` option makes more frequent words appear in the center of the word cloud. The `min.freq=40` option sets the cutoff word frequency to be at least 40 times in the corpus object. Therefore, the words must appear in at least 40 medication summaries to be shown on the graph.  
+
+We can also visualize the difference between early stages and later stages using this type of graph.
+
+```{r eval=T, warning=F, error=F, message=F}
+early <- subset(hn_med_train, stage=="early_stage")
+later <- subset(hn_med_train, stage=="later_stage")
+wordcloud(early$MEDICATION_SUMMARY, max.words = 20, colors=brewer.pal(3, "Dark2"))
+wordcloud(later$MEDICATION_SUMMARY, max.words = 20, colors=brewer.pal(3, "Dark2"))
+# tdm = as.matrix(hn_med_dtm)
+# tdm1 <- tdm[nchar(rownames(tdm)) < 15, ]
+# colnames(tdm1) <- hn_med_dtm$dimnames$Terms[1:14]
+# comparison.cloud(tdm1, random.order=FALSE,
+#                  colors = c("#00B2FF", "red", "#FF0099", "#6600CC", "green", "orange", "blue", "brown"),
+#                  title.size=1, min.words=5, max.words=50, scale=c(1.5, 0.4),rot.per=0.4)
+```
+
+We can see that the frequent words are somewhat different in the medication summaries of the *early* and *later* stage patients.
+
+#### Data preparation - creating indicator features for frequent words
+
+For simplicity, we utilize the medication summary as the only feature to classify cancer stages. You may recall that [earlier in the kNN section](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html) we used the native data features to obtain kNN classifications. *Now, we are going to make frequencies of words as text-derived data features*.
+
+```{r eval=T, warning=F, error=F, message=F}
+summary(findFreqTerms(hn_med_dtm_train, 5))
+hn_med_dict <- as.character(findFreqTerms(hn_med_dtm_train, 5))
+hn_train <- DocumentTermMatrix(corpus_train, list(dictionary=hn_med_dict))
+hn_test  <- DocumentTermMatrix(corpus_test, list(dictionary=hn_med_dict))
+```
+
+The above code limits the document term matrix with words that have appeared in at least 5 different documents. This created (about) 118 features for us to use.
+
+The Naive Bayes classifier trains on data with categorical features, as it uses frequency tables for learning the data affinities. To create the combinations of *class* and *feature values* comprising the frequency-table (matrix), all features must be categorical. For instance, numeric features have to be converted (binned) into categories. Thus, we need to transform our *word count features* into categorical data. One way to achieve this is to change the count into an indicator of whether this word appears in the document describing the patient encounter. We can create a simple function to convert the presence of a specific word (column) in an encounter document (row) to a binary "Yes" (present) or "No" (not present).
+
+```{r eval=T, warning=F, error=F, message=F}
+convert_counts <- function(wordFreq) {
+  wordFreq <- ifelse(wordFreq > 0, 1, 0)
+  wordFreq <- factor(wordFreq, levels = c(0, 1), labels = c("No", "Yes"))
+  return(wordFreq)
+}
+```
+
+We employ hard-thresholding here `x<-ifelse(x>0, 1, 0)`. This is saying that if we have an `x` that is greater than 0, we assign value 1 to it, otherwise the value is set to 0.
+
+Now let's apply our own function `convert_counts()` on each column (`MARGIN=2`) of the training and testing datasets.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_train <- apply(hn_train, MARGIN = 2, convert_counts)
+hn_test <- apply(hn_test, MARGIN = 2, convert_counts)
+
+# Check the structure of hn_train and hn_train:
+# head(hn_train); dim(hn_train)
+```
+
+So far, we successfully created indicators for words that appeared at least in 5 different documents in the training data.
+
+### Step 3 - training a model on the data
+
+The package we will use for the Naive Bayes classifier is called `e1071`.
+```{r eval=T, warning=F, error=F, message=F}
+# install.packages("e1071", repos = "https://cran.us.r-project.org")
+library(e1071)
+```
+
+The function `naiveBayes()` has following components:
+
+`m<-naiveBayes(train, class, laplace=0)`
+
+ - *train*: data frame containing numeric training data (features)
+ - *class*: factor vector with the class for each row in the training data.
+ - *laplace*: positive double controlling Laplace smoothing; default is $0$ and disables Laplace smoothing.
+
+Next, we will invoke the `naiveBayes()` classifier.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_classifier <- naiveBayes(hn_train, hn_med_train$stage)
+```
+
+Then we can use the classifier to make predictions using `predict()`. Recall that when we presented the AdaBoost example in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html), we saw the general machine learning and artificial intelligence protocol, from *training*, to *prediction*, and *assessment.*
+
+For most supervised and unsupervised methods, the generic function `predict()` has the following syntax:
+
+`p <- predict(m, test, type="class")`
+
+ - *m*: classifier, in our case `naiveBayes()`
+ - *test*: test data frame or matrix
+ - *type*: either `"class"` or `"raw"` specifies whether the predictions should be the most likely class value or the raw predicted probabilities.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_test_pred <- predict(hn_classifier, hn_test)
+```
+
+### Step 4 - evaluating model performance
+
+Similarly to the approach in the earlier kNN approach, we can use *cross table* to compare the predicted vs. the true classes using the testing data.
+
+```{r eval=T, warning=F, error=F, message=F}
+library(gmodels)
+CT <- CrossTable(hn_test_pred, hn_med_test$stage)
+CT
+mod_TN <- CT$prop.row[1, 1]  
+mod_FP <- CT$prop.row[1, 2]
+mod_FN <- CT$prop.row[2, 1]
+mod_TP <- CT$prop.row[2, 2]
+# caret::confusionMatrix(hn_test_pred, hn_med_test$stage)
+# CT$prop.row
+library(plotly)
+plot_ly(x = c("TN", "FN", "FP", "TP"),
+  y = c(mod_TN, mod_FN, mod_FP, mod_TP),
+  name = c("TN", "FN", "FP", "TP"), type = "bar", color=c("TN", "FN", "FP", "TP")) %>% 
+  layout(title="Confusion Matrix", 
+           legend=list(title=list(text='<b> Metrics </b>')), 
+           xaxis=list(title='Metrics'), yaxis=list(title='Probability'))
+```
+
+It may be worth quickly looking forward in [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html) where we present a summary table containing commonly used measures for evaluating the performance of binary tests, classifiers, or predictions.
+
+In this case, the *prediction accuracy* of the Naive Bayes classifier, assessed on the testing dataset, is:
+
+$$ACC = \frac{T P + T N}{T P + F P + F N + T N } = \frac{78}{133}=0.59.$$
+
+From the cross table we can see that our testing-data prediction accuracy is $\frac{78}{133}=0.59$.
+
+### Step 5 - improving model performance
+
+After setting `laplace=5`, the accuracy goes to $acc=\frac{87}{133}=0.65$. Although there is a small difference in accuracy, in general, such protocol alterations may increase or decrease the rate of true *later stage* patient identification using testing and validation data.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med_dict <- as.character(findFreqTerms(hn_med_dtm_train, 5))
+hn_train <- DocumentTermMatrix(corpus_train, list(dictionary=hn_med_dict))
+hn_test  <- DocumentTermMatrix(corpus_test, list(dictionary=hn_med_dict))
+
+set.seed(1234)
+# View(as.data.frame(inspect(hn_train)))
+traindf <- data.frame(stage=hn_med_train$stage, as.matrix(hn_train))
+testdf <- data.frame(stage=hn_med_test$stage, as.matrix(hn_test))
+
+# for Training and Testing data, transform predictors/features to factors
+for (cols in names(traindf)) traindf[[cols]] <- factor(traindf[[cols]])
+for (cols in names(testdf)) testdf[[cols]] <- factor(testdf[[cols]])
+
+# check variable types
+# str(traindf)
+
+# run NB classifier (for cancer stage)
+hn_classifier <- naiveBayes(traindf[,-1], traindf$stage, laplace = 5, type = "class")
+hn_test_pred1 <- predict(hn_classifier, testdf)
+caret::confusionMatrix(hn_test_pred1, testdf$stage)
+```
+
+Accuracy is $\frac{87}{133} = 0.65$. This is a marginal performance improvement, compared to the prior ($laplace=0$) default model. Notice that choosing a different Laplace smoothing parameter alters the balance between the true/false and positive/negative elements in the $2\times 2$ confusion matrix.
+
+### Step 6 - compare Naive Bayesian vs. LDA
+As mentioned earlier, Naive Bayes with normality assumption is a special case of Discriminant Analysis. It might be interesting to compare the prediction results of *Naive Bayes* and *LDA* classification. 
+
+*Note*: LDA assumes the predictors are jointly approximately normally distributed.
+
+```{r, eval=TRUE, message=F, warning=F}
+library(MASS)
+# df_hn_train = data.frame(lapply(as.data.frame(hn_train),as.numeric), 
+#                          stage = hn_med_train$stage)
+# df_hn_test = data.frame(lapply(as.data.frame(hn_test),as.numeric), 
+#                         stage = hn_med_test$stage)
+
+library("dplyr")
+binarizeFunction <- function(x) { ifelse(x=="Yes", 1,0) }
+
+#  A function to Convert Categorical variables to numeric
+cat2Numeric <- function (dfInput) {
+  df = as.data.frame(lapply( as.data.frame(dfInput), factor)) %>%
+                       mutate_all(binarizeFunction)
+   return(df)
+}
+
+# define the numeric DF of predictors (X) and outcome (Y=stage)
+df_hn_train = data.frame(as.matrix(hn_train), stage = as.numeric(hn_med_train$stage))
+df_hn_test = data.frame(as.matrix(hn_test), stage = as.numeric(hn_med_test$stage))
+
+# Remove the multicollinearity - this should be done via VIF assessment, 
+#      but for now, just take the first few predictors
+df_hn_train <- df_hn_train[ , c(1:34, 40:50, 60:70, 109)]
+df_hn_train$stage <- hn_med_train$stage
+df_hn_test$stage <- hn_med_test$stage
+
+# Fit LDA
+set.seed(1234)
+hn_lda <- lda(data=df_hn_train, stage ~ .)
+# hn_pred = predict(hn_lda, df_hn_test[,-104])
+hn_pred = predict(hn_lda, df_hn_test)
+CrossTable(hn_pred$class, df_hn_test$stage)
+# caret::confusionMatrix(hn_pred$class, df_hn_test$stage)
+```
+
+There are differences in the performance of the Naive Bayesian ($acc=\frac{87}{133}=0.65$) and the LDA classifiers ($acc=\frac{92}{133}=0.69$) in terms of the overall accuracy. We can compare the type II (false-negative prediction) error rates of the naive Bayesian and the LDA classifiers are $\frac{40}{133}=0.30$ and $\frac{37}{133}=0.28$, respectively. Such differences may have a nuanced clinical importance for early detection of later-stage cancer. 
+
+Later, we will step deeper into the space of classification problems and see more sophisticated approaches, especially for difficult problems like cancer forecasting.
+
+# Decision Trees and Divide and Conquer Classification
+
+When classification models need to be apparent and directly mechanistically interpreted, [kNN and naive Bayes methods](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html) we saw earlier may not be useful, as they do not yield explicit classification rules.  In some cases, we need to derive direct and clear rules for our classification decisions. Just like a scoring criterion for driving ability, credit scoring, or grading rubrics, mechanistic understanding of the derived labeling, prediction, or decision making is often beneficial. For instance, we can assign credit or deduct a penalty for each driving operation task. These rules facilitate the critical decision to issue a driver license to applicants that are qualified, ready, and able to safely operate a specific type of a motor vehicle.    
+
+In this section, we will (1) see a simple motivational example of decision trees based on the Iris data, (2) describe decision-tree divide and conquer methods, (3) examine certain measures quantifying classification accuracy, (4) show strategies for pruning decision trees, (5) work through a Quality of Life in Chronic Disease case-study, and (6) review the *One Rule* and *RIPPER* algorithms.
+
+## Motivation
+
+Decision tree learners enable classification via tree structures modeling the relationships among all features and potential outcomes in the data. All decision trees begin with a trunk representing all points that are part of the same cohort. Iteratively, the trunk is split into narrower and narrower branches by forking-decisions based on the intrinsic data structure. At each step, splitting the data into branches may include binary or multinomial classification. The final decision is obtained when the tree branching process terminates. The terminal (leaf) nodes represent the action to be taken as the result of the series of branching decisions. For predictive models, the leaf nodes provide the expected forecasting results given the series of events in the decision tree. There are a number of `R` packages available for decision tree classification including `rpart`, `C5.0`, `party`, etc.
+
+## Hands-on Example: Iris Data
+
+Let's start by seeing a simple example using the Iris dataset, which we saw in [Chapter 2](https://www.socr.umich.edu/people/dinov/2017/Spring/DSPA_HS650/notes/02_ManagingData.html). The data features or attributes include `Sepal.Length`, `Sepal.Width`, `Petal.Length`, and `Petal.Width`, and classes are represented by the `Species taxa` (setosa, versicolor, and virginica).
+
+``` {r eval=T, echo=T, warning=F, message=FALSE}
+# install.packages("party")
+library("party")
+str(iris)
+head(iris); table(iris$Species)
+```
+
+The `ctree(Species ~ Sepal.Length + Sepal.Width + Petal.Length + Petal.Width, data=iris)` function will build a *conditional-inference decision tree*.
+
+``` {r eval=T, fig.width=13, fig.height=10}
+iris_ctree <- ctree(Species ~ Sepal.Length + Sepal.Width + Petal.Length + Petal.Width, data=iris)
+print(iris_ctree)
+plot(iris_ctree, cex=2)  #  party::plot.BinaryTree()
+
+head(iris); tail(iris)
+```
+
+Similarly, we can demonstrate a classification of the *iris taxa* via `rpart`:
+
+``` {r eval=T, warning=F, message=FALSE}
+# install from https://cran.r-project.org/web/packages/rpart.utils/
+library(rpart)
+library(rpart.utils)
+library(plotly)
+# iris_rpart = rpart(Species~., data=iris)
+# print(iris_rpart)
+# 
+# Use the `rattle::fancyRpartPlot` to generates an elegant plot
+# install.packages("rattle")
+# library(rattle)
+# fancyRpartPlot(iris_rpart, cex = 1.5, caption = "rattle::fancyRpartPlot (Iris flowers)")
+#
+#### Plot_ly decision tree visualization
+iris_rpart <- rpart(Species ~ . , method="class", data=iris)
+# printcp(iris_rpart)
+
+# Set the Graph/Tree Node names
+treeFrame <- iris_rpart$frame
+
+# Identify Leaf nodes
+isLeave <- treeFrame$var == "<leaf>"
+nodes <- rep(NA, length(isLeave))
+
+# Get the 3 Isis taxa labels: "setosa", "versicolor", "virginica" for all nodes (including leaves)
+ylevel <- attr(iris_rpart, "ylevels")
+nodes[isLeave] <- ylevel[treeFrame$yval][isLeave]
+nodes[!isLeave] <- labels(iris_rpart)[-1][!isLeave[-length(isLeave)]]
+
+# Get all Tree Graph Connections (source --> target)
+treeFrame <- iris_rpart$frame
+treeRules <- rpart.utils::rpart.rules(iris_rpart)
+
+targetPaths <- sapply(as.numeric(row.names(treeFrame)), 
+                      function(x) { strsplit(unlist(treeRules[x]),split=",") } )
+
+lastStop <- sapply(1:length(targetPaths),
+                   function(x) { targetPaths[[x]][length(targetPaths[[x]])] } )
+
+oneBefore <- sapply(1:length(targetPaths),
+                    function(x) { targetPaths[[x]][length(targetPaths[[x]])-1] } )
+
+# Initialize the tree edges
+target=c()
+source=c()
+values=treeFrame$n
+for(i in 2:length(oneBefore)) {
+  tmpNode=oneBefore[[i]]
+  q = which(lastStop==tmpNode)
+
+  q=ifelse(length(q)==0, 1, q)
+  source = c(source, q)
+  target = c(target, i)
+}
+source=source-1
+target=target-1
+
+# Display the sankey tree
+plot_ly(type = "sankey", orientation = "h", 
+             node = list(label = nodes, pad = 15, thickness = 30, line = list(color="black", width=1)),
+             link = list(source = source, target = target, value=values[-1])) %>% 
+ layout(title = "Iris rPart Decision Tree", font = list(size = 12))
+```
+
+## Decision Tree Overview
+
+The decision tree algorithm represents an upside down tree with lots of branches where a series of logical decisions are encoded as branches between nodes of the tree. The classification begins at the root node and goes through many branches until it gets to the terminal nodes. This iterative process splits the data into different classes by a rigid criterion. 
+
+### Divide and conquer
+
+Decision trees involve recursive partitioning that use data features and attributes to split the data into groups (nodes) of similar classes.
+
+To make classification trees using data features, we need to observe the pattern between the data features and potential classes using training data. We can draw scatter plots and separate groups that are clearly bundled together. Each of the groups is considered a segment of the data. After getting the approximate range of each feature value within each group, we can make the decision tree.
+
+$$X = [X_1, X_2, X_3, \cdots, X_k] = \underbrace{
+  \begin{pmatrix}
+  x_{1, 1} & x_{1, 2} & \cdots  & x_{1, k} \\
+  x_{2, 1} & x_{2, 2} & \cdots  & x_{2, k}  \\
+  \vdots & \vdots & \ddots  & \vdots  \\
+  x_{n, 1} & x_{n, 2} & \cdots  & x_{n, k} 
+  \end{pmatrix}
+}_{features/attributes}
+\left\}
+  \begin{array}{ll}
+           & \\
+           cases &  \\
+           & 
+        \end{array}
+              \right.$$
+
+The decision tree algorithms use a top-down recursive divide-and-conquer approach (sometimes they may also use bottom up or mixed splitting strategies) to divide and evaluate the splits of a dataset $D$ (input). The best split decision corresponds to the split with the **highest information gain**, reflecting a partition of the data into $K$ subsets (using divide-and-conquer). The iterative algorithm terminates when some stopping criteria are reached. Examples of stopping conditions used to terminate the recursive process include:
+
+ - All the samples belong to the same class, that is they have the same label and the sample is already `pure`.
+ - Stop when the majority of the points are already of the same class (relative to some error threshold).
+ - There are no remaining attributes on which the samples may be further partitioned.
+
+One objective criterion for splitting or clustering data into groups is based on the **information gain measure**, or **impurity reduction**, which can be used to select the test attribute at each node in the decision tree. The attribute with the highest information gain (i.e., greatest entropy reduction) is selected as the test attribute for the current node. This attribute minimizes the information needed to classify the samples in the resulting partitions. Three commonly used measures for evaluating the impurity reduction are: **Misclassification error**, **Gini index** and **Entropy**.
+
+For a given table containing pairs of attributes and their class labels, we can assess the homology of the classes in the table. A table is pure (homogeneous) if it only contains a single class. If a data table contains several classes, then we say that the table is impure or heterogeneous. This degree of impurity or heterogeneity can be quantitatively evaluated using impurity measures like *entropy*, *Gini index*, and *misclassification error*.
+  
+### Entropy
+
+The `Entropy` is an information measure of the amount of disorder or uncertainty in a system. Suppose we have a data set $D=(X_1, X_2, \cdots, X_n)$ that includes $n$ features (variables) and suppose each of these features can take on any of $k$ possible values (states). Then the cardinality of the entire system is $k^n$ as each of the features are assumed to have $k$ independent states, thus the total number of different datasets that can be expected is $\underbrace{k\times k\times k \times \cdots\times k}_{n}=k^n$. Suppose ${\displaystyle p_{1},p_{2},\cdots, p_k}$ represent the proportions of each class (note: $\sum_{i} {p_i}=1$) present in the child node that results from a split in a decision tree classifier. Then the entropy measure is defined by:
+
+$$Entropy(D)= - \sum_{i} {p_i \log_{2}{p_i}}.$$
+
+If each of the $1\le i\leq k$ states for each feature is equally likely to be observed with probability $p_i=\frac{1}{k}$, then the entropy is *maximized*:
+$$ Entropy(D)=- \sum_{i=1}^{k} {\frac{1}{k} \log{\frac{1}{k}}}=
+\sum_{i=1}^{k} {\frac{1}{k} \log{k}}= k{\frac{1}{k} \log{k}}=\log{k} = O(1).$$
+
+In the other extreme, the entropy is *minimized* when the probability of one class is unitary and all other ones are trivial. Note that
+by [L'Hopital's Rule](https://en.wikipedia.org/wiki/L%27H%C3%B4pital%27s_rule) $\lim_{x\longrightarrow 0} {(x\times \log(x))} =\lim_{x\longrightarrow 0} {\frac{\frac{1}{x}}{-\frac{1}{x^2}}}=\lim_{x\longrightarrow 0} {x}=0$ for a single class classification where the probability of one class is unitary ($p_{i_o}=1$) and the other ones are trivial ($p_{i\not= i_o}=0$):
+
+$$Entropy(D)=p_{i_o}\times \log{p_{i_o}} + \sum_{i\not=i_o}{p_i \log{p_i}}=$$
+$$=1\times \log{1} + \lim_{x \longrightarrow 0}{\sum_{i\not=i_o}{x \log(x)}} = 0+0=0.$$
+
+In classification settings, higher entropy (i.e., more disorder) corresponds to a sample that has a **mixed collection of labels**. Conversely, lower entropy corresponds to a classification where we have mostly pure partitions. In general, the entropy of a sample $D=\{X_1, X_2, \cdots, X_n\}$ is defined by:
+
+$$H(D) = - \sum_{i=1}^{k} {P(c_i|D) \log{P(c_i|D)}}, $$
+
+where $P(c_i|D)$ is the probability of a data point in $D$ being labeled with class $c_i$, and $k$ is the number of classes (clusters). $P(c_i|D)$ can be estimated from the observed data by:
+
+$$P(c_i|D) = \frac{P(D | c_i)P(c_i)}{P(D)} = \frac{|\{x_j \in D | x_j \text{ has label } y_j = c_i\}|}{|D|}.$$
+
+Observe that if the observations are evenly split among all $k$ classes then $P(c_i|D)=\frac{1}{k}$ and 
+$$H(D) = - \sum_{i=1}^{k} {\frac{1}{k} \log{\frac{1}{k}}}=\log{k}=O(1).$$
+
+At the other extreme, if all the observations are from one class then:
+$$H(D)=-1*\log(1)=0.$$
+
+Also note that the base of the log function is somewhat irrelevant and can be used to normalize (scale) the range of the entropy $\left ( \log_b(x) = \frac{\log_2(x)}{\log_2(b)}\right )$.
+
+The `Information gain` is the expected reduction in entropy caused by knowing the value of an attribute.
+
+### Misclassification Error and Gini Index
+
+Similar to the `Entropy` measure, the `Misclassification error` and the `Gini index` are also applied to evaluate information gain. The Misclassification error is defined by the formula:
+
+$$ME = 1-\max_k (p_k).$$
+
+And the Gini index is expressed as:
+$$GI = \sum_{k}p_k(1-p_k)=1-\sum_{k}p_k^2.$$
+
+
+### C5.0 Decision Tree Algorithm
+
+The C5.0 algorithm is a popular implementation of decision trees. To begin with, let's consider the term `purity`. If the segments of data contain a single class, they are considered `pure`. The `entropy` represents a mathematical formalism measuring purity for data segments.
+
+$$Entropy(S)=- \sum_{i=1}^c {p_i \log_2(p_i)},$$
+
+where `entropy` is the measurement, *c* is the number of total class levels, and $p_i$ refers to the proportion of observations that fall into each class (i.e., probability of a randomly selected data point to belong to the $i^{th}$ class level. For 2 possible classes, the `entropy` ranges from 0 to 1. For $n$ classes, the entropy ranges from $0$ to $\log_2(n)$, where the minimum entropy corresponds to data that is purely homogeneous (completely deterministic/predictable) and the maximum entropy represents completely disordered data (stochastic or extremely noisy). You might wonder what is the benefit of using entropy? The answer is because the smaller the entropy the more information is contained in the corresponding decision node split. Systems (data) with high entropy indicate significant information content (randomness) and data with low entropy indicates highly-compressible data with structure in it.
+
+If we only have one class in the segment then the entropy is trivial,  $Entropy(S)=(-1)\times \log_2(1)=0$. Let's try another example. If we have a segment of data that contains two classes, the first class contains 80% of the data and the second class contains the remaining 20%. Then, we have the following `entropy`: $Entropy(S)=-0.8\log_2(0.8)-0.2\log_2(0.2)=0.7219281.$
+
+For a two class problem, the relationship between class-proportions and entropy is illustrated in the following graph. Assume $x$ is the proportion for one of the classes.
+
+```{r eval=T, warning=F, error=F, message=F}
+N <- 1000
+set.seed(1234)
+x <- runif(N)
+x_ind <- sort(x)
+y <- -x_ind*log2(x_ind)-(1-x_ind)*log2(1-x_ind)
+
+# curve(-x*log2(x)-(1-x)*log2(1-x), col="red", main="Entropy for Different Proportions", xlab = "x (proportion for class 1)", ylab = "Entropy", lwd=3)
+# segments(0.8, 0, 0.8, 0.7219281, lwd=2, col="blue", lty = 2)
+# points(0.8, 0.7219281, col = "blue", pch=21, cex=2, lwd=2)
+# text(-0.02, 0.3, pos=4, srt = 90, "High-Structure/Low-Entropy")
+# text(0.48, 0.3, pos=4, srt = 90, "Low-Structure/High-Entropy")
+# text(0.96, 0.3, pos=4, srt = 90, "High-Structure/Low-Entropy")
+# text(0.65, 0.8, pos=4, "(x=0.8,Entr=0.72)")
+
+modelLabels <- c('High-Structure/Low-Entropy', 'Low-Structure/High-Entropy', 'High-Structure/Low-Entropy')
+modelLabels.x <- c(0.03, 0.5, 0.97)
+modelLabels.y <- c(0.5, 0.7, 0.5)
+modelLabels.col <- c("blue", "red", "blue")
+plot_ly() %>%
+  add_lines(x = ~x_ind, y = ~y, name="Entropy", line = list(width = 4)) %>%
+  add_segments(x=0.8, xend=0.8, y=0.001, yend = 0.7219281, showlegend=F) %>%
+  # add_segments(x=-0.2, xend=1.1, y=0, yend = 0, showlegend=F) %>%
+  # add_markers(x = ~x, y = ~y, name="Sample Simulated Data") %>%
+  #add_lines(x = ~c(point1$x,point2$x), y = ~c(point1$y,point2$y), name="Second PC, Orthogonal to lm(Y ~ X)", 
+  #          line = list(width = 4))  %>% 
+  add_markers(x = 0.8, y = 0.7219281, name="(x=0.8,Entropy=0.72)", marker = list(size = 20,
+                                    color = 'green', line = list(color = 'yellow', width = 2))) %>%
+  layout(title="Binary Class Entropy",
+         xaxis=list(title="Proportion of Class 1 Observations", scaleanchor="y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Entropy", scaleanchor  = "x", range=c(-0.1, 1.1)), legend = list(orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, textangle=90,
+                            font=list(size=15, color=modelLabels.col), showarrow=FALSE))
+```
+
+The closer the binary proportion split is to $0.5$ the greater the entropy. The more homogeneous the split (one class becomes the majority) the lower the entropy. **Decision trees** aim to find splits in the data that reduce the entropy, i.e., increasing the homogeneity of the elements within all classes.
+
+This measuring mechanism could be used to measure and compare the information we get using different features as data partitioning characteristics. Let's consider this scenario. Suppose $S$ and $S_1$ represent the entropy of the system before and after the splitting/partitioning of the data according to a specific data feature attribute ($F$). Denote the entropies of the original and the derived partition by $Entropy(S)$ and $Entropy(S_1)$, respectively. The **information we gained** from partitioning the data using this specific feature (F) is calculated as a change in the entropy:
+
+$$Gain(F) = Entropy(S)-Entropy(S_1)$$
+
+Note that smaller entropy $Entropy(S_1)$ corresponds with better classification and more information gained. A more complicated case would be that the partitions create multiple segments. Then, the entropy for each partition method is calculated by the following formula:
+
+$$Entropy(S)=\sum_{i=1}^n w_i Entropy(P_i)=\sum_{i=1}^{n} w_i \left (-\sum_{j=1}^{c}p_i\log_2(p_i)\right )$$
+
+Where $w_i$ is the proportion of examples falling in that segment and $P_i$ is segment *i*. Thus, the total entropy of a partition method is calculated by a weighted sum of entropies for each segment created by this method.
+
+When we get the maximum reduction in entropy with a feature ($F$) then the $Gain(F)=Entropy(S)$, since $Entropy(S_1)=0$. On the contrary, if we gain no information with this feature, we have $Gain(F)=0$.
+
+### Pruning the Decision Tree
+
+While making a decision tree, we can classify those observations using as many splits as we want. This eventually might over classify our data. An extreme example of this would be that we make each observation as a class, which is meaningless.
+
+So how to control the size of the decision tree? One possible solution is to make a cutoff for the number of decisions that a decision tree could make. Similarly, we can control the minimum number of points in each segment. This method is called *early stopping*, or *pre-pruning*, the decision tree. However, this might terminate the decision procedure ahead of some important pending partition.
+
+Another solution *post-pruning* can be applied when we begin with growing a big decision tree and subsequently reduce the branches based on error rates with penalty at the nodes. This is often more effective than the pre-pruning solution.
+
+The `C5.0 algorithm` uses the *post-pruning* method to control the size of the decision tree. It first grows an overfitting large tree that contains all the possibilities of partitioning. Then, it cuts out nodes and branches with little effect on classification errors. 
+
+## Case Study 1: Quality of Life and Chronic Disease
+
+### Step 1: Collecting Data
+
+Let's use the [Quality of life and chronic disease dataset](https://umich.instructure.com/files/481332/download?download_frd=1), `Case06_QoL_Symptom_ChronicIllness.csv`, which has 41 variables. [Detailed description for each variable is provided here](https://umich.instructure.com/files/399150/download?download_frd=1).
+
+Important variables:
+
+ - **Charlson Comorbidity Index**: ranging from 0-10. A score of 0 indicates no comorbid conditions. Higher scores indicate a greater level of comorbidity.
+ - **Chronic Disease Score**: A summary score based on the presence and complexity of prescription medications for select chronic conditions. A high score in decades the patient has severe chronic diseases. -9 indicates a missing value.
+
+### Step 2 - exploring and preparing the data
+
+Let's load the data first.
+```{r eval=T, warning=F, error=F, message=F}
+qol <- read.csv("https://umich.instructure.com/files/481332/download?download_frd=1")
+str(qol)
+```
+
+Most of the coded variables like `QOL_Q_01`(health rating) have ordinal values (1=excellent, 2=very good, 3=good, 4=fair, 5= poor, 6=no answer) and we can use the `table()` function to see their distributions. We also have some numerical variables in the dataset like `CHRONICDISEASESCORE`, which can be examined using `summary()`.
+
+Our outcome of interest `CHRONICDISEASESCORE` has some missing data. A simple way to address this is just to remove those observations with missing values. However, we could also try to impute the missing values using various imputation methods mentioned in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html).
+
+```{r eval=T, warning=F, error=F, message=F}
+table(qol$QOL_Q_01)
+qol <- qol[!qol$CHRONICDISEASESCORE==-9, ]
+summary(qol$CHRONICDISEASESCORE)
+```
+
+Let's create two classes using the variable `CHRONICDISEASESCORE`. We classify the patients with `CHRONICDISEASESCORE < mean(CHRONICDISEASESCORE)` as having minor disease and the rest as having severe disease. This dichotomous classification (`qol$cd`) may not be perfect and we will talk about alternative classification strategies in the practice problem at the end of the chapter. 
+
+```{r eval=T, warning=F, error=F, message=F}
+qol$cd <- qol$CHRONICDISEASESCORE > 1.497   # mean(qol$CHRONICDISEASESCORE)
+qol$cd <- factor(qol$cd, levels=c(F, T), labels = c("minor_disease", "severe_disease"))
+```
+
+#### Data preparation - creating random training and test datasets
+
+To make the `qol` data more organized, we can order the data by the variable `ID`.
+
+```{r eval=T, warning=F, error=F, message=F}
+qol <- qol[order(qol$ID), ]
+
+# Remove ID (col=1) # the clinical Diagnosis (col=41) will be handled later
+qol <- qol[ , -1]
+```
+
+Then, we are able to subset *training* and *testing* datasets. Here is an example of a *non-random split* of the entire data into training ($2114$) and testing ($100$) sets:
+
+```{r eval=T, warning=F, error=F, message=F}
+qol_train <- qol[1:2114, ]
+qol_test <- qol[2115:2214, ]
+```
+
+And here is an example of *random assignments* of cases into training and testing sets (80-20% split):
+
+```{r eval=T, warning=F, error=F, message=F}
+set.seed(1234)
+train_index <- sample(seq_len(nrow(qol)), size = 0.8*nrow(qol))
+qol_train <- qol[train_index, ]
+qol_test <- qol[-train_index, ]
+```
+
+We can quickly inspect the distributions of the training and testing data to ensure they are not vastly different. We can see that the classes are split fairly equal in training and test datasets.
+
+```{r eval=T, warning=F, error=F, message=F}
+prop.table(table(qol_train$cd))
+prop.table(table(qol_test$cd))
+```
+
+### Step 3 - training a model on the data
+
+In this section we are using the `C5.0()` function from the `C50` package.
+
+The function `C5.0()` has following components:
+
+`m<-C5.0(train, class, trials=1, costs=NULL)`
+
+ - *train*: data frame containing numeric training data (features)
+ - *class*: factor vector with the class for each row in the training data.
+ - *trials*: an optional number to control the boosting iterations (default=1).
+ - *costs*: an optional matrix to specify the costs of false positive and false negative.
+
+You could delete the `#` in the following code and run it in R to install and load the `C50` package.
+
+```{r eval=T, warning=F, error=F, message=F}
+# install.packages("C50")
+library(C50)
+```
+
+In the `qol` dataset (ID column is already removed), column 41 is the class vector (`qol$cd`) and column 40 is the numerical version of vector 41 (`qol$CHRONICDISEASESCORE`). We need to delete these two columns to create our training data that only contains feature variables that will be used for predicting the outcome.  
+
+```{r eval=T, warning=F, error=F, message=F}
+summary(qol_train[,-c(40, 41)])
+set.seed(1234)
+qol_model <- C5.0(qol_train[,-c(40, 41)], qol_train$cd)
+qol_model
+summary(qol_model)
+# plot(qol_model, subtree = 17) # ?C50::plot.C5.0	
+```
+
+The output of `qol_model` indicates that we have a tree that has 25 terminal nodes. `summary(qol_model)` suggests that the classification error for the decision tree is 28% percent in the training data.
+
+### Step 4 - evaluating model performance
+
+Now we can make predictions using the decision tree that we just built. The `predict()` function we will use is the same as the one we showed earlier, e.g., in the Naive Bayes classifier, and in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html). In general, `predict()` is extended by each specific type of regression, classification, clustering or forecasting machine learning technique. For example, `randomForest::predict.randomForest()` is invoked by:
+
+`predict(RF_model, newdata, type="response", norm.votes=TRUE, predict.all=FALSE, proximity=FALSE, nodes=FALSE, cutoff, ...),`
+
+where `type` represents the type of prediction output to be generated - "response" (equivalent to "class"), "prob" or "votes". Thus, the predicted values are either predicted "response" class labels, matrix of class probabilities, or vote counts.
+
+This time we are going to introduce the `confusionMatrix()` function under package `caret` as the evaluation method. When we combine it with a `table()` function, the output of the evaluation is very straight forward.
+
+```{r eval=T, message=F, warning=F}
+# See docs for predict # ?C50::predict.C5.0
+qol_pred <- predict(qol_model, qol_test[ ,-c(40, 41)])  # removing the last 2 columns CHRONICDISEASESCORE and cd, which represent the clinical outcomes we are predicting!
+# install.packages("caret")
+library(caret)
+confusionMatrix(table(qol_pred, qol_test$cd))
+```
+
+The Confusion Matrix shows prediction accuracy is about 63%, however, this may vary (see the corresponding confidence interval).
+
+### Step 5 - trial option
+
+Recall that the `C5.0()` function has a `trials` option, an integer specifying the number of boosting iterations. The default value of one indicates that a single model is used, and we can specify a larger number of iterations, for instance `trials=6`.
+
+```{r eval=T, warning=F, error=F, message=F}
+set.seed(1234)
+qol_boost6 <- C5.0(qol_train[ , -c(40, 41)], qol_train$cd, trials=6) 
+# try alternative values for the trials option
+qol_boost6
+```
+
+The size of the tree may vary with each repeated experiment and depends on the parameter settings.
+
+Since this is a fairly small tree we can visualize it by the function `plot()`. We also use the option `type="simple"` to make the tree look more condensed. We can also zoom in and display just a specific branch of the tree by using the `subtree` parameter.
+
+```{r fig.width=23, fig.height=10}
+plot(qol_boost6, type="simple")   # C50::plot.C5.0
+```
+
+**Caution**: The plotting of decision trees will fail if you have columns that start with numbers or special characters (e.g., "*5variable*", "*!variable*"). In general, avoid spaces, special characters, and other non-terminal symbols in column/row names.
+
+The next step is to demonstrate prediction and testing of the accuracy of a fitted decition tree model.
+
+```{r eval=T, warning=F, error=F, message=F}
+qol_boost_pred6 <- predict(qol_boost6, qol_test[ ,-c(40, 41)])
+confusionMatrix(table(qol_boost_pred6, qol_test$cd))
+```
+
+The accuracy is about 64%. However, this may vary each time we run the experiment (mind the confidence interval). In some studies, the *trials* option provides significant improvement to the overall accuracy. A good choice for this option is `trials=10`.
+
+#### Loading the misclassification error matrix
+
+Suppose we want to reduce the *false negative* rate, which corresponds to the case of misclassifying a severe case as mild. False negative (failure to detect a severe disease case) may be more costly than false positive (misclassifying a minor disease case as severe). Misclassification errors can be expressed as a matrix, which can be *loaded* to penalize specific types of erroneous predicitons.
+
+```{r eval=T, warning=F, error=F, message=F}
+error_cost <- matrix(c(0, 1, 4, 0), nrow = 2)
+error_cost
+```
+
+Let's build a decision tree with the option `cpsts=error_cost`.
+
+```{r eval=T, warning=F}
+set.seed(1234)
+qol_cost <- C5.0(qol_train[-c(40, 41)], qol_train$cd, costs=error_cost)
+qol_cost_pred <- predict(qol_cost, qol_test)
+confusionMatrix(table(qol_cost_pred, qol_test$cd))
+```
+
+Although the overall accuracy decreased, the false negative cell labels were reduced from 75 (without specifying a cost matrix) to 17 (when specifying a non-trivial (loaded) cost matrix). This comes at the cost of increasing the rate of false-positive labeling (minor disease cases misclassified as severe).
+
+#### Parameter Tuning
+
+There are multiple choices to plot trees fitted by `rpart` or `C5.0`. 
+
+```{r eval=TRUE}
+library("rpart") 
+# remove CHRONICDISEASESCORE, but keep *cd* label
+set.seed(1234)
+qol_model<-rpart(cd~., data=qol_train[, -40], cp=0.01) 
+# here we use rpart::cp = *complexity parameter* = 0.01
+qol_model
+```
+
+You can also plot directly using `rpart.plot`
+
+```{r eval=TRUE}
+library(rpart.plot)
+rpart.plot(qol_model, type = 4,extra = 1,clip.right.labs = F)
+```
+
+The method `fancyRpartPlot()` provides another decision tree rendering.
+
+```{r eval=TRUE}
+library("rattle")
+fancyRpartPlot(qol_model, cex = 1, caption = "rattle::fancyRpartPlot (QoL Data)")
+qol_pred <- predict(qol_model, qol_test,type = 'class')
+confusionMatrix(table(qol_pred, qol_test$cd))
+```
+
+These results are consistent with their counterparts reported using `C5.0.` How can we tune the parameters to further improve the results?
+
+```{r eval=TRUE}
+set.seed(1234)
+control = rpart.control(cp = 0.000, xxval = 100, minsplit = 2)
+qol_model= rpart(cd ~ ., data = qol_train[ , -40], control = control)
+# plotcp(qol_model)
+# printcp(qol_model)
+
+data <- as.data.frame(qol_model$cptable)
+data$CP <- as.factor(data$CP)
+
+plot_ly(data = data, x = ~CP, y = ~xerror, type = 'scatter', mode='lines+markers',
+        name = 'Test', error_y = ~list(array = xstd,  color = 'gray')) %>% 
+  #add_segments(x=0, xend=0.23, y=0.76, yend = 0.76, line = list(dash = "dash"), showlegend=F) %>%
+  layout(title="Complexity Parameter vs. (CV) Error Rate")
+```
+
+Now, we can prune the tree according to the optimal `cp`, *complexity parameter* to which the `rpart` object will be trimmed. Instead of using the *real error* (e.g., $1-R^2$, RMSE) to capture the discrepancy between the observed labels and the model-predicted labels, we will use the `xerror` which averages the discrepancy between observed and predicted classifications using *cross-validation*, see [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html).
+We can compare the *full* and *pruned* decision trees by contrasting the outputs of `summary(qol_model)` and `summary(selected_tr)`.
+
+```{r eval=TRUE}
+set.seed(1234)
+selected_tr <- prune(qol_model, cp= qol_model$cptable[which.min(qol_model$cptable[,"xerror"]),"CP"])
+fancyRpartPlot(selected_tr, cex = 1, caption = "rattle::fancyRpartPlot (QoL Data)")
+qol_pred_tune <- predict(selected_tr, qol_test, type = 'class')
+confusionMatrix(table(qol_pred_tune, qol_test$cd))
+```
+
+The result is roughly the same as that of `C5.0`. Despite the fact that there is no substantial classification improvement, the tree-pruning process generates a graphical representation of the decision making protocol (`selected_tr`) that is much simpler and intuitive compared to the original (un-pruned) tree (`qol_model`):
+
+```{r eval=TRUE, warning=F, error=F, message=F}
+fancyRpartPlot(qol_model, cex = 0.1, caption = "rattle::fancyRpartPlot (QoL Data)")
+```
+
+## Comparing different impurity indices
+
+We can change *split="entropy"* to "error" or "gini" to apply an alternative information gain index. Experiment with these and compare the results.
+
+```{r eval=TRUE}
+set.seed(1234)
+qol_model = rpart(cd ~ ., data=qol_train[ , -40], parms = list(split = "entropy"))
+fancyRpartPlot(qol_model, cex = 1, caption = "rattle::fancyRpartPlot (QoL data)")
+
+# Modify and test using "error" and "gini"
+# qol_pred<-predict(qol_model, qol_test,type = 'class')
+# confusionMatrix(table(qol_pred, qol_test$cd))
+```
+
+## Classification rules
+
+In addition to the classification trees we just saw, we can explore *classification rules* that utilize `if-else` logical statements to assign classes to unlabeled data. Below we review three classification rule strategies.
+
+### Separate and conquer
+
+Separate and conquer repeatedly splits the data (and subsets of the data) by rules that cover a subset of examples. This procedure is very similar to the *Divide and conquer* approach. However, a notable difference is that each rule can be independent, yet, each decision node in a tree has to be linked to past decisions. 
+
+### The One Rule algorithm
+
+To understand the `One Rule (OneR)` algorithm, we need to know about its "sibling" - `ZeroR` rule. `ZeroR` rule means that we assign the mode class to unlabeled test observations regardless of its feature value. The One Rule `(OneR)` algorithm is an improved version of `ZeroR` that uses a single rule for classification. In other words, `OneR` splits the training dataset into several segments based on feature values. Then, it assigns the mode of the classes in each segment to related observations in the unlabeled test data. In practice, we first test multiple rules and pick the rule with the smallest error rate to be our `One Rule`. Remember, the rules are subjective.
+
+### The RIPPER algorithm
+
+The *Repeated Incremental Pruning to Produce Error Reduction* algorithm is a combination of the ideas behind decision tree and classification rules. It consists of a three-step process:
+
+ - *Grow*: add conditions to a rule until it cannot split the data into more segments.
+ - *Prune*: delete some of the conditions that have large error rates.
+ - *Optimize*: repeat the above two steps until we cannot add or delete any of the conditions.
+
+## Case Study 2: QoL in Chronic Disease (Take 2)
+
+Let's take another look at the same dataset as Case Study 1 (QoL in Chronic Disease) - this time applying *classification rules*. Naturally, we skip over the first two data handling steps and go directly to step three.
+
+### (Continuing) Step 3 - training a model on the data
+
+Let's start by using the `OneR()` function in the `RWeka` package. Before installing the package you might want to check that the Java program in your computer is up to date. Also, its version has to match the version of R (i.e., 64bit R needs 64bit Java). 
+
+The function `OneR()` has the following components:
+
+`m<-OneR(class~predictors, data=mydata)`
+
+ - *class*: factor vector with the class for each row **mydata**.
+ - *predictors*: feature variables in **mydata**. If we want to include $x_1$, $x_2$ as predictors and $y$ as the class label variable, we do $y\sim x_1+x_2$. When using a `y ~ .` instead, we include all of the column variables as predictors.
+ - *mydata*: the dataset where the features and labels could be found.
+
+```{r eval=T, , message=F}
+# install.packages("RWeka")
+library(RWeka)
+# just remove the CHRONICDISEASESCORE but keep cd
+set.seed(1234)
+qol_1R <- OneR(cd~., data=qol[ , -40])
+qol_1R
+```
+
+Note that $1,453$ out of $2,214$ cases are correctly classified, $66\%$, by the "one rule".
+
+### Step 4 - evaluating model performance
+
+```{r eval=T, warning=F, error=F, message=F}
+summary(qol_1R)
+```
+
+We obtain a rule that correctly specifies 66% of the patients, which is in line with the prior decision tree classification results. Due to algorithmic stochasticity, it's normal that these results may vary each time you run the algorithm, albeit we used `set.seed(1234)` to ensure some result reproducibility.
+
+### Step 5 - Alternative model1
+
+Another possible option for the classification rules would be the `RIPPER` rule algorithm that we discussed earlier in the chapter. In R we use the `Java` based function `JRip()` to invoke this algorithm.
+
+`JRip()` function uses a similar invocation protocol as `OneR()`: 
+
+`m<-JRip(class~predictors, data=mydata)`
+
+```{r eval=T, warning=F, error=F, message=F}
+set.seed(1234)
+qol_jrip1 <- JRip(cd~., data=qol[ , -40])
+qol_jrip1
+summary(qol_jrip1)
+```
+
+This `JRip()` classifier uses only 3 rules and has a relatively similar accuracy of 66%. As each individual has unique characteristics, classification in real world data is rarely perfect (close to 100% accuracy).
+
+### Step 5 - Alternative model2
+
+Another idea is to repeat the generation of trees multiple times, predict according to each tree's performance, and finally ensemble those weighted votes into a combined classification result. This is precisely the idea behind `random forest` classification, see [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html).
+
+```{r eval=TRUE, warning=F, error=F, message=F}
+# install.packages("randomForest")
+require(randomForest)
+set.seed(12)
+# rf.fit <- tuneRF(qol_train[ , -40], qol_train[ , 40], stepFactor=1.5)
+rf.fit <- randomForest(cd ~ . , data=qol_train[ , -40],importance=TRUE,ntree=2000,mtry=26)
+# varImpPlot(rf.fit, cex=0.5); print(rf.fit)
+
+# type either 1 or 2, specifying the type of importance measure (1=mean decrease in accuracy, 2=mean decrease in node impurity)
+
+# Accuracy
+imp_rf.fit <- importance(rf.fit)
+x <- rownames(imp_rf.fit)
+y <- imp_rf.fit[,3]
+plot_ly(x = ~y, y = ~reorder(x,y),  name = "Var.Imp", type = "bar") %>%
+  layout(title="RF Variable Importance Plot (Accuracy)",
+         xaxis=list(title="Importance (mean decrease in accuracy)"),  
+         yaxis = list(title="Variables (Ordered)"))
+
+# Gini Index
+y <- imp_rf.fit[,4]
+plot_ly(x = ~y, y = ~reorder(x,y),  name = "Var.Imp", type = "bar") %>%
+  layout(title="RF Variable Importance Plot (Gini)",
+         xaxis=list(title="Importance (Gini mean decrease)"),  
+         yaxis = list(title="Variables (Ordered)"))
+
+rf.fit1 <- randomForest(cd~. , data=qol_train[ , -40],importance=TRUE,ntree=2000,mtry=26)
+rf.fit2 <- randomForest(cd~. , data=qol_train[ , -40], importance=TRUE, nodesize=5, ntree=5000, mtry=26)
+
+# plot(rf.fit,log="x",main="MSE Errors vs. Iterations: Three Models rf.fit, rf.fit1, rf.fit2")
+# points(1:5000, rf.fit1$mse, col="red", type="l")
+# points(1:5000, rf.fit2$mse, col="green", type="l")
+# legend("topright", col=c("black", "red", "green"), lwd=c(2, 2, 2), legend=c("rf.fit", "rf.fit1", "rf.fit2"))
+
+plot_ly(x = c(1:1000), y = rf.fit$err.rate[1:1000,1], name = 'OOB (rf.fit)', type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>% 
+  add_trace(x = c(1:1000), y = rf.fit1$err.rate[1:1000,1], name = 'OOB (rf.fit1)', type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>% 
+  add_trace(x = c(1:1000), y = rf.fit2$err.rate[1:1000,1], name = 'OOB (rf.fit2)', type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>% 
+  layout(title = "Out Of Bag Error Rates for 3 RF Models",
+         xaxis = list(title = "Number of Trees"),
+         yaxis = list (title = "OOB Error"))
+
+qol_pred2<-predict(rf.fit2, qol_test, type = 'class')
+confusionMatrix(table(qol_pred2, qol_test$cd))
+```
+
+The variable importance plots (`varplot`) show the rank orders of importance of the most salient features according to the specific metric (e.g., accuracy, Gini). We can also use the `randomForest::partialPlot()` method to examine the relative impact of the top salient features (continuous or binary variables). For each feature, this method works by
+
+ - Creating a test data set identical to the training data, 
+ - Sequentially setting the variable of interest for all observations to a selected value,
+ - Computing the average value of the predicted response for each test set,
+ - Plotting the results against the selected value. 
+
+Note that for binary features, `partialPlot()` would result in only two values of the corresponding mass function. Whereas for continuous variables, it generates the marginal probability effect of the variable corresponding to the class probability (for classification problems) or the continuous response (for regression problems). Using the [QoL case-study](https://umich.instructure.com/files/481332/download?download_frd=1), (`Case06_QoL_Symptom_ChronicIllness.csv`), this example shows the partial plots of the *top six* rank-ordered features of the QoL dataset chosen by the random forest model.
+
+```{r}
+imp <- randomForest::importance(rf.fit)
+impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
+# op <- par(mfrow=c(2, 3))
+# for (i in 1:6) {   # seq_along(impvar)) { # to plot the marginal probabilities for all features
+#     partialPlot(rf.fit, qol_train, impvar[i], xlab=impvar[i],
+#                 main=paste("Partial Dependence of 'CD'\n on ", impvar[i]))
+# }
+
+p <- vector("list", 6)
+for (i in 1:6) {   # seq_along(impvar)) { # to plot the marginal probabilities for all features
+    p[[i]] <- partialPlot(rf.fit, qol_train, impvar[i], xlab=impvar[i],
+                main=paste("Partial Dependence of 'CD'\n on ", impvar[i]), plot=F)
+}
+
+plot_ly(x = p[[1]]$x, y = p[[1]]$y, name = impvar[1], type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>% 
+  layout(title = paste0("CD Partial Dependence on ",impvar[1]),
+         xaxis = list(title = impvar[1]), yaxis = list (title = "Impact"))
+
+plot_ly(x = p[[2]]$x, y = p[[2]]$y, name = impvar[2], type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>% 
+  layout(title = paste0("CD Partial Dependence on ",impvar[2]),
+         xaxis = list(title = impvar[2]), yaxis = list (title = "Impact"))
+
+plot_ly(x = p[[3]]$x, y = p[[3]]$y, name = impvar[3], type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>%
+  add_trace(x = p[[4]]$x, y = p[[4]]$y, name = impvar[4], type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>%
+  add_trace(x = p[[5]]$x, y = p[[5]]$y, name = impvar[5], type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>%
+  add_trace(x = p[[6]]$x, y = p[[6]]$y, name = impvar[6], type = 'scatter', mode = 'lines',
+        line = list(width = 2)) %>% 
+  layout(title = paste0("CD Partial Dependence on ",impvar[3], " ", impvar[4], " ",impvar[5], " ",impvar[6]),
+         xaxis = list(title = "MSA Questions"), yaxis = list (title = "Impact"))
+# reset the device plot canvas
+# par(op)
+```
+
+In random forest (RF) classification, the node size (`nodesize`) refers to the smallest node that can be split, i.e., nodes with fewer cases than the `nodesize` are never subdivided. Increasing the node size leads to smaller trees, which may compromise previous predictive power. On the flip side, increasing the tree size (`maxnodes`) and the number of trees (`ntree`) tends to increase the predictive accuracy. However, there are tradeoffs between increasing node-size and tree-size simultaneously. To optimize the RF predictive accuracy, try smaller node sizes and more trees. Ensembling (forest) results from a larger number of trees will likely generate better results.
+
+### Step 6 - Alternative model3
+
+Another decision three technique we can test is `Extra-Trees` (*extremely randomized trees*). Extra-trees are similar to `Random Forests` with the exception that at each node, Random Forest chooses the best-cutting threshold for the feature, whereas Extra-Tree selects a uniformly random cut, so that the feature with the biggest gain (or best classification score) is chosen.. The `R` [`extraTrees` package](https://cran.r-project.org/web/packages/extraTrees/) provides one implementation of Extra-Trees where single random  cuts are extended to several random cuts for each feature. This extension improves performance as it reduces the probability of making very poor cuts and still maintains the designed extra-tree stochastic cutting. Below, we compare the results of four alternative chronic disease classification methods - *random forest, SVM, kNN*, and *extra-tree*.
+
+```{r eval=TRUE, warning=F, error=F, message=F}
+# https://cran.r-project.org/src/contrib/Archive/extraTrees/
+library(caret)
+library(extraTrees)
+# For direct Extra-Tree Call
+# install.packages("extraTrees")
+# library(extraTrees)
+# set.seed(12)
+# ## Request more memory to JVM (e.g., 5GB
+# options( java.parameters = "-Xmx5g" )
+# library(extraTrees)
+# 
+# system.time({
+#   # call extraTrees with 3 CPU cores/threads and track exec-time
+#   et.fit3 <- extraTrees(qol_train[ , -c(40,41)], qol_train[ , 41],
+#                         numThreads=3, ntree=5000, mtry=26)
+# })
+# qol_pred3 <- predict(et.fit3, qol_test[ , -c(40,41)])
+# confusionMatrix(table(qol_pred3, qol_test$cd))
+# qol_pred<-predict(rf.fit, qol_test, type = 'class')
+# qol_pred1<-predict(rf.fit1, qol_test, type = 'class')
+# qol_pred2<-predict(rf.fit2, qol_test, type = 'class')
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+## Run all subsequent models in parallel
+library(doParallel)
+cl <- makePSOCKcluster(4)
+registerDoParallel(cl)
+system.time({
+  rf.fit  <- train(cd~., data=qol_test[ , -40], method="rf", trControl=control);
+  knn.fit <- train(cd~., data=qol_test[ , -40], method="knn", trControl=control);
+  svm.fit <- train(cd~., data=qol_test[ , -40], method="svmRadial", trControl=control);
+  et.fit  <- train(cd~., data=qol_test[ , -40], method="extraTrees", trControl=control)
+})
+stopCluster(cl) # close multi-core cluster
+
+results <- resamples(list(RF=rf.fit, kNN=knn.fit, SVM=svm.fit, ET=et.fit))
+
+# summary of model differences
+summary(results)
+
+# plot summaries
+scales <- list(x=list(relation="free"), y=list(relation="free"))
+bwplot(results, scales=scales)                 # Box plots of 
+densityplot(results, scales=scales, pch = "|") # Density plots of accuracy
+dotplot(results, scales=scales)                # Dot plots of accuracy & Kappa
+splom(results)      # contrast pair-wise model scatterplots of prediction accuracy
+```
+
+## Practice Problem
+
+### Iris Species
+
+The classification of the iris flowers represents an easy example of the Naive Bayesian classifier.
+
+```{r}
+library(e1071)
+data(iris)
+nbc_model <- naiveBayes(Species ~ ., data = iris)
+## alternatively:
+nbc_model <- naiveBayes(iris[, c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width")], iris[,"Species"])
+predicted.nbcvalues <- predict(nbc_model, iris[,c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width")])
+table(predicted.nbcvalues, iris[, "Species"])
+```
+
+### Cancer Study
+
+In the previous cancer case study, we classified the patients with `seer_stage` of "not applicable"(`seer_stage`=8) and "unstaged, unknown or unspecified" (`seer_stage`=9) as no cancer or early cancer stages. Let's remove these two categories and replicate the Naive Bayes classifier case study again.
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med1 <- hn_med[!hn_med$seer_stage %in% c(8, 9), ]
+str(hn_med1); dim(hn_med1)
+```
+
+Now we have only 580 observations. We can either use the first 480 of them as the training dataset and the last 100 as the test dataset, or select 80-20 (training-testing) split, and evaluate the prediction accuracy when `laplace=1`? 
+
+```{r include=F}
+hn_med1_corpus <- Corpus(VectorSource(hn_med1$MEDICATION_SUMMARY))
+corpus_clean1 <- tm_map(hn_med1_corpus, tolower)
+corpus_clean1 <- tm_map(corpus_clean1, removePunctuation)
+corpus_clean1 <- tm_map(corpus_clean1, removeNumbers)
+corpus_clean1 <- tm_map(corpus_clean1, stripWhitespace)
+# corpus_clean1 <- tm_map(corpus_clean1, PlainTextDocument)
+hn_med_dtm1 <- DocumentTermMatrix(corpus_clean1)
+
+set.seed(11)
+subset_int1 <- sample(nrow(hn_med1),floor(nrow(hn_med1)*0.8))  # 80% training + 20% testing
+hn_med_train1 <- hn_med1[subset_int1, ]
+hn_med_test1 <- hn_med1[-subset_int1, ]
+hn_med_dtm_train1 <- hn_med_dtm1[subset_int1, ]
+hn_med_dtm_test1 <- hn_med_dtm1[-subset_int1, ]
+corpus_train1 <- corpus_clean1[subset_int1]
+corpus_test1 <- corpus_clean1[-subset_int1]
+
+#hn_med_train1<-hn_med1[1:480, ]
+#hn_med_test1<-hn_med1[481:580, ]
+#hn_med_dtm_train1<-hn_med_dtm1[1:480, ]
+#hn_med_dtm_test1<-hn_med_dtm1[481:580, ]
+#corpus_train1<-corpus_clean1[1:480]
+#corpus_test1<-corpus_clean1[481:580]
+```
+
+We can use the same code for creating the classes in training and test dataset. Since the `seer_stage=8 or 9` is not in the data, we classify `seer_stage=0, 1, 2 or 3` as "early_stage" and `seer_stage=4, 5 or 7` as "later_stage".
+
+```{r eval=T, warning=F, error=F, message=F}
+hn_med_train1$stage <- hn_med_train1$seer_stage %in% c(4, 5, 7)
+hn_med_train1$stage <- factor(hn_med_train1$stage, levels=c(F, T), labels = c("early_stage", "later_stage"))
+hn_med_test1$stage <- hn_med_test1$seer_stage %in% c(4, 5, 7)
+hn_med_test1$stage <- factor(hn_med_test1$stage, levels=c(F, T), labels = c("early_stage", "later_stage"))
+prop.table(table(hn_med_train1$stage))
+prop.table(table(hn_med_test1$stage))
+```
+
+To test the naïve Bayes classifier, we can u Use the document term matrices constructed from a corpus of high-frequency terms that have appeared in at least five documents in the training dataset.
+
+```{r warning==F, message=F, error=F}
+summary(findFreqTerms(hn_med_dtm_train1, 5))
+hn_med_dict1 <- as.character(findFreqTerms(hn_med_dtm_train1, 5))
+hn_train1 <- DocumentTermMatrix(corpus_train1, list(dictionary=hn_med_dict1))
+hn_test1 <- DocumentTermMatrix(corpus_test1, list(dictionary=hn_med_dict1))
+
+traindf1 <- data.frame(stage=hn_med_train1$stage, as.matrix(hn_train1))
+testdf1 <- data.frame(stage=hn_med_test1$stage, as.matrix(hn_test1))
+
+# for Training and Testing data, transform predictors/features to factors
+for (cols in names(traindf1[-1])) traindf1[[cols]] <- factor(traindf1[[cols]])
+for (cols in names(testdf1[-1])) testdf1[[cols]] <- factor(testdf1[[cols]])
+
+# check variable types
+# str(traindf)
+
+# run NB classifier (for cancer stage)
+hn_classifier1 <- naiveBayes(traindf1[,-1], traindf1$stage, laplace = 15, type = "class")
+hn_test_pred1 <- predict(hn_classifier1, testdf1)
+caret::confusionMatrix(hn_test_pred1, hn_med_test1$stage)
+```
+
+$$ACC = \frac{T P + T N}{T P + F P + F N + T N } = \frac{86}{116}=0.74.$$
+Note that this is not a particularly useful classifier, as the improved accuracy corresponds with predictions that are predominantly reflecting a single class , ` early_stage`.
+
+### Baseball Data
+
+Use the [MLB Data (01a_data.txt)](https://umich.instructure.com/courses/38100/files/folder/data) to predict the `Player's Position` (or perhaps the player's `Team`) using `naiveBayes` classifier. Compute and report the agreement between predicted and actual labels (for the  player's position). Below is some example code.
+
+```{r warning=F, error=F, message=F}
+mydata <- read.table('https://umich.instructure.com/files/330381/download?download_frd=1',as.is=T, header=T)  # 01a_data.txt
+# mydata <- read.table('data.txt',as.is=T, header=T)
+sample_size <- floor(0.75 * nrow(mydata))
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(mydata)), size = sample_size)
+train <- mydata[train_ind, ]
+# TESTING DATA
+test <- mydata[-train_ind, ]
+library("e1071")
+nbc_model <- naiveBayes(train[ , c("Weight", "Height", "Age")], as.factor(train$Position), laplace = 15)
+nbc_model
+predicted.nbcvalues <- predict(nbc_model, as.data.frame(test))
+
+# report results
+tab <- table(predicted.nbcvalues, test$Position)
+tab_df <- tidyr::spread(as.data.frame(tab), key = Var2, value = Freq)
+
+sum(diag(table(predicted.nbcvalues, test$Position)))
+
+plot_ly(x = colnames(tab), y = colnames(tab), z = as.matrix(tab_df[, -1]), type = "heatmap")
+
+# write.csv(file="./test.csv" , table(predicted.nbcvalues, test$Position))
+```
+
+Heatmap of the actual (vertical columns) and predicted (horizontal rows) MLB data positions based on multi-class naïve Bayesian classifier.
+ 
+### Medical Specialty Text-Notes Classification
+
+Let's demonstrate text-classification using a [clinical transcription text dataset](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/35_MedicalSpecialty_NotesText_Classification_Dataset), which consists of an index and 5 data elements - description, 	medical_specialty (prediction outcome target), sample_name, transcription, and keywords. Our task is to derive computed phenotypes automatically classifying the 40 different medical specialties using the clinical transcription text.
+
+```{r warning=F, error=F, message=F}
+dataCT <- read.csv('https://umich.instructure.com/files/21152999/download?download_frd=1', header=T) 
+str(dataCT)
+
+# 1. EDA
+library(dplyr)
+mySummary <- dataCT %>%
+  count(medical_specialty, sort = TRUE) 
+mySummary
+
+plot_ly(dataCT, x = ~medical_specialty) %>%
+  add_histogram()
+
+# 2. Preprocess the medical clinical notes (transcription)
+# library(tm)
+dataCT_corpus <- Corpus(VectorSource(dataCT$transcription))
+dataCT_corpus_clean <- tm_map(dataCT_corpus, tolower)
+dataCT_corpus_clean <- tm_map(dataCT_corpus_clean, removePunctuation)
+dataCT_corpus_clean <- tm_map(dataCT_corpus_clean, removeNumbers)
+dataCT_corpus_clean <- tm_map(dataCT_corpus_clean, stripWhitespace)
+dataCT_corpus_dtm <- DocumentTermMatrix(dataCT_corpus_clean)
+
+set.seed(1234)
+subset_train <- sample(nrow(dataCT),floor(nrow(dataCT)*0.8))  # 80% training + 20% testing
+dataCT_train <- dataCT[subset_train, ]
+dataCT_test <- dataCT[-subset_train, ]
+dataCT_corpus_dtm_train <- dataCT_corpus_dtm[subset_train, ]
+hn_med_dtm_test <- dataCT_corpus_dtm[-subset_train, ]
+dataCT_corpus_train <- dataCT_corpus_clean[subset_train]
+dataCT_corpus_test <- dataCT_corpus_clean[-subset_train]
+
+dataCT_train$MedSpecFac <- factor(dataCT_train$medical_specialty)
+dataCT_test$MedSpecFac <- factor(dataCT_test$medical_specialty)
+# prop.table(table(dataCT_test$medical_specialty))
+prop.table(table(dataCT_test$MedSpecFac))
+
+summary(findFreqTerms(dataCT_corpus_dtm_train, 5))
+dataCT_corpus_dict <- as.character(findFreqTerms(dataCT_corpus_dtm_train, 5))
+
+dataCT_train1 <- DocumentTermMatrix(dataCT_corpus_train, list(dictionary=dataCT_corpus_dict))
+dataCT_test1 <- DocumentTermMatrix(dataCT_corpus_test, list(dictionary=dataCT_corpus_dict))
+
+dataCT_train1 <- apply(dataCT_train1, MARGIN = 2, convert_counts)
+dataCT_test1 <- apply(dataCT_test1, MARGIN = 2, convert_counts)
+
+dataCT_classifier <- naiveBayes(dataCT_train1, dataCT_train$MedSpecFac, laplace = 0)
+dataCT_pred <- predict(dataCT_classifier, dataCT_test1)
+# table(dataCT_pred)
+
+# report results
+tab <- table(dataCT_pred, dataCT_test$MedSpecFac)
+tab_df <- tidyr::spread(as.data.frame(tab), key = Var2, value = Freq)
+# gmodels::CrossTable(dataCT_pred, dataCT_test$MedSpecFac)
+
+sum(diag(table(dataCT_pred, dataCT_test$MedSpecFac)))
+
+plot_ly(x = colnames(tab), y = colnames(tab), z = as.matrix(tab_df[, -1]), type = "heatmap") %>%
+  layout(title="Confusion Matrix of Naive-Bayesian Classification of 40 Medical Specialties using Text-Notes (Test Data)",
+          xaxis=list(title='True Specialties'), yaxis=list(title='Derived NB Class Labels'))
+```
+
+Later, in [Chapter 14 (Deep Learning)](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html) we will extend this example and demonstrate a more powerful *binary* and *multinomial* (categorical) classification of the medical specialty unit based on the clinical notes, using deep neural networks.
+
+Readers are encouraged to apply the Naive Bayesian classification techniques to some [new data from the list of our Case-Studies](https://umich.instructure.com/courses/38100/files/).
+
+### Chronic Disease
+
+In the previous `Chronic Disease` case study, we classified the `CHRONICDISEASESCORE` into two groups. What will happen if we use three groups? Let's separate `CHRONICDISEASESCORE` evenly into three groups. Recall the `quantile()` function that we talked about in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html). We can use it to get the cut-points for classification. Then, a `for` loop will help us split the variable `CHRONICDISEASESCORE` into three categories.  
+
+```{r eval=T, warning=F, error=F, message=F}
+quantile(qol$CHRONICDISEASESCORE, probs = c(1/3, 2/3))
+for(i in 1:2214){
+  if(qol$CHRONICDISEASESCORE[i]>0.7&qol$CHRONICDISEASESCORE[i]<2.2){
+    qol$cdthree[i]=2
+  }
+  else if(qol$CHRONICDISEASESCORE[i]>=2.2){
+    qol$cdthree[i]=3
+  }
+  else{
+    qol$cdthree[i]=1
+  }
+}
+
+qol$cdthree<-factor(qol$cdthree, levels=c(1, 2, 3), labels = c("minor_disease", "mild_disease", "severe_disease"))
+table(qol$cdthree)
+```
+
+After labeling the three categories in the new variable `cdthree`, our job of preparing the class variable is done. Let's follow along the earlier sections in the chapter to figure out how well the tree classifiers and rule classifiers perform in the three-category case. First, try to build a tree classifier using `C5.0()` with 10 boost trials. One small tip is that in the training dataset, we cannot have column 40 (`CHRONICDISEASESCORE`), 41 (`cd`) and now 42 (`cdthree`) because they all contain class outcome related variables.
+
+```{r include=T}
+# qol_train1<-qol[1:2114, ]
+# qol_test1<-qol[2115:2214, ]
+train_index <- sample(seq_len(nrow(qol)), size = 0.8*nrow(qol))
+qol_train1<-qol[train_index, ]
+qol_test1<-qol[-train_index, ]
+
+prop.table(table(qol_train1$cdthree))
+prop.table(table(qol_test1$cdthree))
+
+set.seed(1234)
+qol_model1<-C5.0(qol_train1[ , -c(40, 41, 42)], qol_train1$cdthree, trials=10)
+qol_model1
+qol_pred1<-predict(qol_model1, qol_test1)
+
+confusionMatrix(table(qol_test1$cdthree, qol_pred1))
+```
+
+We can see that the prediction accuracy with three categories is way lower than the one we did with two categories. In addition, we can try to build a one-rule classifier with `OneR()`.
+
+```{r include=T}
+set.seed(1234)
+qol_1R1<-OneR(cdthree~., data=qol[ , -c(40, 41)])
+qol_1R1
+
+summary(qol_1R1)
+
+qol_pred1<-predict(qol_1R1, qol_test1)
+
+confusionMatrix(table(qol_test1$cdthree, qol_pred1))
+```
+
+The `OneRule` classifier that is purely based on the value of the `INTERVIEWDATE`. The internal classification accuracy is 65% and equal to the external (validation data) prediction accuracy. Although, the latter assessment is a bit misleading as the vast majority of external validation data are classified in only one class - *mild_disease*.
+
+Finally, let's revisit the `JRip()` classifier with the same three class labels according to `cdthree`.
+
+```{r include=T}
+set.seed(1234)
+qol_jrip1<-JRip(cdthree~., data=qol[ , -c(40, 41)])
+qol_jrip1
+
+summary(qol_jrip1)
+
+qol_pred1<-predict(qol_jrip1, qol_test1)
+
+confusionMatrix(table(qol_test1$cdthree, qol_pred1))
+```
+
+In terms of the predictive accuracy on the testing data (`qol_test1$cdthree`), we can see from these outputs that the `RIPPER` algorithm performed better (67%) compared to the `C5.0` decision tree (60%) and similarly to the `OneR` algorithm (65%). This suggests that simple algorithms might outperform complex methods for certain real world case-studies. Later, in [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html), we will provide more details about optimizing and improving classification and prediction performance.
+
+```{r eval=F, echo=F}
+# this is one end-to-end solution
+# read the data in
+qol <- read.csv("https://umich.instructure.com/files/481332/download?download_frd=1")
+
+# split the clinical outcome CHRONICDISEASESCORE into 3-levels
+quantile(qol$CHRONICDISEASESCORE, probs = c(1/3, 2/3))
+for(i in 1:2214){
+  if(qol$CHRONICDISEASESCORE[i]>0.7&qol$CHRONICDISEASESCORE[i]<2.2){
+    qol$cdthree[i]=2
+  }
+  else if(qol$CHRONICDISEASESCORE[i]>=2.2){
+    qol$cdthree[i]=3
+  }
+  else{
+    qol$cdthree[i]=1
+  }
+}
+
+# factorize the 3-level outcome
+qol$cdthree<-factor(qol$cdthree, levels=c(1, 2, 3), labels = c("minor_disease", "mild_disease", "severe_disease"))
+table(qol$cdthree)
+
+# split data into training & testing sets
+set.seed(1234)
+train_index <- sample(seq_len(nrow(qol)), size = 0.8*nrow(qol))
+qol_train1<-qol[train_index, ]
+qol_test1<-qol[-train_index, ]
+
+prop.table(table(qol_train1$cdthree))
+prop.table(table(qol_test1$cdthree))
+
+### C50 ###
+library(libcoin)
+library(C50)
+qol_model1<-C5.0(qol_train1[ , -c(40, 41, 42)], qol_train1$cdthree, trials=10)
+qol_model1
+
+library(caret)
+qol_pred1<-predict(qol_model1, qol_test1)
+C50.result = confusionMatrix(table(qol_test1$cdthree, qol_pred1))
+C50.result
+
+### OneR
+library(RWeka)
+qol_1R1<-OneR(cdthree~., data=qol[ , -c(40, 41)])
+qol_1R1
+
+summary(qol_1R1)
+
+qol_pred1<-predict(qol_1R1, qol_test1)
+OneR.result = confusionMatrix(table(qol_test1$cdthree, qol_pred1))
+OneR.result
+
+### Jrip ###
+qol_jrip1<-JRip(cdthree~., data=qol[ , -c(40, 41)])
+qol_jrip1
+
+summary(qol_jrip1)
+
+qol_pred1<-predict(qol_jrip1, qol_test1)
+JRip.result = confusionMatrix(table(qol_test1$cdthree, qol_pred1))
+
+# aggregate the results of the 3 predictors evaluated on testing data
+result1 = rbind(C50.result$overall[1], 
+               OneR.result$overall[1], 
+               JRip.result$overall[1])
+result2 = rbind(C50.result$byClass[1,1:2], 
+               OneR.result$byClass[1,1:2], 
+               JRip.result$byClass[1,1:2])
+result3 = rbind(C50.result$byClass[2,1:2], 
+               OneR.result$byClass[2,1:2], 
+               JRip.result$byClass[2,1:2])
+result4 = rbind(C50.result$byClass[3,1:2], 
+               OneR.result$byClass[3,1:2], 
+               JRip.result$byClass[3,1:2])
+resultAggregate = cbind(result1, result2, result3, result4)
+resultAggregate = as.data.frame(resultAggregate)
+rownames(resultAggregate) = c("C50", "OneR", "JRip")
+colnames(resultAggregate) = c("Accuracy",
+                     "Minor.Sensi.", "Minor.Speci.",
+                     "Mild.Sensi.", "Mild.Speci.",
+                     "Severe.Sensi.", "Severe.Speci.")
+# Report the aggregate results # View(result)
+knitr::kable(resultAggregate)
+```
+
+These supervised classification techniques can be further tested with [other data from the list of our Case-Studies](https://umich.instructure.com/courses/38100/files/).
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number <img class="statcounter"
+								src="https://c.statcounter.com/5714596/0/038e9ac4/0/" 
+								alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

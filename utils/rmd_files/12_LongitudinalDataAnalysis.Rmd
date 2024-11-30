@@ -1,0 +1,3057 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Big Longitudinal Data Analysis</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+# Big Longitudinal Data Analysis
+
+The time-varying (longitudinal) characteristics of large information flows represent a special case of the complexity, dynamic and multi-scale nature of big biomedical data that we discussed in the [DSPA Motivation section](https://socr.umich.edu/DSPA2/DSPA2_notes/01_Introduction.html). Previously, in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization_Part1.html), we saw space-time (4D) functional magnetic resonance imaging (fMRI) data, and in [Chapter 10](https://socr.umich.edu/DSPA2/DSPA2_notes/10_SpecializedML_FormatsOptimization.html) we discussed streaming data, which also has a natural temporal dimension.
+
+In this Chapter, we will expand our predictive data analytic strategies specifically for analyzing longitudinal data. We will interrogate datasets that track homologous information, across subjects, units or locations, over a period of time. In the first part of the Chapter, we will present classical approaches including time series analysis, forecasting using autoregressive integrated moving average (ARIMA) models, structural equation models (SEM), and longitudinal data analysis via linear mixed models. In the second part, we will discuss recent AI methods for time-series analysis and forecasting including Recurrent Neural Networks (RNN) and long short-term memory (LSTM) networks.
+
+## Classical Time-Series Analytic Approaches
+
+### Information theoretic model evaluation criteria
+
+The [Akaike information criterion (AIC)](https://en.wikipedia.org/wiki/Akaike_information_criterion) and the [Bayesian information criterion (BIC)](https://en.wikipedia.org/wiki/Bayesian_information_criterion) are metrics that quantify the fit of different (typically) regression models. The AIC is calculated by the formula $AIC = 2k – 2\ln(L)$, where $k$ is the number of parameters estimated in the model, and $\ln(L)$ is the log-likelihood of the model. In essence, the AIC quantifies how likely the model is, given the observed data (in terms of the likelihood value). Suppose we have estimated several different regression models, the optimal model corresponds to the smallest AIC value, i.e., the model with the lowest AIC yields the best fit (highest likelihood, relative to the number of model parameters). The sign of the AIC does not matter, the lower the AIC value, the better the model fit.
+
+Similarly, the BIC is calculated by the formula $BIC = k\ln(n) – 2\ln(L)\equiv \ln\left( \frac{n^k}{L^2}\right )$, where $n$ is the number of data points, $k$ is the number of parameters estimated in the model, and $\ln(L)$ is the log-likelihood of the model. Lower BIC values correspond to higher likelihoods ($2\ln(L)$) and lower penalty terms ($k \ln(n)$), i.e., better models.
+
+
+### Information theoretic model evaluation criteria
+
+The *Akaike information criterion (AIC)* and the *Bayesian information criterion (BIC)* are metrics that quantify the fit of different (typically) regression models.
+
+The *AIC* is calculated by the formula $AIC = 2k – 2\ln(L)$, where $k$ is the number of parameters estimated in the model, and $\ln(L)$ is the log-likelihood of the model. In essence, the AIC quantifies how likely the model is, given the observed data (in terms of the likelihood value). Suppose we have estimated several different regression models, the optimal model corresponds to the smallest AIC value, i.e., the model with the lowest AIC yields the best fit (highest likelihood, relative to the number of model parameters). The sign of the AIC does not matter, the lower the AIC value, the better the model fit.
+
+Similarly, the *BIC* is calculated by the formula $BIC = k\times  \ln(n) – 2\ln(L)$, where $n$ is the number of data points, $k$ is the number of parameters estimated in the model, and $\ln(L)$ is the log-likelihood of the model. Lower *BIC* values correspond to higher likelihoods ($2\ln(L)$) and lower penalty terms ($k\times  \ln(n)$); i.e., better models.
+
+### Time series analysis
+
+Time series analysis relies on models like [ARIMA (Autoregressive integrated moving average)](https://en.wikipedia.org/wiki/Autoregressive_integrated_moving_average) that utilize past longitudinal information to predict near future outcomes. Time series data tend to track univariate, sometimes multivariate, processes over a continuous time interval. The stock market, e.g., daily closing value of the [Dow Jones Industrial Average index](https://quotes.wsj.com/index/DJIA/historical-prices), or [electroencephalography (EEG) data](https://headit.org/) provide examples of such longitudinal datasets (time series).
+
+The basic concepts in time series analysis include:
+
+ - The characteristics of *(second-order) stationary time series* (e.g., the first two moments are stable over time) do not depend on the time at which the series process is observed.
+ - *Differencing* -- a transformation applied to time-series data to make it stationary. Differences between consecutive time-observations may be computed by $\displaystyle y_{t}'=y_{t}-y_{t-1}$. Differencing removes the level changes in the time series, eliminates trend, reduces seasonality, and stabilizes the mean of the time series. Differencing the time series repeatedly may yield a stationary time series. For example, a second order differencing: $$\displaystyle {\begin{aligned}y_{t}^{''}&=y_{t}'-y_{t-1}'\\&=(y_{t}-y_{t-1})-(y_{t-1}-y_{t-2})\\&=y_{t}-2y_{t-1}+y_{t-2}\end{aligned}}.$$
+ - *Seasonal differencing* is computed as a difference between one observation and its corresponding observation in the previous epoch, or season (e.g., annually, there are $m=4$ seasons in a cycle), like in this example:
+$$\displaystyle y_{t}'''=y_{t}-y_{t-m}\quad {\text{where }}m={\text{number of seasons}}.$$
+The differenced data may then be used to estimate an ARMA model.
+
+We will use the [Beijing air quality PM2.5 dataset](https://umich.instructure.com/files/1823138/download?download_frd=1) as an example to demonstrate the analysis process. This dataset measures air pollutants - [PM2.5 particles in micrograms per cubic meter](data.worldbank.org/indicator/EN.ATM.PM25.MC.M3) for 8 years (2008-2016). It measures the *hourly average of the number of particles that are of size 2.5 microns (PM2.5)* once per hour in Beijing, China. 
+
+Let's first import the dataset into `R`.
+
+```{r eval=T}
+beijing.pm25<-read.csv("https://umich.instructure.com/files/1823138/download?download_frd=1")
+summary(beijing.pm25)
+```
+
+The `Value` column records PM2.5 AQI (Air Quality Index) for 8 years. We observe that there are some missing data in the `Value` column. By looking at the `QC.Name` column, we have about 6.5% (~4,408) of the observations with missing values. One way of solving the missingness is to replace them by the corresponding variable mean. Of course, in practical applications, some of the statistical imputation methods we discussed earlier should be used.
+
+```{r eval=T}
+beijing.pm25[beijing.pm25$Value==-999, 9]<-NA
+beijing.pm25[is.na(beijing.pm25$Value), 9]<-floor(mean(beijing.pm25$Value, na.rm = T))
+```
+
+Here we first reassign the missing values into `NA` labels. Then we replace all `NA` labels with the *mean* computed using all non-missing observations. Note that the `floor()` function casts the arithmetic averages as integer numbers, which is needed as AQI values are expected to be whole numbers. 
+
+Now, let's observe the trend of hourly average PM2.5 across one day. You can see a significant pattern: The PM2.5 level peaks in the afternoons and is the lowest in the early mornings and exhibits approximate periodic boundary conditions (these patterns oscillate daily). 
+
+```{r warning=F, message=F}
+library(plotly)
+library(ggplot2)
+id = 1:nrow(beijing.pm25)
+mat = matrix(0,nrow=24,ncol=3)
+stat = function(x){
+  c(mean(beijing.pm25[iid,"Value"]),quantile(beijing.pm25[iid,"Value"],c(0.2,0.8)))
+}
+for (i in 1:24){
+  iid = which(id%%24==i-1)
+  mat[i,] = stat(iid)
+}
+
+mat <- as.data.frame(mat)
+colnames(mat) <- c("mean","20%","80%")
+# mat$time = c(1:24)
+mat$time <- readr::parse_datetime(beijing.pm25$Date..LST., "%m/%d/%Y %h:%M")[1:24]
+
+require(reshape2)
+dt <- melt(mat,id="time")
+# colnames(dt)
+# ggplot(data = dt,mapping = aes(x=time,y=value,color = variable))+geom_line()+
+#   scale_x_continuous(breaks = 0:23)+ggtitle("Beijing hour average PM2.5 from 2008-2016")
+
+plot_ly(data = dt, x=~time, y=~value, color = ~variable, type="scatter", mode="markers+lines") %>%
+  layout(title="Beijing daily 24-hour average PM2.5 (2008-2016)")
+```
+
+Are there any daily or monthly trends? We can start the data interrogation by building an ARIMA model and examining detailed patterns in the data.
+
+*Step 1 - Plot time series*
+
+To begin with, we can visualize the overall trend by plotting PM2.5 values against time. This can be achieved using the `plyr` package.
+
+```{r eval=T}
+library(plyr)
+ts <- ts(beijing.pm25$Value, start=1, end=69335, frequency=1)
+# ts.plot(ts)
+
+dateTime <- readr::parse_datetime(beijing.pm25$Date..LST., "%m/%d/%Y %h:%M")
+tsValue <- ifelse(beijing.pm25$Value>=0, beijing.pm25$Value, -100)
+df <- as.data.frame(cbind(dateTime=dateTime, tsValue=tsValue))
+
+plot_ly(x=~dateTime, y=~tsValue, type="scatter", mode="lines") %>%
+  layout(
+    title = "Time Series - Beijing daily 24-hour average PM2.5 (2008-2016)",
+    xaxis = list(title = "date"), yaxis=list(title="PM2.5 Measurement"))
+    # '2008-04-08 15:00:00 UTC', '2016-04-30 23:00:00 UTC')
+```
+
+The dataset is recorded hourly and the eight-year time interval includes about $69,335$ hours of records. Therefore, we start at the first hour and end with $69,335^{th}$ hour. Each hour has a univariate [PM2.5 AQI value measurement](https://airnow.gov/index.cfm?action=resources.conc_aqi_calc), so `frequency=1`.
+
+From this time series plot, we observe that the data has some extreme peaks and many AQI (air quality index) values are around 200 (which is considered hazardous).
+
+The original plot seems to have no trend at all. Remember we have our measurements in hours. Will there be any difference if we use monthly average instead of hourly reported values? In this case, we can use Simple Moving Average (SMA) technique to smooth the original graph.
+
+To do this, we need to install the `TTR` R-package.
+
+```{r eval=T}
+# install.packages("TTR")
+library(TTR)
+bj.month <- SMA(tsValue, n=720)
+
+# plot.ts(bj.month, main="Monthly PM2.5 Level SMA", ylab="PM2.5 AQI")
+
+plot_ly(x=~dateTime, y=~bj.month, type="scatter", mode="lines") %>%
+  layout(
+    title = "Beijing Simple Moving Average Monthly PM2.5 Levels",
+    xaxis = list(title = "date"), yaxis=list(title="Monthly PM2.5 SMA"))
+```
+
+We chose the lag smoothing parameter to be $24\times 30=720$ and we can see some patterns in the plot. It seems that for the first 4 years (or approximately $35,040$ hours) the AQI fluctuates less than the last 5 years. Let's see what happens if we use *exponentially-weighted moving average* (EMA), instead of *arithmetic mean* (SMA).
+
+```{r eval=T}
+bj.month <- EMA(tsValue, n=1, ratio = 2/(720+1))
+# plot.ts(bj.month, main="Monthly PM2.5 Level EMA", ylab="PM2.5 AQI")
+
+plot_ly(x=~dateTime, y=~tsValue, type="scatter", mode="lines", opacity=0.2, name="Observed") %>%
+  add_trace(x=~dateTime, y=~SMA(tsValue, n=720), type="scatter", mode="lines", opacity=1.0, name="SMA") %>%
+  add_trace(x=~dateTime, y=~bj.month, type="scatter", mode="lines", name="EMA") %>%  # line = list(dash = 'dot')
+  layout(
+    title = "Beijing PM2.5 Levels with EMA and SMA Smoothing",
+    xaxis = list(title = "date"), yaxis=list(title="PM2.5 Values"))
+```
+
+The pattern seems less obvious in this graph. Here we used an exponential smoothing ratio of $2/(n+1)$.
+
+*Step 2 - Find proper parameter values for ARIMA model*
+
+ARIMA models have 2 components -- autoregressive part (AR) and moving average part (MA). An $ARMA(p, d, q)$ model is a model with *p* terms in AR and *q* terms in MA, and *d* representing the order difference. Where differencing is used to make the original dataset approximately stationary. If we denote by $L$ the *lag operator*, by $\phi_i$ the parameters of the autoregressive part of the model, by $\theta_i$ the parameters of the moving average part, and by $\epsilon_t$ error terms, then the $ARMA(p, d, q)$ has the following analytical form:
+
+$$\left (1-\sum_{i=1}^p\phi_i L^i\right )(1-L)^d X_t = \left (1+\sum_{i=1}^q\theta_i L^i\right )\epsilon_t .$$
+
+*Check the differencing parameter*
+
+First, let's try to determine the parameter $d$. To make the data stationary on the mean (remove any trend), we can use first differencing or second order differencing. Mathematically, first differencing is taking the difference between two adjacent data points:
+
+$$y_t'=y_t-y_{t-1}.$$
+While second order differencing is differencing the data twice:
+
+$$y_t^*=y_t'-y_{t-1}'=y_t-2y_{t-1}+y_{t-2}.$$
+Let's see which differencing method is proper for the Beijing PM2.5 dataset. Function `diff()` in R base can be used to calculate differencing. We can plot the differences by `plot.ts()` or using `plot_ly()`.
+
+```{r eval=T}
+#par(mfrow= c(2, 1))
+bj.diff2<-diff(tsValue, differences=2)
+#plot.ts(bj.diff2, main="2nd differencing")
+bj.diff<-diff(tsValue, differences=1)
+# plot.ts(bj.diff, main="1st differencing")
+
+plot_ly(x=~dateTime[2:length(dateTime)], y=~bj.diff, type="scatter", mode="lines", name="1st diff", opacity=0.5) %>%
+  add_trace(x=~dateTime[3:length(dateTime)], y=~bj.diff2, type="scatter", mode="lines", 
+            name="2nd diff", opacity=0.5)  %>%
+  layout(title = "Beijing PM2.5 Levels - First & Second Differencing", legend = list(orientation='h'),
+    xaxis = list(title = "date"), yaxis=list(title="PM2.5"))
+
+```
+
+Neither of them appears quite stationary. In this case, we can consider using some smoothing techniques on the data like we just did above (`bj.month<-SMA(ts, n=720)`). Let's see if smoothing by exponentially-weighted mean (EMA) can help make the data approximately stationary.
+
+```{r eval=T}
+bj.diff  <- diff(bj.month, differences=1)
+bj.diff2 <- diff(bj.month, differences=2)
+
+# par(mfrow=c(2, 1))
+# plot.ts(bj.diff2, main="2nd differencing")
+# plot.ts(bj.diff, main="1st differencing")
+
+plot_ly(x=~dateTime[2:length(dateTime)], y=~bj.diff, type="scatter", mode="lines", name="1st diff", opacity=0.5) %>%
+  add_trace(x=~dateTime[3:length(dateTime)], y=~bj.diff2, type="scatter", mode="lines", 
+            name="2nd diff", opacity=0.5)  %>%
+  layout(title = "Beijing EMA PM2.5 Levels - First & Second Differencing", legend = list(orientation='h'),
+    xaxis = list(title = "date"), yaxis=list(title="EMA PM2.5"))
+```
+
+Both of these EMA-filtered graphs have tempered variance and appear pretty stationary with respect to the first two moments, mean and variance.
+
+*Identifying the AR and MA parameters*
+
+To decide the auto-regressive (AR) and moving average (MA) parameters in the model we need to create **autocorrelation factor (ACF)** and **partial autocorrelation factor (PACF) plots**. PACF may suggest a value for the AR-term parameter $p$, and ACF may help us determine the MA-term parameter $q$. We plot the ACF and PACF, we use approximately stationary time series `bj.diff` objects. The dash lines on the ACF/PACF plots indicate the bounds on the correlation values beyond which the auto-correlations are considered statistically significantly different from zero. Correlation values outside the confidence lines could suggest non-purely-random/correlated parts in the longitudinal signal.
+
+```{r eval=T}
+# par(mfrow=c(1, 2))
+acf1 <- acf(bj.diff, lag.max = 20, main="ACF", plot=F)
+# 95% CI: https://github.com/SurajGupta/r-source/blob/master/src/library/stats/R/acf.R
+ci <- qnorm((1 + 0.95)/2)/sqrt(length(bj.diff))
+
+plot_ly(x = ~acf1$lag[,1,1], y = ~acf1$acf[,1,1], type = "bar", name="ACF") %>%
+  # add CI lines
+  add_lines(x=~c(acf1$lag[1,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(ci, ci), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(acf1$lag[1,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(-ci, -ci), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(bargap=0.8, title="ACF Plot Beijing EMA PM2.5 Levels - First Differencing",
+         xaxis=list(title="lag"), yaxis=list(title="ACF"))
+
+pacf1 <- pacf(ts(bj.diff), lag.max = 20, main="PACF", plot=F)
+plot_ly(x = ~pacf1$lag[,1,1], y = ~pacf1$acf[,1,1], type = "bar", name="PACF") %>%
+   # add CI lines
+  add_lines(x=~c(pacf1$lag[1,1,1], acf1$lag[length(pacf1$lag),1,1]), y=~c(ci, ci), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(acf1$lag[1,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(-ci, -ci), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(bargap=0.8, title="PACF Plot Beijing EMA PM2.5 Levels - First Differencing",
+         xaxis=list(title="lag"), yaxis=list(title="Partial ACF"))
+```
+
+ - Pure AR model, ($p=0$), will have a cut off at lag $q$ in the PACF. 
+ - Pure MA model, ($q=0$), will have a cut off at lag $p$ in the ACF. 
+ - ARIMA(p, q) will (eventually) have a decay in both.
+
+All ACF spikes appear outside of the insignificant zone in the *ACF plot*, whereas only a few are significant in the *PACF plot.* In this case, the best ARIMA model is likely to have both AR and MA parts. 
+
+We can examine for seasonal effects in the data using `stats::stl()`, a flexible function for decomposing and forecasting the series, which uses averaging to calculate the seasonal component of the series and then subtracts the seasonality. Decomposing the series and removing the seasonality can be done by subtracting the seasonal component from the original series using `forecast::seasadj()`. The frequency parameter in the `ts()` object specifies the periodicity of the data or the number of observations per period, e.g., 30 (for monthly smoothed daily data).
+
+```{r eval=T}
+count_ma = ts(bj.month, frequency=30*24)
+decomp = stl(count_ma, s.window="periodic")
+deseasonal_count <- forecast::seasadj(decomp)
+# plot(decomp)
+
+plot_ly(x=~dateTime, y=~tsValue, type="scatter", mode="lines") %>%
+  layout(
+    title = "Time Series - Beijing daily 24-hour average PM2.5 (2008-2016)",
+    xaxis = list(title = "date"), yaxis=list(title="PM2.5 Measurement"))
+
+figTS_Data    <- plot_ly(x=~dateTime, y=~tsValue, type="scatter", mode="lines", name="TS Data")
+figSeasonal   <- plot_ly(x=~dateTime, y=~decomp$time.series[,1], type='scatter', mode='lines', name="seasonal")
+figTrend      <- plot_ly(x=~dateTime, y=~decomp$time.series[,2], type='scatter', mode='lines', name="trend")
+figRemainder  <- plot_ly(x=~dateTime, y=~decomp$time.series[,3], type='scatter', mode='lines', name="remainder")
+fig <- subplot(figTS_Data, figSeasonal, figTrend, figRemainder, nrows = 4) %>% 
+  layout(title = list(text = "Decomposition of Beijing PM2.5 Time-Series Data (2008-2016)"),
+         hovermode = "x unified", legend = list(orientation='h'))
+fig
+```
+
+The augmented Dickey-Fuller (ADF) test, `tseries::adf.test` can be used to examine the time series stationarity. The *null hypothesis is that the series is non-stationary*. The ADF test quantifies if the change in the series can be explained by a lagged value and a linear trend. Non-stationary series can be *corrected* by differencing to remove trends or cycles. 
+
+```{r eval=T, message=F, warning=F}
+tseries::adf.test(count_ma, alternative = "stationary")
+tseries::adf.test(bj.diff, alternative = "stationary")
+```
+
+We see that we can reject the null and therefore, there is no statistically significant non-stationarity in the `bj.diff` time series.
+
+*Step 3 - Build an ARIMA model*
+
+As we have some evidence suggesting *d=1*, the `auto.arima()` function in the `forecast` package can help us to find the optimal estimates for the remaining pair parameters of the ARIMA model, *p* and *q*.  
+
+```{r eval=T}
+# install.packages("forecast")
+library(forecast)
+fit<-auto.arima(bj.month, approx=F, trace = F)
+fit
+
+acf1 <- Acf(residuals(fit), plot = F)
+# 95% CI: https://github.com/SurajGupta/r-source/blob/master/src/library/stats/R/acf.R
+ci <- qnorm((1 + 0.95)/2)/sqrt(length(bj.diff))
+pacf1 <- Pacf(residuals(fit), plot = F)
+
+
+plot_ly(x = ~acf1$lag[-1,1,1], y = ~acf1$acf[-1,1,1], type = "bar", name="ACF") %>%  # ACF
+  # PACF
+  add_trace(x = ~pacf1$lag[-1,1,1], y = ~pacf1$acf[-1,1,1], type = "bar", name="PACF") %>%
+  # add CI lines
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(ci, ci), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(-ci, -ci), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(bargap=0.8, title="ACF & PACF Plot - ARIMA Model Residuals",
+         xaxis=list(title="lag"), yaxis=list(title="ACF/PACF (Residuals)"),
+         hovermode = "x unified", legend = list(orientation='h'))
+```
+
+Finally, the optimal model determined by the stepwise selection is `ARIMA(1, 1, 4)`.
+
+We can also use external information to fit ARIMA models. For example, if we want to add the month information, in case we suspect a seasonal change in PM2.5 AQI, we can fit an $ARIMA(2, 1, 0)$ model.
+
+```{r eval=T}
+fit1<-auto.arima(bj.month, xreg=beijing.pm25$Month, approx=F, trace = F)
+fit1
+fit3<-arima(bj.month, order = c(2, 1, 0))
+fit3
+```
+
+We want the model AIC and BIC to be as small as possible. This model is actually worse than the last model without `Month` predictor in terms of AIC and BIC. Also, the coefficient is very small and not significant (according to the t-test). Thus, we can remove the `Month` term.
+
+We can examine further the ACF and the PACF plots and the residuals to determine the model quality.  When the model order parameters and structure are correctly specified, we expect no significant autocorrelations present in the model residual plots. 
+
+```{r eval=T}
+# resFitModel <- tsdisplay(residuals(fit), lag.max=45, main='(1,1,4) Model Residuals')
+
+plot_ly(x=~dateTime, y=~residuals(fit), type="scatter", mode="lines") %>%
+  # add CI lines
+  add_lines(x=~c(dateTime[1], dateTime[length(dateTime)]), y=~c(1.96, 1.96), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(dateTime[1], dateTime[length(dateTime)]), y=~c(-1.96, -1.96), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(title = "Beijing PM2.5: ARIMA(2, 1, 0) Model Residuals",
+    xaxis = list(title = "date"), yaxis=list(title="Residuals"), hovermode = "x unified")
+
+acf1 <- Acf(residuals(fit), plot = F)
+# 95% CI: https://github.com/SurajGupta/r-source/blob/master/src/library/stats/R/acf.R
+ci <- qnorm((1 + 0.95)/2)/sqrt(length(bj.diff))
+pacf1 <- Pacf(residuals(fit), plot = F)
+
+
+plot_ly(x = ~acf1$lag[-1,1,1], y = ~acf1$acf[-1,1,1], type = "bar", name="ACF") %>%  # ACF
+  # PACF
+  add_trace(x = ~pacf1$lag[-1,1,1], y = ~pacf1$acf[-1,1,1], type = "bar", name="PACF") %>%
+  # add CI lines
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(ci, ci), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(-ci, -ci), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(bargap=0.8, title="ACF & PACF Plot - ARIMA Model Residuals",
+         xaxis=list(title="lag"), yaxis=list(title="ACF/PACF (Residuals)"),
+         hovermode = "x unified", legend = list(orientation='h'))
+```
+
+There is a clear pattern present in ACF/PACF plots suggesting that the model residuals repeat with an approximate lag of 12 or 24 months. We may try a modified model with different parameters, e.g., $p = 24$ or $q = 24$. We can define a new `displayForecastErrors()` function to show a histogram of the forecasted errors.
+
+```{r eval=T}
+fit24 <- arima(deseasonal_count, order=c(1,1,24)); fit24
+
+# tsdisplay(residuals(fit24), lag.max=36, main='Seasonal Model Residuals')
+
+plot_ly(x=~dateTime, y=~residuals(fit24), type="scatter", mode="lines") %>%
+  # add CI lines
+  add_lines(x=~c(dateTime[1], dateTime[length(dateTime)]), y=~c(1.96, 1.96), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(dateTime[1], dateTime[length(dateTime)]), y=~c(-1.96, -1.96), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(title = "Beijing PM2.5: ARIMA(1,1,24) Model Residuals",
+    xaxis = list(title = "date"), yaxis=list(title="Residuals"), hovermode = "x unified")
+
+acf1 <- Acf(residuals(fit24), plot = F)
+# 95% CI: https://github.com/SurajGupta/r-source/blob/master/src/library/stats/R/acf.R
+ci <- qnorm((1 + 0.95)/2)/sqrt(length(bj.diff))
+pacf1 <- Pacf(residuals(fit24), plot = F)
+
+
+plot_ly(x = ~acf1$lag[-1,1,1], y = ~acf1$acf[-1,1,1], type = "bar", name="ACF") %>%  # ACF
+  # PACF
+  add_trace(x = ~pacf1$lag[-1,1,1], y = ~pacf1$acf[-1,1,1], type = "bar", name="PACF") %>%
+  # add CI lines
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(ci, ci), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(-ci, -ci), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(bargap=0.8, title="ACF & PACF Plot - ARIMA(1,1,24) Model Residuals",
+         xaxis=list(title="lag"), yaxis=list(title="ACF/PACF (Residuals)"),
+         hovermode = "x unified", legend = list(orientation='h'))
+
+displayForecastErrors <- function(forecastErrors)
+  {
+     # Generate a histogram of the Forecast Errors
+     binsize <- IQR(forecastErrors)/4
+     sd   <- sd(forecastErrors)
+     min  <- min(forecastErrors) - sd
+     max  <- max(forecastErrors) + sd
+     
+     # Generate 5K normal(0,sd) RVs 
+     norm <- rnorm(5000, mean=0, sd=sd)
+     min2 <- min(norm)
+     max2 <- max(norm)
+     if (min2 < min) { min <- min2 }
+     if (max2 > max) { max <- max2 }
+     
+     # Plot red histogram of the forecast errors
+     bins <- seq(min, max, binsize)
+     # hist(forecastErrors, col="red", freq=FALSE, breaks=bins)
+     # 
+     # myHist <- hist(norm, plot=FALSE, breaks=bins)
+     # 
+     # # Overlay the Blue normal curve on top of forecastErrors histogram
+     # points(myHist$mids, myHist$density, type="l", col="blue", lwd=2)
+     
+     histForecast <- hist(forecastErrors, breaks=bins, plot = F)
+     histNormal <- hist(norm, plot=FALSE, breaks=bins)
+     plot_ly(x = histForecast$mids, y = histForecast$density, type = "bar", name="Forecast-Errors Histogram") %>%
+        add_lines(x=histNormal$mids/2, y=2*dnorm(histNormal$mids, 0, sd), type="scatter", mode="lines", 
+                  name="(Theoretical) Normal Density") %>%
+        layout(bargap=0.1, title="Histogram ARIMA(1,1,24) Model Residuals",
+               legend = list(orientation = 'h'))
+}
+
+displayForecastErrors(residuals(fit24))
+```
+
+*Step 4 - Forecasting with ARIMA model*
+
+Now, we can use our models to make predictions for future PM2.5 AQI. We will use the function `forecast()` to make predictions. In this function, we have to specify the number of periods we want to forecast. Note that the data has been smoothed. Let's make predictions for the next month or July 2016. Then there are $24\times30=720$ hours, so we specify a horizon `h=720`. 
+
+```{r eval=T}
+ts.forecasts<-forecast(fit, h=720)
+
+# par(mfrow=c(1, 1))
+# plot(ts.forecasts, include = 2880)
+
+# extend time for 30 days (hourly predictions), k=720 hours
+forecastDates <- seq(as.POSIXct("2016-05-01 00:00:00 UTC"), as.POSIXct("2016-05-30 23:00:00 UTC"), by = "hour")
+
+plot_ly(x=~dateTime, y=~ts.forecasts$model$fitted, type="scatter", mode="lines", name="Observed") %>%
+  # add CI lines
+  add_lines(x=~forecastDates, y=~ts.forecasts$mean, mode="lines", name="Mean Forecast", line=list(size=5)) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$lower[,1], mode="lines", name="Lower 80%", line=list(dash='dash')) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$lower[,2], mode="lines", name="Lower 95%", line=list(dash='dot')) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$upper[,1], mode="lines", name="Upper 80%", line=list(dash='dash')) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$upper[,2], mode="lines", name="Upper 95%", line=list(dash='dot')) %>%
+  layout(title = paste0("Beijing PM2.5: Forecast using ", ts.forecasts$method, " Model"),
+    xaxis = list(title = "date"), yaxis=list(title="PM2.5"), hovermode = "x unified", legend = list(orientation='h'))
+
+```
+
+When plotting the forecasted values with the original smoothed data, we include only the last 3 months in the original smoothed data to see the predicted values clearer. The shaded regions indicate ranges of expected errors. The darker (inner) region represents by *80% confidence range* and the lighter (outer) region bounds by the *95% interval*. Obviously near-term forecasts have tighter ranges of expected errors, compared to longer-term forecasts where the variability naturally expands. 
+
+#### Autoregressive Integrated Moving Average *Extended/Exogenous* (ARIMAX) Model
+
+The [classical ARIMA model](https://books.google.com/books?hl=en&lr=&id=rNt5CgAAQBAJ) makes prediction of a univariate outcome based only on the past values of the specific forecast variable. It assumes that future values of the outcome linearly depend on an additive representation of the effects of its previous values and some stochastic components. 
+
+The [extended, or exogenous feature, (vector-based) time-series model (ARIMAX)](https://doi.org/10.1109/PESGM.2014.6939802) allows forecasting of the univariate outcome based on multiple independent (predictor) variables. Similar to going from simple linear regression to multivariate linear models, *ARIMAX* generalizes the *ARIMA* model accounting for autocorrelation present in residuals of the linear regression to improve the accuracy of a time-series forecast. ARIMAX models, also called dynamic regression models, represent a combination of ARIMA, regression, and single-input-single-output transfer function models.
+
+When there are no covariates, traditional time-series $y_1, y_2, \dots,y_n$ can be modeled by ARMA$(p,q)$ model:
+
+$$y_t = \phi_1 y_{t-1} + \phi_2 y_{t-2} + \cdots + \phi_p y_{t-p} - \left ( \theta_1 \epsilon_{t-1} + \theta_2 \epsilon_{t-2} + \dots + \theta_q \epsilon_{t-q}\right ) + \epsilon_t,$$
+
+where $\epsilon_t \sim N(0,1)$ is a white Gaussian noise.
+
+The extended dynamic time-series model, ARIMAX, adds the covariates to the right hand side:
+
+$$ y_t = \left ( \displaystyle\sum_{k=1}^K{\beta_k x_{k,t}}\right ) + \phi_1 y_{t-1} + \phi_2 y_{t-2} + \cdots + \phi_p y_{t-p} - \left ( \theta_1 \epsilon_{t-1} + \theta_2 \epsilon_{t-2} + \dots + \theta_q z_{t-q}\right ) + \epsilon_t, $$
+where $x_{k,t}$ is the value of the $k^{th}$ covariate at time $t$ and $\beta_k$ is its regression coefficient. In the ARIMAX models, the interpretation of the covariate coefficient, $\beta_k$, is somewhat different from the linear modeling case; $\beta_k$ does not really represent the effect of increasing $x_{k,t}$ by 1 on $y_t$. The coefficients $\beta_k$ may be interpreted as conditional effects of the predictor $x_k$ on the prior values of the response variable, $y$, as the right hand side of the equation includes lagged values of the response variable.
+
+Using the short-hand back-shift operator representation, the ARMAX model is:
+
+$$\phi(B)y_t = \left ( \displaystyle\sum_{k=1}^K{\beta_k x_{k,t}}\right ) + \theta(B)\epsilon_t.$$ 
+Alternatively,
+$$y_t = \displaystyle\sum_{k=1}^K{\left (\frac{\beta_k}{\phi(B)}x_{k,t}\right )} + \frac{\theta(B)}{\phi(B)}\epsilon_t,$$
+where $\phi(B)=1-\left ( \phi_1 B + \phi_2 B +\cdots + \phi_p B^p\right )$ and $\theta(B)= 1- \left (\theta_1 B + \theta_2 B + \cdots + \theta_qB^q\right)$.
+
+As the auto-regressive coefficients get mixed up with both the covariate and the error terms. To clarify these effects, we can look at the regression models with ARMA errors:
+
+$$y_t = \displaystyle\sum_{k=1}^K{\left (\frac{\beta_k}{\phi(B)}x_{k,t}\right )} + \eta_t,$$
+$$\eta_t = \left (\phi_1 \eta_{t-1} + \phi_2 \eta_{t-2} +\cdots + \phi_p \eta_{t-p}\right ) - \left (\theta_1 \epsilon_{t-1} + \theta_2 \epsilon_{t-2} +\dots + \theta_q z_{t-q} + \epsilon_t \right ).$$
+
+In this formulation, the regression coefficients have a more natural interpretation. Both formulations lead to the same model-based forecasting, but the second one helps with explication and interpretation of the effects.</p>
+
+The back-shift model formulation is
+$$y_t = \displaystyle\sum_{k=1}^K{\left (\frac{\beta_k}{\phi(B)}x_{k,t}\right )} + \frac{\theta(B)}{\phi(B)}\epsilon_t.$$
+
+Transfer function models generalize both of these models.
+
+$$ y_t = \displaystyle\sum_{k=1}^K{\left (\frac{\beta_k(B)}{v(B)} x_{k,t}\right )}  + \frac{\theta(B)}{\phi(B)}\epsilon_t. $$
+
+This representation models the lagged effects of covariates (by the $\beta_k(B)$ back-shift operator) and allows for decaying effects of covariates (by the $v(B)$ back-shift operator).
+
+The Box-Jenkins method for selecting the orders of a transfer function model is often challenging in practice. An alternative order-selection protocol is presented in the [Hyndman's 1998 forecasting textbook](https://robjhyndman.com/forecasting/).
+
+To estimate the ARIMA errors when dealing with non-stationary data, we can replace $\phi(B)$ with $\nabla^d\phi(B)$, where $\nabla=(1-B)$ is the differencing operator. This accomplishes both differencing in $y_t$ and $x_t$ prior to fitting ARIMA models with errors. For model consistency and to avoid spurious regression effects, we do need to *difference* all variables before we estimate models with non-stationary errors.
+
+There are alternative R functions to implement ARIMAX models, e.g., `forecast::arima()`, `forecast::Arima()`, and `forecast::auto.arima()` fit extended ARIMA models with multiple covariates and error terms. Remember that there are differences in the signs of the moving average coefficients between the alternative model parameterization formulations. Also, the `TSA::arimax()` function fits the *transfer function model*, not the ARIMAX model.
+
+#### Simulated ARIMAX Example
+
+Let's look at one ARIMAX simulated example representing a 4D synthetic dataset covering $t=700$ days of records (from "2016-05-01 00:00:00 EDT" to "2018-03-31 00:00:00 EDT"), i.e., 100 weeks of observations, $Y$=time-series values (volume of customers) and $X$=(weekday, Holiday, day) exogenous variables.
+
+```{r message=F, error=F}
+library(forecast)
+
+# create the 4D synthetic data, t=700 days, 100 weeks, 
+# Y=eventArrivals (customers), X=(weekday, NewYearsHoliday, day)
+weeks <- 100
+days <- 7*weeks
+
+# define holiday effect (e.g., more customers go to stores to shop)
+holidayShopping <- rep(0, days)
+y <- rep(0, days)
+for (i in 1:days) {
+  # Binary feature: Holiday
+  if (i %% 28 == 0) holidayShopping[i] = 1
+  else holidayShopping[i] = 0
+  # Outcome (Y)
+  if (i %% 56 == 0) y[i] = rpois(n=1, lambda=1500)
+  else y[i] = rpois(n=1, lambda=1000)
+  if (i>2) y[i] = (y[i-2] + y[i-1])/2 + rnorm(n=1, mean=0, sd=20)
+  if (i %% 56 == 0) y[i] = rpois(n=1, lambda=1050)
+}
+
+# plot(y)
+# extend time for "days", k=700 days
+forecastDates <- seq(as.POSIXct("2016-05-01 00:00:00 UTC"), length.out = days, by = "day")
+
+plot_ly(x=~forecastDates, y=~y, type="scatter", mode="lines", name="Y=eventArrivals", line=list(size=5)) %>%
+  layout(title = paste0("Simulated TS Data"),
+    xaxis = list(title = "date"), yaxis=list(title="Y"), hovermode = "x unified")
+
+synthData <- data.frame(eventArrivals = y, # expected number of arrivals=1000
+                         weekday = rep(1:7, weeks),     # weekday indicator variable
+                         Holiday = holidayShopping, # Binary feature: Holiday
+                         day=1:days)  # day indicator
+
+# Create matrix of numeric predictors
+covariatesX <- cbind(weekday = model.matrix(~as.factor(synthData$weekday)), 
+                     Day = synthData$day,
+                     Holiday=synthData$Holiday)
+# Generate prospective covariates for external validation/prediction
+pred_length <- 56
+newCovX <- cbind(weekday = model.matrix(~as.factor(synthData$weekday[1:pred_length])), 
+                     Day = synthData$day[1:pred_length],
+                     Holiday=synthData$Holiday[1:pred_length])
+# Remove the intercept
+synthX_Data <- covariatesX[,-1]
+
+# Rename columns
+colnames(synthX_Data) <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Day", "Holiday")
+colnames(newCovX) <- c("Intercept", colnames(synthX_Data)); colnames(newCovX[,-1])
+
+# Response (Y) to be modeled as a time-series, weekly oscillations (7-days)
+observedArrivals <- ts(synthData$eventArrivals, frequency=7) 
+
+# Estimate the ARIMAX model, remove day-index (7)
+fitArimaX <- auto.arima(observedArrivals, xreg=synthX_Data[,-7]); fitArimaX
+
+# Predict prospective arrivals (e.g., volumes of customers), remove Intercept (1) and day-index (8)
+predArrivals <- predict(fitArimaX, n.ahead = pred_length, newxreg = newCovX[,-c(1,8)])
+
+# plot(predArrivals$pred, main="Forward time-series predictions (fitArimaX)")
+  
+forecastDates <- seq(as.POSIXct("2018-04-01 EDT"), length.out = pred_length, by = "day")
+# forecastDates <- seq(as.POSIXct("2016-05-01 00:00:00 UTC"), length.out = pred_length, by = "day")
+df <- as.data.frame(cbind(x=forecastDates, y=predArrivals$pred, errorBar=predArrivals$pred))
+plot_ly(data = df) %>%
+    # add error bars for each CV-mean at log(lambda)
+    add_trace(x = ~forecastDates, y = ~y, type = 'scatter', mode = 'markers+lines',
+        name = 'CV MSE', error_y = ~list(array = errorBar/300, color="green", opacity=0.5)) %>% 
+    layout(title = paste0("ARIMA Forecasting using Simulated Data (", 
+                          forecastDates[1], " - ", forecastDates[pred_length], ")"),
+							hovermode = "x unified",  # xaxis2 = ax, 
+							yaxis = list(title = 'Y',	side="left", showgrid = TRUE))
+
+# plot(forecast(fitArimaX, xreg = newCovX[,-1]))
+  
+trainingDates <- seq(as.POSIXct("2016-05-01 00:00:00 UTC"), length.out = days, by = "day")
+# extend time for 56 days of forward prediction
+forecastDates <- seq(as.POSIXct("2018-04-01 EDT"), length.out = pred_length, by = "day")
+
+ts.forecasts <- forecast(fitArimaX, xreg = newCovX[,-c(1,8)])
+
+plot_ly(x=~trainingDates, y=~ts.forecasts$model$fitted, type="scatter", mode="lines", name="Observed") %>%
+  # add CI lines
+  add_lines(x=~forecastDates, y=~ts.forecasts$mean, mode="lines", name="Mean Forecast", line=list(size=5)) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$lower[,1], mode="lines", name="Lower 80%", line=list(dash='dash')) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$lower[,2], mode="lines", name="Lower 95%", line=list(dash='dot')) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$upper[,1], mode="lines", name="Upper 80%", line=list(dash='dash')) %>%
+  add_lines(x=~forecastDates, y=~ts.forecasts$upper[,2], mode="lines", name="Upper 95%", line=list(dash='dot')) %>%
+  layout(title = paste0("Simulated Data: Forecast using ", ts.forecasts$method, " Model"),
+    xaxis = list(title = "date"), yaxis=list(title="Customers Volume"), hovermode = "x unified", 
+    legend = list(orientation='h'))
+```
+
+There are also [Vector Autoregressive Moving-Average Time Series (VARMA)](https://faculty.chicagobooth.edu/ruey.tsay/teaching/mtsbk/) models that can be used to fit multivariate linear time series for stationary processes.
+
+#### Google Trends Analytics
+
+We can use dynamic Google Trends data to retrieve information, identify temporal patterns and motifs due to various human experiences, conduct time-series analyses, and forecast future trends. If we retrieve data for multiple terms (keywords or phrases) over different periods of time and across geographic locations the problem can certainly get complex. We will utilize the R packages `gtrendsR` and `prophet`.
+
+```{r warning=F, error=F, message=F}
+# install.packages("prophet")
+# install.packages("devtools")
+# install.packages("gtrendsR")
+library(gtrendsR)
+library(ggplot2)
+library(prophet)
+```
+
+Let's search *Google Trends* for `Big Data`, `data science`, `predictive analytics`, and `Artificial Intelligence` in the USA over the past ten years. Note that a time span can be specified via:
+
+ - "now 1-H": Last hour
+ - "now 4-H": Last four hours
+ - "now 1-d": Last day
+ - "now 7-d": Last seven days
+ - "today 1-m": Past 30 days
+ - "today 3-m": Past 90 days
+ - "today 12-m": Past 12 months
+ - "today+5-y": Last five years (default)
+ - "all": Since the beginning of Google Trends (2004)
+ - "Y-m-d Y-m-d": Time span between two dates (e.g., "2013-06-22 2023-06-21")
+
+```{r warning=F, error=F, message=F}
+DSPA_trends_US <- gtrends(c("Big Data", "data science", "predictive analytics", 
+                            "Artificial Intelligence"), 
+                          geo = c("US"), gprop = "web", 
+                          time = "2013-06-22 2023-06-21")[[1]]
+
+# ggplot(data = DSPA_trends_US, aes(x = date, y = hits, group = keyword)) +
+#   geom_line(size = 1.5, alpha = 0.8, aes(color = keyword)) +
+#   geom_point(size = 1.6) +
+#   ylim(0, NA) +
+#   theme(legend.title=element_blank(), axis.title.x = element_blank()) +
+#   theme(legend.position="bottom") +
+#   ylab("Phrase Search Freq") + 
+#   ggtitle("USA: Google Trends (Big Data, Data Science, Predictive Analytics): 2010-2023")
+
+plot_ly(data = DSPA_trends_US, x=~date, y=~hits, type="scatter", mode="lines", color=~keyword, name=~keyword) %>%
+  layout(title = "USA: Google Trends (Big Data, Data Science, Predictive Analytics): 2013-2023",
+    xaxis = list(title = "date"), yaxis=list(title="Phrase Search Frequency"), hovermode = "x unified", legend = list(orientation='h'))
+```
+
+And similarly, we can contrast the *Google Trends* for `Big Data`, `data science` and `predictive analytics` global (worldwide) searches over the past ten years.
+
+```{r eval=FALSE, warning=F, error=F, message=F}
+# DSPA_trends_World <- gtrends(c("Big Data", "data science", "predictive analytics",
+#                                "Artificial Intelligence"), geo=c("all"),
+#                           gprop = "web", time = "2010-01-01 2023-06-21")[[1]]
+
+Sys.sleep(10)  # pause 10-seconds to allow gtrends API to relax
+
+DSPA_trends_World <- gtrends(c("Big Data", "data science", "predictive analytics", 
+                               "Artificial Intelligence"),  geo = c(""), 
+                            gprop = "web", time = "2013-06-22 2023-06-21")[[1]]
+
+# ggplot(data = DSPA_trends_World, aes(x = date, y = hits, group = keyword)) +
+#   geom_line(size = 1.5, alpha = 0.8, aes(color = keyword)) +
+#   geom_point(size = 1.6) +
+#   ylim(0, NA) +
+#   theme(legend.title=element_blank(), axis.title.x = element_blank()) +
+#   theme(legend.position="bottom") +
+#   ylab("Phrase Search Freq") + 
+#   ggtitle("World: Google Trends (Big Data, Data Science, Predictive Analytics): 2010-2023")
+
+plot_ly(data = DSPA_trends_World, x=~date, y=~hits, type="scatter", mode="lines", 
+        color=~keyword, name=~keyword) %>%
+  layout(title = "World: Google Trends (Big Data, Data Science, Predictive Analytics): 2010-2023",
+    xaxis = list(title = "date"), yaxis=list(title="Phrase Search Frequency"), 
+    hovermode = "x unified", legend = list(orientation='h'))
+```
+
+We can also examine global geographic trends in searches for "data science", e.g., US, China, UK.
+
+```{r warning=F, error=F, message=F}
+# DSPA_trends_Global <- gtrends(c("data science"), 
+#                           geo = c("US","CN","GB"), gprop = "web", 
+#                           time = "2010-01-01 2023-06-27")[[1]]
+Sys.sleep(10)  # pause 10-seconds to allow gtrends API to relax
+
+DSPA_trends_Global <- gtrends(c("data science"),  geo = c("US","CN","GB"), gprop = "web", 
+                              time = "2013-06-22 2023-06-21")[[1]]
+DSPA_trends_Global$hits[is.na(DSPA_trends_Global$hits)] <- "0"
+# DSPA_trends_Global$hits
+
+# ggplot(data = DSPA_trends_Global, aes(x = date, 
+#                      y = as.numeric(hits), group = geo)) +
+#   geom_line(size = 1.5, alpha = 0.8, aes(color = geo)) +
+#   geom_point(size = 1.6) +
+#   ylim(0, NA) +
+#   theme(legend.title=element_blank(), axis.title.x = element_blank()) +
+#   theme(legend.position="bottom") +
+#   ylab("Data Science Search Freq'") + 
+#   ggtitle("Global 'Data Science' Google Trends (US, CN, GB): 2010-2020")
+
+plot_ly(data = DSPA_trends_Global, x=~date, y=~hits, type="scatter", mode="lines", color=~geo, name=~geo) %>%
+  layout(title = "Global 'Data Science' Google Trends (US, CN, GB): 2010-2023",
+    xaxis = list(title = "date"), yaxis=list(title="Phrase Search Frequency"), hovermode = "x unified", legend = list(orientation='h'))
+```
+
+What interesting patterns, trends and behavior is evident in the plot above?
+
+Next, we can use the `prophet` package to automatically identify patterns and provide forecasts of future searches. The `prophet()` function call requires the input data-frame to have columns "ds" and "y" representing the time-series dates and values, respectively. *Prophet* implements an additive time series forecasting model with non-linear trends fit with annual, weekly, and daily seasonality, plus holiday effects.
+
+```{r warning=F, error=F, message=F}
+US_ts <- DSPA_trends_US[which(DSPA_trends_US$keyword == "data science"), 
+                        names(DSPA_trends_US) %in% c("date","hits")]
+# US_ts <- dplyr::select(filter(DSPA_trends_US, keyword=='data science'), c("date","hits"))
+
+US_ts$hits <- as.numeric(US_ts$hits)
+
+colnames(US_ts) <-c("ds","y")
+US_ts_prophet <- prophet(US_ts, weekly.seasonality=TRUE)
+```
+
+To generate forward looking predictions, we will use the method `predict()`.
+
+```{r warning=F, error=F, message=F}
+future_df <- make_future_dataframe(US_ts_prophet, periods = 730)
+US_ts_prophet_pred <- predict(US_ts_prophet, future_df)
+
+# plot(US_ts_prophet, US_ts_prophet_pred)
+
+plot_ly(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$yhat, type="scatter", mode="markers+lines", name="Prophet Model") %>%
+  add_trace(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$yhat_lower, type="scatter", mode="lines", name="Lower Limit") %>%
+  add_trace(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$yhat_upper, type="scatter", mode="lines", name="Upper Limit") %>%
+  layout(title = "Prophet Additive TS Model",
+    xaxis = list(title = "date"), yaxis=list(title="TS Value (data science)"), hovermode = "x unified", legend = list(orientation='h'))
+
+```
+
+Finally, we can extract daily, monthly, quarterly, and yearly patterns.
+
+```{r warning=F, error=F, message=F}
+prophet_plot_components(US_ts_prophet, US_ts_prophet_pred)
+
+plot_ly(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$trend, type="scatter", mode="markers+lines", name="Prophet Model") %>%
+  add_trace(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$trend_lower, type="scatter", mode="lines", name="Lower Limit") %>%
+  add_trace(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$trend_upper, type="scatter", mode="lines", name="Upper Limit") %>%
+  layout(title = "Prophet Model Trend",
+    xaxis = list(title = "date"), yaxis=list(title="TS Value (data science)"), hovermode = "x unified", legend = list(orientation='h'))
+
+plot_ly(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$yearly, type="scatter", mode="markers+lines", name="Prophet Model") %>%
+  # add_trace(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$yearly_lower, type="scatter", mode="lines", name="Lower Limit") %>%
+  # add_trace(x=~US_ts_prophet_pred$ds, y=~US_ts_prophet_pred$yearly_upper, type="scatter", mode="lines", name="Upper Limit") %>%
+  layout(title = "Detrended Prophet Model",
+    xaxis = list(title = "date"), yaxis=list(title="TS Value (data science)"), hovermode = "x unified", legend = list(orientation='h'))
+```
+
+Try to fit an ARIMA time-series model to the US data.
+
+```{r warning=F, error=F, message=F}
+library(forecast)
+fit_US_ts <- auto.arima(US_ts$y, approx=F, trace = F)
+fit_US_ts
+
+# Acf(residuals(fit_US_ts))
+
+acf1 <- Acf(residuals(fit_US_ts), plot = F)
+# 95% CI: https://github.com/SurajGupta/r-source/blob/master/src/library/stats/R/acf.R
+ci <- qnorm((1 + 0.95)/2)/sqrt(length(US_ts$y))
+pacf1 <- Pacf(residuals(fit_US_ts), plot = F)
+
+
+plot_ly(x = ~acf1$lag[-1,1,1], y = ~acf1$acf[-1,1,1], type = "bar", name="ACF") %>%  # ACF
+  # PACF
+  add_trace(x = ~pacf1$lag[-1,1,1], y = ~pacf1$acf[-1,1,1], type = "bar", name="PACF") %>%
+  # add CI lines
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(ci, ci), 
+            mode="lines", name="Upper CI", line=list(dash='dash')) %>%
+  add_lines(x=~c(acf1$lag[2,1,1], acf1$lag[length(acf1$lag),1,1]), y=~c(-ci, -ci), 
+            mode="lines", name="Lower CI", line=list(dash='dash')) %>%
+  layout(bargap=0.8, xaxis=list(title="lag"), yaxis=list(title="ACF/PACF (Residuals)"),
+         title=paste0("ACF & PACF Plots using ", fit_US_ts$method, " Model Residuals"),
+         hovermode = "x unified", legend = list(orientation='h'))
+
+displayForecastErrors <- function(forecastErrors)
+  {
+     # Generate a histogram of the Forecast Errors
+     binsize <- IQR(forecastErrors)/4
+     sd   <- sd(forecastErrors)
+     min  <- min(forecastErrors) - sd
+     max  <- max(forecastErrors) + sd
+     
+     # Generate 5K normal(0,sd) RVs 
+     norm <- rnorm(5000, mean=0, sd=sd)
+     min2 <- min(norm)
+     max2 <- max(norm)
+     if (min2 < min) { min <- min2 }
+     if (max2 > max) { max <- max2 }
+     
+     # Plot red histogram of the forecast errors
+     bins <- seq(min, max, length.out = 20)  # binsize)
+     # hist(forecastErrors, col="red", freq=FALSE, breaks=bins)
+     # 
+     # myHist <- hist(norm, plot=FALSE, breaks=bins)
+     # 
+     # # Overlay the Blue normal curve on top of forecastErrors histogram
+     # points(myHist$mids, myHist$density, type="l", col="blue", lwd=2)
+     
+     histForecast <- hist(forecastErrors, breaks=bins, plot = F)
+     histNormal <- hist(norm, plot=FALSE, breaks=bins)
+     plot_ly(x = histForecast$mids, y = histForecast$density, type = "bar", name="Forecast-Errors Histogram") %>%
+        add_lines(x=histNormal$mids, y=dnorm(histNormal$mids, 0, sd), type="scatter", mode="lines", 
+                  name="(Theoretical) Normal Density") %>%
+        layout(bargap=0.1, legend = list(orientation = 'h'),
+               title=paste0("US TS Forecast using ", fit_US_ts$method, " Model Residuals"))
+}
+
+# tsdisplay(residuals(fit_US_ts), lag.max=45, main='(0,1,0) Model Residuals')
+
+displayForecastErrors(residuals(fit_US_ts))
+
+fit_US_ts_forecasts <- forecast(fit_US_ts, h=10, level=20)
+# plot(fit_US_ts_forecasts, include = 100)
+
+forecastDates <- seq(as.POSIXct("2023-06-28 GMT"), length.out=10, by = "month")
+
+plot_ly(x=~US_ts$ds, y=~fit_US_ts_forecasts$fitted, type="scatter", mode="lines", name="Observed") %>%
+  # add CI lines
+  add_lines(x=~forecastDates, y=~fit_US_ts_forecasts$mean, mode="lines", name="Mean Forecast", line=list(size=5)) %>%
+  add_lines(x=~forecastDates, y=~fit_US_ts_forecasts$lower[,1], mode="lines", name="Lower 80%", line=list(dash='dash')) %>%
+  add_lines(x=~forecastDates, y=~fit_US_ts_forecasts$lower[,1], mode="lines", name="Lower 95%", line=list(dash='dot')) %>%
+  add_lines(x=~forecastDates, y=~fit_US_ts_forecasts$upper[,1], mode="lines", name="Upper 80%", line=list(dash='dash')) %>%
+  add_lines(x=~forecastDates, y=~fit_US_ts_forecasts$upper[,1], mode="lines", name="Upper 95%", line=list(dash='dot')) %>%
+  layout(title = paste0("US TS Forecast using ", fit_US_ts_forecasts$method, " Model"),
+    xaxis = list(title = "date"), yaxis=list(title="(Data Science) Search Frequency"), hovermode = "x unified", legend = list(orientation='h'))
+```
+
+You can try to apply some of the time-series methods to the Google-Trends "hits" for some specific queries you may be interested in.
+
+
+### Structural Equation Modeling (SEM)-latent variables
+
+The time series analysis provides an effective strategy to interrogate longitudinal univariate data. What happens if we have multiple, potentially associated, measurements recorded at each time point?
+
+SEM is a general multivariate statistical analysis technique that can be used for causal modeling/inference, path analysis, confirmatory factor analysis (CFA), covariance structure modeling, and correlation structure modeling. This method allows *separation of observed and latent variables*. Other standard statistical procedures may be viewed as special cases of SEM, where statistical significance may be less important, and covariances are the core of structural equation models.
+
+*Latent variables* are features that are not directly observed but may be inferred from the actually observed variables. In other words, a combination or transformation of observed variables can create latent features, which may help us reduce the dimensionality of data. Also, SEM can address multicollinearity issues when we fit models because we can combine some high collinearity variables to create a single (latent) variable, which can then be included into the model.
+
+#### Foundations of SEM 
+
+SEMs consist of two complementary components - a *path model*, quantifying specific cause-and-effect relationships between observed variables, and a *measurement model*, quantifying latent linkages between unobservable components and observed variables. The LISREL (LInear Structural RELations) framework represents a unifying mathematical strategy to specify these linkages, see [Grace]( https://books.google.com/books?isbn=1139457845).
+
+The most general kind of SEM is a structural regression path model with latent variables, which accounts for measurement errors of observed variables. *Model identification* determines whether the model allows for unique parameter estimates and may be based on model degrees of freedom ($df_M \geq 0$) or a known scale for every latent feature. If $\nu$ represents the number of observed variables, then the total degrees of freedom for a SEM, $\frac{\nu(1+\nu)}{2}$, corresponds to the number of variances and unique covariances in a variance-covariance matrix for all the features, and the model degrees of freedom, $df_M = \frac{\nu(1+\nu)}{2} - l$, where $l$ is the number of estimated parameters.
+
+Examples include:
+
+ - *just-identified model* ($df_M=0$) with unique parameter estimates, 
+ - *over-identified model* ($df_M>0$) desirable for model testing and assessment,
+ - *under-identified model* ($df_M<0$) is not guaranteed unique solutions for all parameters. In practice, such models occur when the effective degrees of freedom are reduced due to two or more highly-correlated features, which presents problems with parameter estimation. In these situations, we can exclude or combine some of the features boosting the degrees of freedom.
+
+The latent variables' *scale* property reflects their unobservable, not measurable, characteristics. The latent scale, or unit, may be inferred from one of its observed constituent variables, e.g., by imposing a unit loading identification constraint fixing at $1.0$ the factor loading of one observed variable.
+
+An SEM model with appropriate *scale* and degrees of freedom conditions may be identifiable subject to [Bollen's two-step identification rule]( https://books.google.com/books?isbn=111861903X). When both the CFA path components of the SEM model are identifiable, then the whole SR model is identified, and model fitting can be initiated.
+
+ - For the confirmatory factor analysis (CFA) part of the SEM, identification requires (1) a minimum of two observed variables for each latent feature, (2) independence between measurement errors and the latent variables, and (3) independence between measurement errors. 
+ - For the path component of the SEM, ignoring any observed variables used to measure latent variables, model identification requires: (1) errors associated with endogenous latent variables to be uncorrelated, and (2) all causal effects to be unidirectional. 
+
+The LISREL representation can be summarized by the following matrix equations:
+
+$$\text{measurement model component} 
+\begin{cases} 
+    x=\Lambda_x\xi +\delta, \\ 
+    y=\Lambda_y\eta +\epsilon
+\end{cases}.$$
+
+And
+
+$$\text{path model component:  } 
+    \eta = B\eta +\Gamma\xi + \zeta,$$
+
+where $x_{p\times1}$ is a vector of observed *exogenous variables* representing a linear function of $\xi_{j\times 1}$ vector of *exogenous latent variables*, $\delta_{p\times 1}$ is a *vector of measurement error*, $\Lambda_x$ is a $p\times j$ matrix of factor loadings relating $x$ to $\xi$, $y_{q\times1}$ is a vector of observed *endogenous variables*, $\eta_{k\times 1}$ is a vector of *endogenous latent variables*, $\epsilon_{q\times 1}$ is a vector of *measurement error for the endogenous variables*, and $\Lambda_y$ is a $q\times k$ matrix of factor loadings relating $y$ to $\eta$. Let's also denote the two variance-covariance matrices, $\Theta_{\delta}(p\times p)$ and $\Theta_{\epsilon}(q\times q)$ representing the variance-covariance matrices among the measurement errors $\delta$ and $\epsilon$, respectively. The third equation describing the LISREL path model component as relationships among latent variables includes $B_{k\times k}$ a matrix of path coefficients describing the *relationships among endogenous latent variables*, $\Gamma_{k\times j}$ as a matrix of path coefficients representing the *linear effects of exogenous variables on endogenous variables*, $\zeta_{k\times 1}$ as a vector of *errors of endogenous variables*, and the corresponding two variance-covariance matrices $\Phi_{j\times j}$ of the *latent exogenous variables*, and $\Psi_{k\times k}$ of the *errors of endogenous variables*.
+
+The basic statistic for a typical SEM implementation is based on covariance structure modeling and model fitting relies on optimizing an objective function, $\min f(\Sigma, S)$, representing the difference between the model-implied variance-covariance matrix, $\Sigma$,  predicted from the causal and non-causal associations specified in the model, and the corresponding observed variance-covariance matrix $S$, which is estimated from observed data. The objective function, $f(\Sigma, S)$ can be estimated as follows, see [Shipley](https://books.google.com/books?isbn=1107442591). 
+
+* In general, causation implies correlation, suggesting that if there is a causal relationship between two variables, there must also be a systematic relationship between them. Specifying a set of theoretical causal paths, we can reconstruct the model-implied variance-covariance matrix, $\Sigma$, from total effects and unanalyzed associations. The LISREL strategy specifies the following mathematical representation:
+
+$$\Sigma = \begin{vmatrix} 
+\Lambda_yA(\Gamma\Phi\Gamma'+\Psi)A'\Lambda'_y+\Theta_{\epsilon} & \Lambda_yA\Gamma\Phi\Lambda'_x \\ 
+\Lambda_x\Phi\Gamma'A'\Lambda'_y & \Lambda_x\Phi\Lambda'_x+\Theta_{\delta}
+\end{vmatrix},$$
+
+where $A=(I-B)^{-1}$. This representation of $\Sigma$ does not involve the observed and latent exogenous and endogenous variables, $x,y,\xi,\eta$. Maximum likelihood estimation (MLE) may be used to obtain the $\Sigma$ parameters via iterative searches for a set of optimal parameters minimizing the element-wise deviations between $\Sigma$ and $S$. 
+
+The process of optimizing the objective function $f(\Sigma, S)$  can be achieved by computing the log likelihood ratio, i.e., comparing the likelihood of a given fitted model to the likelihood of a perfectly fit model. MLE estimation requires multivariate normal distribution for the endogenous variables and Wishart distribution for the observed variance-covariance matrix, $S$. 
+
+Using MLE estimation simplifies the objective function to:
+
+$$f(\Sigma, S) = \ln|\Sigma| +tr(S\times \Sigma^{-1}) -\ln|S| -tr(SS^{-1}),$$
+
+where $tr()$ is the trace of a matrix. The optimization of 
+$f(\Sigma, S)$ also requires independent and identically distributed observations, and positive definite matrices. The iterative MLE optimization generates estimated variance-covariance matrices and path coefficients for the specified model. More details on model assessment (using Root Mean Square Error of Approximation (RMSEA) and Goodness of Fit Index) and the process of defining a priori SEM hypotheses are available in [Lam & Maguire](https://dx.doi.org/10.1155/2012/263953).
+
+#### SEM components
+
+The `R` *Lavaan* package uses the following SEM syntax to represent relationships between variables. We can follow the following table to specify `Lavaan` models:
+
+Formula Type               | Operator | Explanation
+---------------------------|----------|----------------
+Latent variable definition | =~       | Is measured by
+Regression                 | ~        | Is regressed on
+(Residual) (co)variance    | ~~       | Is correlated with
+Intercept                  | ~1       | Intercept
+
+For example in R we can write the following model
+`model<-`
+`'`
+`# regressions`
+
+$$y1 + y2 \sim f1 + f2 + x1 + x2$$
+$$f1 \sim f2 + f3$$
+$$f2 \sim f3 + x1 + x2$$
+`# latent variable definitions`
+
+$$f1 =\sim y1 + y2 + y3$$
+$$f2 =\sim y4 + y5 + y6$$
+$$f3 =\sim y7 + y8 + y9 + y10$$
+`# variances and covariances`
+$$y1 \sim\sim y1$$
+$$y1 \sim\sim y2$$
+$$f1 \sim\sim f2$$
+`# intercepts`
+$$y1 \sim 1$$
+$$f1 \sim 1$$
+`'`
+
+Note that the two "$'$" symbols (in the beginning and ending of a model description) are very important in the `R`-syntax.
+
+#### Case study - Parkinson's Disease (PD)
+
+Let's use the PPMI dataset in our class file as an example to illustrate SEM model fitting.
+
+*Step 1 - collecting data*
+
+The [Parkinson's Disease Data](https://wiki.socr.umich.edu/index.php/SOCR_Data_PD_BiomedBigMetadata) represents a realistic simulation case-study to examine associations between clinical, demographic, imaging and genetics variables for Parkinson's disease. This is an example of Big Data for investigating important neurodegenerative disorders. 
+
+*Step 2 - exploring and preparing the data*
+
+Now, we can import the dataset into R and recode the `ResearchGroup` variable into a binary variable.
+
+```{r eval=T}
+par(mfrow=c(1, 1))
+PPMI <- read.csv("https://umich.instructure.com/files/330397/download?download_frd=1")
+summary(PPMI)
+PPMI$ResearchGroup <- ifelse(PPMI$ResearchGroup=="Control", "1", "0")
+# PPMI <- PPMI[ , !(names(PPMI) %in% c("FID_IID", "time_visit"))] # remove Subject ID/time
+```
+
+This large dataset has 1,746 observations and 31 variables with missing data in some of them. A lot of the variables are highly correlated. You can inspect high correlation using *heat maps*, which reorders these covariates according to correlations to illustrate clusters of high-correlations.
+
+```{r fig.align="center",fig.height=12,fig.width=12}
+pp_heat <- PPMI[complete.cases(PPMI), -c(1, 20, 31)]
+corr_mat = cor(pp_heat)
+# Remove upper triangle
+corr_mat_lower = corr_mat
+corr_mat_lower[upper.tri(corr_mat_lower)] = NA
+# Melt correlation matrix and make sure order of factor variables is correct
+corr_mat_melted = melt(corr_mat_lower)
+colnames(corr_mat_melted) <- c("Var1", "Var2", "value")
+corr_mat_melted$Var1 = factor(corr_mat_melted$Var1, levels=colnames(corr_mat))
+corr_mat_melted$Var2 = factor(corr_mat_melted$Var2, levels=colnames(corr_mat))
+
+# Plot
+# corr_plot = ggplot(corr_mat_melted, aes(x=Var1, y=Var2, fill=value)) +
+#   geom_tile(color='white') +
+#   scale_fill_distiller(limits=c(-1, 1), palette='RdBu', na.value='white',
+#                        name='Correlation') +
+#   ggtitle('Correlations') +
+#   coord_fixed(ratio=1) +
+#   theme_minimal() +
+#   scale_y_discrete(position="right") +
+#   theme(axis.text.x=element_text(angle=90, vjust=1, hjust=1),
+#         axis.title.x=element_blank(),
+#         axis.title.y=element_blank(),
+#         panel.grid.major=element_blank(),
+#         legend.position=c(0.1,0.9),
+#         legend.justification=c(0,1))
+# corr_plot
+
+plot_ly(x =~colnames(corr_mat_lower), y = ~rownames(corr_mat_lower), z = ~corr_mat_lower, type = "heatmap")
+```
+
+And there are some specific correlations.
+
+```{r eval=T}
+cor(PPMI$L_insular_cortex_ComputeArea, PPMI$L_insular_cortex_Volume)
+cor(PPMI$UPDRS_part_I, PPMI$UPDRS_part_II, use = "complete.obs")
+cor(PPMI$UPDRS_part_II, PPMI$UPDRS_part_III, use = "complete.obs")
+```
+
+One way to solve this is to create some latent variables. We can consider the following model.
+
+```{r eval=T}
+model1<-
+  ' 
+    Imaging =~ L_cingulate_gyrus_ComputeArea  + L_cingulate_gyrus_Volume+R_cingulate_gyrus_ComputeArea+R_cingulate_gyrus_Volume+R_insular_cortex_ComputeArea+R_insular_cortex_Volume
+    UPDRS=~UPDRS_part_I+UPDRS_part_II+UPDRS_part_III
+    DemoGeno =~ Weight+Sex+Age
+
+    ResearchGroup ~ Imaging + DemoGeno + UPDRS
+  '
+```
+
+Here we try to create three latent variables-`Imaging`, `DemoGeno`, and `UPDRS`. Let's fit a SEM model using `cfa()`(confirmatory factor analysis) function. Before fitting the data, we need to scale our dataset. However, we don't need to scale our binary response variable. We can use the following chunk of code to do the job.
+
+```{r eval=T}
+mydata<-scale(PPMI[, -c(1,20,31)]) # avoid scaling ID, Dx, Time
+mydata<-data.frame(PPMI$FID_IID, mydata, cbind(PPMI$time_visit, PPMI$ResearchGroup))
+colnames(mydata)[1]<-"FID_IID"
+colnames(mydata)[30]<-"time_visit"
+colnames(mydata)[31]<-"ResearchGroup"
+```
+
+*Step 3 - fitting a model on the data*
+
+Now, we can start to build the model. The `cfa()` function we will use shortly belongs to the `lavaan` R-package.
+
+```{r eval=T, warning=FALSE, message=F}
+# install.packages("lavaan")
+# install.packages("pbivnorm")
+library(lavaan)
+# lavaan requires all variables to be ordered
+# mydata[,] <- lapply(mydata[,], ordered)
+mydata$ResearchGroup <- as.ordered(mydata$ResearchGroup)
+mydata$time_visit <- as.ordered(mydata$time_visit)
+
+# See Lavaan's protocol for handling categorical engo/exogen covariates: 
+# https://lavaan.ugent.be/tutorial/cat.html
+#fit <- lavaan::cfa(model1, data=mydata, missing = 'WLSMV')
+fit <- lavaan::cfa(model1, data=mydata, estimator = "PML")
+```
+
+Here we can see some warning messages. Both our covariance and error term matrices are not positive definite. Non-positive definite matrices can cause the estimates of our model to be biased. There are many factors that can lead to this problem. In this case, we might create some latent variables that are not a good fit for our data. Let's try to delete the `DemoGeno` latent variable. We can add `Weight`, `Sex`, and `Age` directly to the regression model.
+
+```{r eval=T}
+model2 <-
+    '      # (1) Measurement Model
+      Imaging =~  L_cingulate_gyrus_ComputeArea +
+        L_cingulate_gyrus_Volume+R_cingulate_gyrus_ComputeArea+R_cingulate_gyrus_Volume+
+        R_insular_cortex_ComputeArea+R_insular_cortex_Volume
+      UPDRS =~  UPDRS_part_I  +UPDRS_part_II + UPDRS_part_III
+          # (2) Regressions
+      ResearchGroup ~ Imaging + UPDRS +Age+Sex+Weight
+    '
+```
+
+When fitting `model2`, the warning messages are gone. We can see that falsely adding a latent variable can cause those matrices to be not positive definite. Currently, the `lavaan` functions `sem()` and `cfa()` are the same. 
+
+```{r eval=T, warning=F, message=F}
+#fit2<-cfa(model2, data=mydata, missing = 'FIML')
+fit2 <- lavaan::cfa(model2, data=mydata, optim.gradient = "numerical")
+summary(fit2, fit.measures=TRUE)
+```
+
+#### Outputs of Lavaan SEM
+
+In the output of our model, we have information about how to create these two latent variables (`Imaging`, `UPDRS`) and the estimated regression model. Specifically, it gives the following information.
+
+(1) First six lines are called the header contains the following information:
+
+ - lavaan version number
+ - lavaan converge info (normal or not), and # iterations needed
+ - the number of observations that were effectively used in the analysis
+ - the number of missing patterns identified, if any
+ - the estimator that was used to obtain the parameter values (here: ML)
+ - the model test statistic, the degrees of freedom, and a corresponding p-value
+
+(2)	Next, we have the Model test baseline model and the value for the SRMR
+
+(3)	The last section contains the parameter estimates, standard errors (if the information matrix is expected or observed, and if the standard errors are standard, robust, or based on the bootstrap).  Then, it tabulates all free (and fixed) parameters that were included in the model.  Typically, first the latent variables are shown, followed by covariances and (residual) variances.  The first column (Estimate) contains the (estimated or fixed) parameter value for each model parameter;  the second column (Std.err) contains  the  standard  error  for  each  estimated  parameter;  the  third  column  (Z-value)  contains  the  Wald statistic (which is simply obtained by dividing the parameter value by its standard error), and the last column contains the p-value for testing the null hypothesis that the parameter equals zero in the population.
+
+### Longitudinal data analysis-Linear Mixed model
+
+As mentioned earlier, longitudinal studies take measurements for the same individual repeatedly through a period of time. Under this setting, we can measure the change after a specific treatment. However, the measurements for the same individual may be correlated with each other. Thus, we need special models that deal with this type of internal inter-dependencies.
+
+If we use the latent variable UPDRS (created in the output of the SEM model) rather than the research group as our response, we can conduct a longitudinal analysis.
+
+#### Mean trend
+
+According to the output of model `fit`, our latent variable `UPDRS` is a combination of three observed variables-`UPDRS_part_I`, `UPDRS_part_II`, and `UPDRS_part_III`. We can visualize how average `UPDRS` differ in different research groups over time; this graph is not shown as it's not very informative, there is no clear pattern emerging. 
+
+```{r eval=T}
+mydata$UPDRS <- mydata$UPDRS_part_I+1.890*mydata$UPDRS_part_II+2.345*mydata$UPDRS_part_III
+mydata$Imaging <- mydata$L_cingulate_gyrus_ComputeArea  +0.994*mydata$L_cingulate_gyrus_Volume+0.961*mydata$R_cingulate_gyrus_ComputeArea+0.955*mydata$R_cingulate_gyrus_Volume+0.930*mydata$R_insular_cortex_ComputeArea+0.920*mydata$R_insular_cortex_Volume
+```
+
+The above script stored `UPDRS` and `Imaging` variables into `mydata`. We can use `ggplot2` or `plotly` for data visualization, e.g., plot `UPDRS` or `Imaging` across time-visits, blocking for gender. Let's see if group-level graphs may provide more intuition.
+
+```{r eval=T, warning=F, message=F}
+require(ggplot2)
+# p<-ggplot(data=mydata, aes(x=time_visit, y=UPDRS, group=FID_IID))
+# # dev.off()
+# p+geom_point()+geom_line()
+
+sexCast <- as.factor(ifelse(mydata$Sex>0, "Male", "Female"))
+# plot_ly(data=mydata, x=~time_visit, y=~UPDRS, group=~FID_IID)
+mydata$time_visit <- factor(mydata$time_visit, levels = c("0", "3", "6", "9", "12", "18", "24", "30", "36", "42", "48", "54"))
+plot_ly(data=mydata, x=~time_visit, y = ~UPDRS, color = ~sexCast, type = "box") %>% 
+  layout(title="Parkinson's Disease UPDRS across Time", boxmode = "group")
+
+plot_ly(data=mydata, x=~time_visit, y = ~Imaging, color = ~sexCast, type = "box") %>% 
+  layout(title="Parkinson's Disease Imaging Score across Time", boxmode = "group")
+```
+We will use the `aggregate()` function to get the mean, minimum and maximum of `UPDRS` for each time point. Then, we will use separate colors for the two research groups and examine their mean trends.
+
+```{r eval=T}
+# ppmi.mean<-aggregate(UPDRS~time_visit+ResearchGroup, FUN = mean, data=mydata[, c(30, 31, 32)])
+# ppmi.min<-aggregate(UPDRS~time_visit+ResearchGroup, FUN = min, data=mydata[, c(30, 31, 32)])
+# ppmi.max<-aggregate(UPDRS~time_visit+ResearchGroup, FUN = max, data=mydata[, c(30, 31, 32)])
+# ppmi.boundary<-merge(ppmi.min, ppmi.max, by=c("time_visit", "ResearchGroup"))
+# ppmi.all<-merge(ppmi.mean, ppmi.boundary, by=c("time_visit", "ResearchGroup"))
+# pd <- position_dodge(0.1) 
+# p1<-ggplot(data=ppmi.all, aes(x=time_visit, y=UPDRS, group=ResearchGroup, color=ResearchGroup))
+# p1+geom_errorbar(aes(ymin=UPDRS.x, ymax=UPDRS.y, width=0.1))+geom_point()+geom_line()
+
+# calculate all column means and SDs based on the time_visit column
+means <- aggregate( . ~time_visit, data=mydata, mean)
+errorBars <- aggregate( . ~time_visit, data=mydata, sd)
+
+# plot_ly() %>%
+#     # add error bars for each CV-mean at log(lambda)
+#     add_trace(x = ~means$time_visit, y = ~means$UPDRS, type = 'scatter', mode = 'markers', name=~ResearchGroup,
+#         error_y = ~list(array = ~errorBars$UPDRS, color="green", opacity=0.5)) %>% 
+#     layout(title = "ARIMA Forecasting using Simulated Data",
+# 							hovermode = "x unified",  # xaxis2 = ax, 
+# 							yaxis = list(title = 'Y',	side="left", showgrid = TRUE))
+
+plot_ly(x = ~means$time_visit, y = ~means$UPDRS, type = 'scatter', mode = 'markers', name = 'UPDRS',
+        marker=list(size=20), error_y = ~list(array = errorBars$UPDRS, color = 'black')) %>%
+  layout(xaxis=list(title="time_visit"), yaxis=list(title="UPDRS"))
+
+plot_ly(x = ~means$time_visit, y = ~means$Imaging, type = 'scatter', mode = 'markers', name = 'Imaging',
+        marker=list(size=20), error_y = ~list(array = errorBars$Imaging, color = 'gray')) %>%
+  layout(xaxis=list(title="time_visit"), yaxis=list(title="Imaging"))
+```
+
+Despite slight overlaps in some lines, the resulting graph illustrates better the mean differences between the two cohorts. The control group (1) appears to have relative lower means and tighter ranges compared to the PD patient group (0). However, we need further data interrogation to determine if this visual (EDA) evidence translates into statistically significant group differences.
+
+Generally speaking we can always use the *General Linear Modeling (GLM)* framework. However, GLM may ignore the individual differences. So, we can try to fit a *Linear Mixed Model (LMM)* to incorporate different intercepts for each individual participant. Consider the following GLM:
+
+$$UPDRS_{ij}\sim \beta_0+\beta_1*Imaging_{ij}+\beta_2*ResearchGroup_i+\beta_3*{time\_visit}_j+\beta_4*ResearchGroup_i*time\_visit_j+\beta_5*Age_i+\beta_6*Sex_i+\beta_7*Weight_i+\epsilon_{ij}$$
+
+If we fit a different intercept for each individual (indicated by FID_IID) we obtain the following LMM model:
+
+$$UPDRS_{ij}\sim \beta_0+\beta_1*Imaging+\beta_2*ResearchGroup+\beta_3*time\_visit_j+\beta_4*ResearchGroup_i*time\_visit_j+\beta_5*Age_i+\beta_6*Sex_i+\beta_7*Weight_i+b_i+\epsilon_{ij}$$
+
+The LMM actually has two levels:
+
+*Stage 1*
+
+$$Y_{i}=Z_i\beta_i+\epsilon_i,$$
+where both $Z_i$ and $\beta_i$ are matrices.
+
+*Stage 2*
+
+The second level allows fitting random effects in the model.
+$$\beta_i=A_i*\beta+b_i.$$
+So, the full model in matrix form would be:
+$$Y_i=X_i*\beta+Z_i*b_i+\epsilon_i.$$
+
+In this case study, we only consider random intercept and avoid including random slopes, however the model can indeed be extended. In other words, $Z_i=1$ in our model. Let's compare the two models (GLM and LMM). One R package implementing LMM is `lme4`.
+
+```{r eval=T, message=F, warning=F}
+#install.packages("lme4")
+#install.packages("arm")
+library(lme4)
+library(arm)
+#GLM
+model.glm<-glm(UPDRS~Imaging+ResearchGroup*time_visit+Age+Sex+Weight, data=mydata)
+summary(model.glm)
+#LMM
+model.lmm<-lmer(UPDRS~Imaging+ResearchGroup*time_visit+Age+Sex+Weight+(1|FID_IID), data=mydata)
+summary(model.lmm)
+# display(model.lmm)
+
+#install.packages('sjPlot')
+library('sjPlot')
+plot_model(model.lmm, vline = "black", sort.est = TRUE,
+                   transform = NULL, show.values = TRUE,
+                   value.offset = 0.5, dot.size = 2.5, value.size = 2.5)
+```
+
+Note that we use the notation `ResearchGroup*time_visit` that is same as `ResearchGroup+time_visit+ResearchGroup*time_visit` where R will include both terms and their interaction into the model. According to the model outputs, the LMM model has a relatively smaller AIC. In terms of AIC, LMM may represent a better model fit than GLM.
+
+#### Modeling the correlation
+
+In the reported summary of the LMM model, we can see a section called `Correlation of Fixed Effects`. The original model made no assumption about the correlation (unstructured correlation). In R, we usually have the following 4 types of correlation models.
+
+ - *Independence*: no correlation.
+ 
+$$\left(\begin{array}{ccc} 
+1 & 0 &0\\
+0 & 1 &0\\
+0&0&1
+\end{array}\right) . $$
+
+ - *Exchangeable*: correlations are constant across measurements.
+
+$$\left(\begin{array}{ccc} 
+1 & \rho &\rho\\
+\rho & 1 &\rho\\
+\rho&\rho&1
+\end{array}\right). $$
+
+ - *Autoregressive order 1(AR(1))*: correlations are stronger for closer measurements and weaker for more distanced measurements.
+
+$$\left(\begin{array}{ccc} 
+1 & \rho &\rho^2\\
+\rho & 1 &\rho\\
+\rho^2&\rho&1
+\end{array}\right). $$
+
+ - *Unstructured*: correlation is different for each occasion.
+
+$$\left(\begin{array}{ccc} 
+1 & \rho_{1, 2} &\rho_{1, 3}\\
+\rho_{1, 2} & 1 &\rho_{2, 3}\\
+\rho_{1, 3}&\rho_{2, 3}&1
+\end{array}\right). $$
+
+In the LMM model, the output also seems unstructured. So, we needn't worry about changing the correlation structure. However, if the output under unstructured correlation assumption looks like an Exchangeable or AR(1) structure, we may consider changing the LMM correlation structure accordingly.
+
+### Generalized estimating equations (GEE)
+
+Much like the generalized linear mixed models (GLMM), generalized estimating equations (GEE) may be utilized for longitudinal data analysis. If the response is a binary variable like `ResearchGroup`, we need to use the *General Linear Mixed Model (GLMM)* instead of *LMM.* Although GEE represents the marginal model of GLMM, GLMM and GEE are actually different.
+
+In situations where the responses are discrete, there may not be a uniform or systematic strategy for dealing with the joint multivariate distribution of $Y_{i} = \{(Y_{i,1}, Y_{i,2}, \cdots, Y_{i,n})\}^T$. That's where the GEE method comes into play as it's based on the concept of estimating equations. It provides a general approach for analyzing discrete and continuous responses with marginal models. 
+
+*GEE is applicable when*:
+
+(1)	$\beta$, a generalized linear model regression parameter, characterizes systematic variation across covariate levels, 
+(2)	the data represents repeated measurements, clustered data, multivariate response, and 
+(3)	the correlation structure is a nuisance feature of the data. 
+
+*Notation* 
+
+ - Response variables: $\{Y_{i, 1}, Y_{i, 2}, ..., Y_{i, n_t} \}$, where $i \in [1, N]$ is the index for clusters or subjects, and $j\in [1, n_t ]$  is the index of the measurement within cluster/subject. 
+ - Covariate vector: $\{X_{i, 1}, X_{i, 2} , ..., X_{i, n_t} \}$. 
+
+The primary focus of GEE is the estimation of the **mean model**: 
+
+$E(Y_{i, j}  |X_{i, j} )=\mu_{i, j}$, where $$g(\mu_{i, j} )=\beta_0  +\beta_1  X_{i, j}  (1)+\beta_2  X_{i, j}  (2)+\beta_3  X_{i, j}  (3)+...+\beta_p  X_{i, j}  (p)=X_{i, j} \times \beta.$$
+This mean model can be any generalized linear model. For example: 
+$P(Y_{i, j} =1|X_{i, j} )=\pi_{i, j}$ (marginal probability, as we don't condition on any other variables):
+
+$$g(\mu_{i, j})=\ln \left (\frac{\pi_{i, j}}{1- \pi_{i, j} }\right ) = X_{i, j} \times \beta.$$ 
+
+Since the data could be clustered (e.g., within subject, or within unit), we need to choose a correlation model. Let
+$$V_{i, j} = var(Y_{i, j}|X_i),$$
+$$A_i=diag(V_{i, j}),$$
+the paired correlations are denoted by:
+$$\rho_{i, {j, k}}=corr(Y_{i, j}, Y_{i, k}|X_i),$$
+
+the correlation matrix: 
+$$R_i=(\rho_{i, {j, k}}), \ \text{for all}\ j\ \text{and} \ k,$$
+
+and the paired predictor-response covariances are: 
+$$V_i=cov(Y_i |X_i)=A_i^{1/2} R_i A_i^{1/2}.$$
+
+Assuming different correlation structures in the data leads to alternative models, see examples above. 
+
+*GEE Summary* 
+
+ - GEE is a semi-parametric technique because: 
+    + The specification of a mean model, $\mu_{i, j}(\beta)$, and a correlation model, $R_i(\alpha)$, does not identify a complete probability model for $Y_i$
+    + The model $\{\mu_{i, j}(\beta), R_i(\alpha)\}$ is semi-parametric since it only specifies the first two multivariate moments (mean and covariance) of $Y_i$. Higher order moments are not specified. 
+ - Without an explicit likelihood function, to estimate the parameter vector $\beta$, (and perhaps the covariance parameter matrix $R_i(\alpha)$) and perform valid statistical inference that takes the dependence into consideration, we need to construct an unbiased estimating function: 
+   + $D_i (\beta) = \frac{ \partial \mu_i}{\partial \beta}$, the partial derivative, w.r.t. $\beta$, of the mean-model for subject *i*.
+   + $D_i (j, k) = \frac{ \partial \mu_{i, j}}{\partial \beta_k}$, the partial derivative, w.r.t. the *k*th regression coefficient ($\beta k$), of the mean-model for subject *i* and measurement (e.g., time-point) *j*. 
+
+Estimating (cost) function: 
+
+$$U(\beta)=\sum_{i=1}^N D_i^T (\beta) V_i^{-1}  (\beta, \alpha)\{Y_i-\mu_i (\beta)\}.$$ 
+
+Solving the Estimating Equations leads to parameter estimating solutions: 
+
+$$0=U(\hat{\beta})=\sum_{i=1}^N\underbrace{D_i^T(\hat{\beta})}_{\text{scale}}\underbrace{(V_i^{-1} \hat{\beta}, \alpha)}_{\text{variance weight}}\underbrace{ \{ Y_i-\mu_i (\hat{\beta}) \} }_{\text{model mean}}.$$
+**Scale:** a change of scale term transforming the scale of the mean, $\mu_i$, to the scale of the regression coefficients (covariates) .
+
+**Variance weight:** the inverse of the variance-covariance matrix is used to weight in the data for subject *i*, i.e., giving more weight to differences between observed and expected values for subjects that contribute more information.
+
+**Model Mean:** specifies the mean model, $\mu_i(\beta)$, compared to the observed data, $Y_i$. This fidelity term minimizes the difference between actually-observed and mean-expected (within the *i*th cluster/subject).
+
+See also [SMHS EBook](https://wiki.socr.umich.edu/index.php/SMHS_GEE).
+
+#### GEE vs. GLMM
+
+There is a difference in the interpretation of the model coefficients between GEE and GLMM. The fundamental difference between GEE and GLMM is in the target of inference: population-average vs. subject-specific. For instance, consider an example where the observations are dichotomous outcomes (Y), e.g., single Bernoulli trials or death/survival of a clinical procedure, that are grouped/clustered into hospitals and units within hospitals, with N additional demographic, phenotypic, imaging and genetics predictors. To model the failure rate between genders (males vs. females) in a hospital, where all patients are spread among different hospital units (or clinical teams), let Y represent the binary response (death or survival).
+
+In GLMM, the model will be pretty similar to the LMM model.
+
+$$\log\left (\frac{P(Y_{ij}=1)}{P(Y_{ij}=0)} \middle|X_{ij}, b_i \right )=\beta_0+\beta_1x_{ij}+b_i+\epsilon_{ij}.$$
+The only difference between GLMM and LMM in this situation is that GLMM used a *logit link* for the binary response.
+
+With GEE, we don't have random intercept or slope terms.
+$$\log\left (\frac{P(Y_{ij}=1)}{P(Y_{ij}=0)} \middle| X_{ij}, b_i\right )=\beta_0+\beta_1x_{ij}+\epsilon_{ij}.$$
+In the marginal model (GEE), we are ignoring differences among hospital-units and just aim to obtain population (hospital-wise) rates of failure (patient death) and its association with patient gender. The GEE model fit estimates the odds ratio representing the population-averaged (hospital-wide) odds of failure associated with patient gender.
+
+Thus, parameter estimates ($\hat{\beta}$) from GEE and GLMM models may differ because they estimate different things. 
+
+
+### PD/PPMI Case-Study: SEM, GLMM, and GEE modeling
+
+Let's use the [PD/PPMI dataset (05_PPMI_top_UPDRS_Integrated_LongFormat1.csv)](https://umich.instructure.com/files/330397/download?download_frd=1) to show longitudinal SEM, GEE, and GLMM data modeling.
+
+#### Exploratory data analytics
+
+```{r eval=T, warning=F, message=F}
+# install.packages("lavaan")
+library(lavaan)
+#load data   05_PPMI_top_UPDRS_Integrated_LongFormat1.csv ( dim(myData) 1764   31 )
+# setwd("/dir/")
+dataPD <-
+  read.csv("https://umich.instructure.com/files/330397/download?download_frd=1",
+           header = TRUE)
+
+# dichotomize the "ResearchGroup" variable
+dataPD$ResearchGroup <-
+  ifelse(dataPD$ResearchGroup == "Control", 1, 0)
+head(dataPD)
+```
+
+Next we can display the histogram of patients' number of visits and plot the UPDRS_Part_I values across time for patients with different genotypes (*chr17_rs11868035_GT*).
+
+```{r eval=T, warning=F, message=F}
+# hist(dataPD$time_visit)
+library(plotly)
+plot_ly(x = ~dataPD$time_visit, type = "histogram", nbinsx = 10) %>% 
+  layout(title="PD - PPMI Data", 
+         bargap=0.1, xaxis=list(title="Number of Visits"), yaxis=list(title="Frequency"))
+
+# factorize the categorical features
+dataPD_new <- dataPD
+dataPD_new$ResearchGroup <- factor(dataPD_new$ResearchGroup)
+dataPD_new$Sex <- factor(dataPD_new$Sex)
+dataPD_new$chr12_rs34637584_GT <- factor(dataPD_new$chr12_rs34637584_GT)
+dataPD_new$chr17_rs11868035_GT <- factor(dataPD_new$chr17_rs11868035_GT)
+
+# by chr17_rs11868035_GT genotype and ResearchGroup
+# ggplot(dataPD_new, aes(x=time_visit, y=UPDRS_part_I, group=FID_IID)) +
+#   ggtitle("PD/PPMI Data chr17_rs11868035_GT genotype and ResearchGroup") + 
+#   geom_line(aes(color=ResearchGroup)) +
+#   geom_point(aes(color=ResearchGroup)) + facet_wrap(~chr17_rs11868035_GT)
+# 
+# plot_ly(data=dataPD_new, x=~time_visit, y=~UPDRS_part_I, color=~FID_IID, name=~FID_IID, type="scatter", mode="markers+lines")
+# UPDRS by chr17_rs11868035_GT Genotype
+dataPD_new %>%
+    group_by(chr17_rs11868035_GT) %>%
+    do(p=plot_ly(., x=~time_visit, y=~UPDRS_part_I, color=~FID_IID, name=~paste0("pat=",FID_IID), type="scatter", mode="markers+lines") %>% 
+           layout(annotations = list(text = ~paste0("GT=",chr17_rs11868035_GT),
+                                     xref = "x", yref = "y", x = 20, y = 10)) %>% 
+         hide_colorbar()) %>% subplot(nrows = 2, shareX = TRUE, shareY = TRUE) %>%
+  layout(title="Patients UPDRS_part_I by chr17_rs11868035_GT")
+
+# The previous graph can also be done using "ggplot"
+# by chr17_rs11868035_GT genotype and subjectID
+# ggplot(dataPD_new, aes(x=time_visit, y=UPDRS_part_I, group=FID_IID)) +
+#   ggtitle("PD/PPMI Data chr17_rs11868035_GT genotype and SubjectID") + 
+#   geom_line(aes(color=FID_IID)) +
+#   geom_point(aes(color=FID_IID)) + 
+#   facet_wrap(~chr17_rs11868035_GT)
+# 
+# # by ResearchGroup and chr17_rs11868035_GT genotype
+# ggplot(dataPD_new, aes(x=time_visit, y=UPDRS_part_I, group=FID_IID)) +
+#   ggtitle("PD/PPMI Data by Genotype (chr17_rs11868035_GT) & ResearchGroup") + 
+#   geom_line(aes(color=chr17_rs11868035_GT))+
+#   geom_point(aes(color=chr17_rs11868035_GT))+
+#   facet_wrap(~ResearchGroup)
+# 
+# # by ResearchGroup + chr17_rs11868035_GT genotype subgroups
+# ggplot(dataPD_new, aes(x=time_visit, y=UPDRS_part_I, group=FID_IID)) +
+#   ggtitle("PD/PPMI Data chr17_rs11868035_GT genotype and SubjectID") + 
+#   geom_line(aes(color=FID_IID))+
+#   geom_point(aes(color=FID_IID))+
+#   facet_wrap(~ResearchGroup + chr17_rs11868035_GT)
+```
+
+#### SEM
+
+Let's define a SEM model (`model1`) with three latent variables (*Imaging*, *DemoGeno*, and *UPDRS*), a single regression relation, and use the `lavaan::sem()` method to estimate the model. 
+
+```{r eval=T, warning=F, message=F}
+# time_visit is incongruent between cases, we make it ordinal category
+# convert the long-to-wide data format to unwind the time
+library(reshape2)
+
+# check this R-blog post for some common data aggregation, melting, casting and other operations ...
+# https://www.r-statistics.com/2012/01/aggregation-and-restructuring-data-from-r-in-action/
+
+subsetPD <-
+  dataPD[, c(
+    "FID_IID",
+    "L_insular_cortex_ComputeArea",
+    "R_insular_cortex_ComputeArea",
+    "L_cingulate_gyrus_ComputeArea",
+    "R_cingulate_gyrus_ComputeArea",
+    "L_putamen_Volume" ,
+    "R_putamen_Volume",
+    "Sex"  ,
+    "Weight" ,
+    "ResearchGroup" ,
+    "Age" ,
+    "chr12_rs34637584_GT" ,
+    "chr17_rs11868035_GT",
+    "UPDRS_part_I",
+    "UPDRS_part_II" ,
+    "UPDRS_part_III",
+    "time_visit"
+  )]
+
+subsetPD$time_visit <-
+  c("T1", "T2", "T3", "T4")   # convert all times to 1:4
+
+# First Wide to long for UPDRS variable.names
+subsetPD_long <-
+  melt(
+    subsetPD,
+    id.vars = c(
+      "FID_IID",
+      "L_insular_cortex_ComputeArea",
+      "R_insular_cortex_ComputeArea",
+      "L_cingulate_gyrus_ComputeArea",
+      "R_cingulate_gyrus_ComputeArea",
+      "L_putamen_Volume" ,
+      "R_putamen_Volume",
+      "Sex"  ,
+      "Weight" ,
+      "ResearchGroup" ,
+      "Age" ,
+      "chr12_rs34637584_GT" ,
+      "chr17_rs11868035_GT",
+      "time_visit"
+    ),
+    variable.name = "UPDRS",
+    value.name = "UPDRS_value"
+  )
+
+# Need to concatenate 2 columns "UPDRS" & "time_visit"
+subsetPD_long$UPDRS_Time <-
+  do.call(paste, c(subsetPD_long[c("UPDRS", "time_visit")], sep = "_"))
+# remove the old "UPDRS" & "time_visit" columns
+subsetPD_long1 <-
+  subsetPD_long[,!(names(subsetPD_long) %in% c("UPDRS", "time_visit"))]
+# View(subsetPD_long1)
+
+# Convert Long to Wide format
+library(reshape2)
+# From the source:
+# "FID_IID", "L_insular_cortex_ComputeArea",  "R_insular_cortex_ComputeArea", "L_cingulate_gyrus_ComputeArea", "R_cingulate_gyrus_ComputeArea", "L_putamen_Volume" ,  "R_putamen_Volume",  "Sex"  , "Weight" ,   "ResearchGroup" , "Age" , "chr12_rs34637584_GT" , "chr17_rs11868035_GT", are columns we want to keep the same
+# "time_visit" is the column that contains the names of the new columns to put things in
+# "UPDRS_part_I", "UPDRS_part_II" , "UPDRS_part_III" hold the measurements
+subsetPD_wide <-
+  dcast(
+    subsetPD_long,
+    FID_IID + L_insular_cortex_ComputeArea + R_insular_cortex_ComputeArea +
+      L_cingulate_gyrus_ComputeArea + R_cingulate_gyrus_ComputeArea + L_putamen_Volume +
+      R_putamen_Volume + Sex + Weight + ResearchGroup + Age + chr12_rs34637584_GT +
+      chr17_rs11868035_GT ~ UPDRS_Time,
+    value.var = "UPDRS_value",
+    fun.aggregate = mean
+  )
+
+# Variables:
+# "FID_IID", "L_insular_cortex_ComputeArea" ,"R_insular_cortex_ComputeArea",  "L_cingulate_gyrus_ComputeArea","R_cingulate_gyrus_ComputeArea","L_putamen_Volume", "R_putamen_Volume", "Sex","Weight", "ResearchGroup" ,"Age" , "chr12_rs34637584_GT", "chr17_rs11868035_GT","UPDRS_part_I_T1","UPDRS_part_I_T2"               "UPDRS_part_I_T3", "UPDRS_part_I_T4", "UPDRS_part_II_T1","UPDRS_part_II_T2","UPDRS_part_II_T3", "UPDRS_part_II_T4","UPDRS_part_III_T1","UPDRS_part_III_T2", "UPDRS_part_III_T3", "UPDRS_part_III_T4"
+
+# SEM modeling
+model1 <- '
+# latent variable definitions - defining how the latent variables are "manifested by" a set of observed
+# (or manifest) variables, aka "indicators"
+# (1) Measurement Model
+Imaging =~ L_cingulate_gyrus_ComputeArea + R_cingulate_gyrus_ComputeArea + L_putamen_Volume + R_putamen_Volume
+DemoGeno =~ Weight+Sex+Age
+UPDRS =~ UPDRS_part_I_T1
+# UPDRS =~ UPDRS_part_II_T1 + UPDRS_part_II_T2 + UPDRS_part_II_T3 + UPDRS_part_II_T4
+
+# (2) Regressions
+ResearchGroup ~ Imaging + DemoGeno + UPDRS
+'
+
+# confirmatory factor analysis (CFA)
+# The baseline is a null model constraining the observed variables to covary with no other variables.
+# That is, the covariances are fixed to 0 and only individual variances are estimated. This is represents
+# a "reasonable worst-possible fitting model", against which the new fitted model is compared
+# to calculate appropriate model-quality indices (e.g., CFA).
+
+summary(subsetPD_wide)
+# selective scale features (e.g., avoid scaling Subject ID's)
+dataPD2 <-
+  as.data.frame(cbind(scale(subsetPD_wide[,!(
+    names(subsetPD_wide) %in% c(
+      "FID_IID",
+      "Sex",
+      "ResearchGroup",
+      "chr12_rs34637584_GT",
+      "chr17_rs11868035_GT"
+    )
+  )]), subsetPD_wide[, (
+    names(subsetPD_wide) %in% c(
+      "FID_IID",
+      "Sex",
+      "ResearchGroup",
+      "chr12_rs34637584_GT",
+      "chr17_rs11868035_GT"
+    )
+  )]))
+
+summary(dataPD2)
+
+# fitSEM3 <- cfa(model3, data= dataPD2, missing='FIML') 		# deal with missing values (missing='FIML')
+# summary(fitSEM3, fit.measures=TRUE)
+
+fitSEM1 <- sem(model1, data = dataPD2, estimator = "MLM")
+# Check the SEM model covariances
+fitSEM1@SampleStats@cov
+summary(fitSEM1)
+# report the standardized coefficients of the model
+# standardizedSolution(fitSEM1)
+# variation explained by model components (The R-square value for all endogenous variables)
+inspect(fitSEM1, "r2")  # lavInspect()
+
+# install.packages("semPlot")
+library(semPlot)
+semPlot::semPaths(
+  fitSEM1,
+  intercept = FALSE,
+  whatLabel = "est",
+  residuals = FALSE,
+  exoCov = FALSE,
+  edge.label.cex = 1.0,
+  label.cex = 1.5,
+  sizeMan = 8
+)
+```
+
+#### GLMM
+
+```{r eval=T, warning=F, message=F}
+# scale some features
+dataPD_new$L_cingulate_gyrus_ComputeArea <- scale(dataPD_new$L_cingulate_gyrus_ComputeArea)
+dataPD_new$L_cingulate_gyrus_Volume <- scale(dataPD_new$L_cingulate_gyrus_Volume)
+dataPD_new$R_cingulate_gyrus_ComputeArea <- scale(dataPD_new$R_cingulate_gyrus_ComputeArea)
+dataPD_new$R_cingulate_gyrus_Volume<-scale(dataPD_new$R_cingulate_gyrus_Volume)
+dataPD_new$R_insular_cortex_ComputeArea<-scale(dataPD_new$R_insular_cortex_ComputeArea)
+dataPD_new$R_insular_cortex_Volume<-scale(dataPD_new$R_insular_cortex_Volume)
+
+# define the outcome UPDRS and imaging latent feature
+dataPD_new$UPDRS<-dataPD_new$UPDRS_part_I+1.890*dataPD_new$UPDRS_part_II+2.345*dataPD_new$UPDRS_part_III
+dataPD_new$Imaging<-dataPD_new$L_cingulate_gyrus_ComputeArea  +0.994*dataPD_new$L_cingulate_gyrus_Volume+0.961*dataPD_new$R_cingulate_gyrus_ComputeArea+0.955*dataPD_new$R_cingulate_gyrus_Volume+0.930*dataPD_new$R_insular_cortex_ComputeArea+0.920*dataPD_new$R_insular_cortex_Volume
+
+model.glmm<-glmer(ResearchGroup~UPDRS+Imaging+Age+Sex+Weight+(1|FID_IID), data=dataPD_new, family="binomial")
+arm::display(model.glmm)
+dataPD_new$predictedGLMM <- predict(model.glmm, newdata=dataPD_new[1:1764, !(names(dataPD_new) %in% c("ResearchGroup", "UPDRS_part_II_T4"))], allow.new.levels=T, type="response")  # lme4::predict.merMod()
+# factorize the predictions
+dataPD_new$predictedGLMM <- factor(ifelse(dataPD_new$predictedGLMM<0.5, "0", "1"))
+
+# compare overall the GLMM-predicted values against observed ResearchGroup labels values 
+# install.packages("caret")
+# library("caret")
+caret::confusionMatrix(dataPD_new$predictedGLMM, dataPD_new$ResearchGroup)
+
+table(dataPD_new$predictedGLMM, dataPD_new$ResearchGroup)
+
+# compare predicted and observed by Sex
+# ggplot(dataPD_new, aes(predictedGLMM, fill=ResearchGroup)) + 
+#    geom_bar() + facet_grid(. ~ Sex) 
+# 
+# dataPD_new%>%
+#     group_by(Sex) %>%
+#     do(p=plot_ly(., x=~ResearchGroup, y=~predictedGLMM, type = 'bar', name = ~Sex) %>% 
+#            layout(annotations = list(text = ~Sex)) %>% hide_colorbar()) %>%
+#     subplot(nrows = 1, shareX = TRUE, shareY = TRUE)
+# 
+# plot_ly(data = dataPD_new, x = ~ResearchGroup, y = ~momint, type="scatter", mode="markers",
+#         color = ~clusters, marker = list(size = 30), name=clusterNames) %>%
+#   hide_colorbar()
+# 
+# 
+# # compare predicted and observed by Genotype (chr12_rs34637584_GT)
+# ggplot(dataPD_new, aes(predictedGLMM, fill=ResearchGroup)) + 
+#    geom_bar() + facet_grid(. ~ chr12_rs34637584_GT)
+```
+
+#### GEE
+
+We can use several alternative R packages to fit and interpret GEE models, e.g., `gee` and `geepack`. Below we will demonstrate GEE modeling of the PD data using `gee`.
+
+```{r eval=T, warning=F, message=F}
+# install.packages("geepack")
+# library("geepack")
+#gee.fit <- geeglm(ResearchGroup~Imaging+Age+Sex+Weight+UPDRS_part_I, data=dataPD_new[complete.cases(dataPD_new), ], family = "binomial", id = FID_IID, corstr = "exchangeable", scale.fix = TRUE)
+
+library(gee)
+# Full GEE model
+gee.fit <- gee(ResearchGroup~Imaging+Age+Sex+Weight+UPDRS_part_I, data=dataPD_new, family = "binomial", id = FID_IID, corstr = "exchangeable", scale.fix = TRUE)
+# reduced model (-UPDRS_part_I)
+gee.fit2 <- gee(ResearchGroup~Imaging+Age+Sex+Weight, data=dataPD_new, family = "binomial", id = FID_IID, corstr = "exchangeable", scale.fix = TRUE)
+summary(gee.fit)
+
+# anova(gee.fit, gee.fit2) # compare two GEE models
+# To test whether a categorical predictor with more than two levels should be retained in a GEE model we need to test the entire set of dummy variables simultaneously as a single construct. 
+# The geepack package provides a method for the anova function for a multivariate Wald test
+# When the anova function is applied to a single `geeglm` object it returns sequential Wald tests for individual predictors with the tests carried out in the order the predictors are listed in the model formula.
+
+# Individual Wald test and confidence intervals for each covariate
+predictors <- coef(summary(gee.fit))
+gee.fit.CI <- with(as.data.frame(predictors), cbind(lwr=Estimate-1.96*predictors[, 4], est=Estimate, upr=Estimate+1.96*predictors[, 4])) # predictors[, 4] == "Robust S.E."
+rownames(gee.fit.CI) <- rownames(predictors)
+gee.fit.CI
+
+# exponentiate the interpret the results as "odds", instead of log-odds
+UPSRS_est <- coef(gee.fit)["UPDRS_part_I"]
+UPDRS_se <- summary(gee.fit)$coefficients["UPDRS_part_I", "Robust S.E."]
+
+exp(UPSRS_est + c(-1, 1) * UPDRS_se * qnorm(0.975))
+```
+
+The results show that the estimated `UPDRS`-assessment effect of the clinical diagnosis (`ResearchGroup`) taken from the GEE model exchangeable structure (`summary(gee.fit)$working.correlation`) is $-0.458$. We can use the robust standard errors (`Robust S.E.`) to compute the associated 95% confidence interval, $[-0.65;\ -0.33972648]$. Finally, remember that in the binomial/logistic outcome modeling, these effect-size estimates are on a log-odds scale. Interpretation of the results is simpler if we exponentiate the values to get the effects in terms of (simple raw) odds. This
+gives a UPDRS effect of $0.632$ and a corresponding 95% confidence interval of $[0.548;\ 0.729]$. This CI clearly excludes the origin and suggests a strong association between `UPDRS_part_I` (non-motor experiences of daily living) and `ResearchGroup` (clinical diagnosis).
+
+The three models are not directly comparable because they are so intrinsically different. The table below reports the AIC, but we can also compute other model-quality metrics, for SEM, GLMM, and GEE. 
+
+```{r eval=F, message=F, echo=T, warning=F}
+AIC(fitSEM1)
+AIC(model.glmm)
+# install.packages("MuMIn")
+library("MuMIn")
+# to rank several models based on QIC:
+# model.sel(gee.fit, gee.fit2, rank = QIC)
+QIC(gee.fit) 
+```
+
+.       |   SEM   |     GLMM    |   GEE    
+--------|---------|-------------|----------
+AIC     |   4871  |     96.8    |   773.9  
+
+
+Try to apply some of these longitudinal data analytics on:
+
+ - The fMRI data we discussed in [Chapter 2 (Visualization)](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization_Part1.html), and 
+ - The [Diet-Exer-Pulse Data](https://umich.instructure.com/files/6009692/download?download_frd=1) fitting models for  *Time* as a linear predictor of *Pulse*, accounting for the study design (diet by exercise).
+
+
+## Network-based Approaches
+
+This section expands our model-based predictive data analytic strategies for analyzing longitudinal data to include model-free techniques. In the first part, we discussed datasets that track the same type of information, for the same subjects, units or locations, over a period of time. Specifically, we presented classical approaches such as time series analysis, forecasting using autoregressive integrated moving average (ARIMA) models, structural equation models (SEM), and longitudinal data analysis via linear mixed models.Next, we will present neural-network methods for time series analysis, including recurrent Neural Networks (RNN) and Long Short-Term Memory (LSTM) Networks.
+
+
+### Background 
+
+The time-varying (longitudinal) characteristics of large information flows represent a special case of the complexity, dynamic and multi-scale nature of big biomedical data that we discussed in the [DSPA Introduction (Chapter 1)](https://socr.umich.edu/DSPA2/DSPA2_notes/01_Introduction.html). In [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html), we saw space-time (4D) functional magnetic resonance imaging (fMRI) data, and in [Chapter 10](https://socr.umich.edu/DSPA2/DSPA2_notes/10_SpecializedML_FormatsOptimization.html) we discussed streaming data, which also has a natural temporal dimension.
+
+
+### Recurrent Neural Networks (RNN) 
+
+Earlier, in [Chapter 6](https://socr.umich.edu/DSPA2/DSPA2_notes/06_ML_NN_SVM_RF_Class.html), we briefly outlined the ideas behind neural networks. Later, in [Chapter 14](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html), we will expand this to deep neural networks.
+
+Let's now focus on one specific type of neural networks - recursive NN. RNN are a special kind of neural networks that can be applied to predicting the behavior of longitudinal sequence-data. An example is forecasting the trends of a periodic sequence. In general, RNN may be memory intensive as they try to keep all past events in memory. Long short-term memory (LSTM) blocks represent a basic building unit for the RNN layers.
+
+![The anatomy of an RNN](https://wiki.socr.umich.edu/images/d/d9/DSPA_Chap18_RNN_Schematic.png).
+
+LSTM tends to yield better results and utilizes less computer resources, e.g., memory. A LSTM block consists of a cell, an input gate, an output gate and a forget gate. This allows each cell in the NN to "remember" values over specific time intervals, which explains the *short-memory* in LSTM. The 3 cell gates mimic the action of a classical artificial neuronal cell part of a multi-layer feed-forward network. The gates rely on an activation function that computes a weighted action-potential sum.
+
+Recurrent neural networks address the need to harvest prior knowledge into "learning" new patterns, which has traditionally been a challenge in machine learning. RNN's utilize loops to allow knowledge persistence. Following the [Gers-Schmidhuber-Cummins model](https://doi.org/10.1162/089976600300015015), the expressions below illustrate the equations describing the LSTM block forward pass with a forget gate.
+
+$$\begin{align}
+f_t &= \sigma_g(W_{f} x_t + U_{f} h_{t-1} + b_f) \\
+i_t &= \sigma_g(W_{i} x_t + U_{i} h_{t-1} + b_i) \\
+o_t &= \sigma_g(W_{o} x_t + U_{o} h_{t-1} + b_o) \\
+c_t &= f_t \circ c_{t-1} + i_t \circ \sigma_c(W_{c} x_t + U_{c} h_{t-1} + b_c) \\
+h_t &= o_t \circ \sigma_h(c_t)
+\end{align}.$$
+
+In this model:
+
+ - $c_0 = 0$ and $h_0 = 0$ are initial values,
+ - the math operator $\circ$ denotes the matrix-based Hadamard product,
+ - subscripts $_t$ denotes time (as an iteration step),
+ - superscripts $^d$ and $^h$ refer to the number of input features and number of hidden units,
+ - $x_t \in \mathbb{R}^{d}$ is the input vector to the LSTM block
+ - $f_t \in \mathbb{R}^{h}$ is the activation vector for the *forget gate*
+ - $i_t \in \mathbb{R}^{h}$ is the activation vector for the *input gate*
+ - $o_t \in \mathbb{R}^{h}$ is the activation vector for the *output gate*
+ - $h_t \in \mathbb{R}^{h}$ is the output vector of the LSTM block
+ - $c_t \in \mathbb{R}^{h}$ is the cell state vector
+ - $W \in \mathbb{R}^{h \times d}$, $U \in \mathbb{R}^{h \times h}$ and $b \in \mathbb{R}^{h}$ represent the weight matrices and bias vector parameters that will be learned during the training phase.
+
+![The anatomy of an LSTM RNN](https://wiki.socr.umich.edu/images/6/68/DSPA_Chap18_RNN_LSTM_Schematic.png).
+
+Cell states in LSTM networks, represented as horizontal lines running at the bottom of the LSTM node diagram, aggregates feedback from the entire chain via linear operations. LSTM nodes can add or remove information from the cell state according to the specifications of the gates regulating the structure of the information flow. Gates provide control for the information stream according to sigmoid neural net layers ($\sigma$) and a pointwise multiplication operation ($\times$).
+
+Sigmoid layers ($\sigma$) output numbers in $[0,1]$ indicating the throughout proportion each component allows through the gate. At the extremes, output values of zero or one indicate "gate is shut" and "let everything through", respectively. The three LSTM gates directly control the cell state at the given time.
+
+Various activation functions may be employed, e.g., *sigmoid*, *hyperbolic tangent*, rectified linear unit (*ReLU*), etc. During the network training phase, the LSTM's total error is minimized on the training data via iterative gradient descent. Either using back-propagation through time, or utilizing the derivative of the error with respect to time, we can derive/change the weights at each iteration (epoch). Note that then the spectral radius of $W<1$, $\lim_{n\rightarrow \infty} (W^n) = 0$. Thus, when gradient descent optimization is used, the error gradients may quickly become trivial $(0)$ with time. However, with LSTM blocks, the error values are back-propagated from the output, and the total error is kept in the LSTM memory. This continuous error feedback is transferred to each of the gates, which helps in the learning of the gate threshold level. Thus, back-propagation effectively allows the LSTM unit to remember values over long periods of time.
+
+There are also alternative strategies to train the LSTM network, e.g., combining artificial evolution for the *weights to the hidden units* and pseudo-inverse, or support vector machines, for *weights to the output units*. Reinforced LSTM nets may also be trained by policy gradient methods, evolution strategies, or genetic algorithms. Finally, stacks of LSTM networks may be trained by [connectionist temporal classification (CTC)](https://en.wikipedia.org/wiki/Connectionist_temporal_classification). This involves finding RNN weight matrices that using the input sequences maximize the probability of the outcome labels in the corresponding training datasets, which yields joint alignment and recognition.
+
+### Tensor Format Representation
+
+The ability of LSTM RNN to recognize patterns and maintain the state over the length of the time series are useful for prediction tasks. Time series typically include correlation between consecutive versions of lagged segments of the time-series. The LSTM recurrent architecture models the persistence of the states by communicating updates between weight estimates across each epoch iteration. RNNs are enhanced by the LSTM cell architecture and facilitate long term persistence in addition to short term memory.
+
+In RNN models, the predictors ($X$) are represented as tensors, specifically, 3D-array with dimensions $samples\times timesteps\times features$. 
+
+ - Dimension 1: represents the number of samples,
+ - Dimension 2: is the number of time steps (lags), 
+ - Dimension 3: is the number of predictors (1 if univariate or $n$ if multivariate predictors).
+
+The outcome ($Y$) is also a tensor, however it is univariate and is represented by a 2D-array of dimensions: $samples\times timesteps$, where the two dimensions are (1) the *number of samples* (D1), and (2) the *number of time steps in a lag* (D2). Thus, the product $D1\times D2$ is the total sample-size. The proportion of the training set length to the testing set length must be an integer.
+
+For example, suppose we have a total of $1,000$ observations that are stacked in sets of 200 time-points, per lag, 5 time steps (5 lags), and two features (bivariate predictor-vector). Then, the RNN/LSTM input format will be a 3-tensor of dimensions (200, 5, 2).
+
+The *batch size* is the number of training examples in one forward/backward pass of a RNN before a weight update. The choice of batch size requires that these proportions are integral:  $\frac{training\ length}{batch\ size}$, $\frac{testing\ length}{batch\ size}$. A *time step* is the number of lags included in the training and testing datasets. The *epochs* are the total number of forward-backward pass iterations. Typically, a larger number of epochs improves model performance, unless overfitting occurs at which time the validation accuracy or loss may revert.
+
+For example, if we have daily data over 10 years, we can choose a prediction of window *3,650* days (365 days $\times$ 10 years). Suppose we use the auto-correlation function (ACF) and determine that the best auto-correlation is seasonal, i.e., 91 (quarterly). We need to make sure that the autocorrelation period is evenly divisible by the forecasting range. If necessary, we may increase the forecasting period. We can select a batch size of 30 time points (days), which should evenly divide the number of testing and training observations. We may also select time steps = 1, to indicate we are only using one lag, and set epochs = 300, which we can adjust to balance the tradeoff between bias and precision.
+
+Let's look at a couple of RNN examples.
+
+### Simulated RNN case-study
+
+In this example, we will try to predict a trigonometric function ($X$) from a noisy wave function ($Y$). The RNN model is expected to accurately estimate the phase shift of the oscillatory wave functions as well as generate an output ($X$) that represents a denoised version of the input ($Y$). The synthetic training dataset represents 25 oscillations each of which containing 50 point samples. 
+
+For simplicity, all data are renormalized to the unit interval $[0, 1]$. In general, all neural networks work best when the data are pre-normalized to ensure convergence and biased results. We can use any number of hidden layers, number of neurons, and epochs (learning iterations).
+
+```{r warning=F, error=F, message=F}
+# install.packages("rnn")
+library("rnn")
+
+set.seed(1234)
+
+# Set oscillatory wave frequency, period, and phase
+f <- 5
+w <- 2*pi*f
+phase <- -pi/8 # offset the real outcome signal
+# Note: period of sin(t*w+phase) is 1/10, thus, lag=50
+
+# Create input and output sequences, which are different in terms of 
+# phase (offset of -pi/3), quadratic amplitude tau=tau(t), and noise N(0,0.3)
+n=1000
+seq_step= 1.0/n
+t <- seq(seq_step, 1, by=seq_step)
+tau <- (-4) * (t) * (t-1); length(tau) # plot(t, tau)
+# x <- sin(t*w+phase) + rnorm(1000, 0, 0.3)  # input
+x <- tau * (sin(t*w+phase) + rnorm(1000, 0, 0.3))  # input
+y <- sin(t*w)                             # output
+
+# Samples of repeated oscillations 20 time series (rows), each with 50 time-points (columns)
+# Putting data in the appropriate RNN format
+# Predictors (X) and Output (Y) are arrays, 
+# dim 1: samples (must be equal to dim 1 of X), 
+# dim 2: time (must be equal to dim 2 of X), 
+# dim 3: variables (could be 1 or more, if a matrix, will be coerced to array)
+
+# For example, suppose we have a total 1,000 observations that are stacked in samples of 200 time-points (per lag), 5 time steps (5 lags), and 1 feature (univariate predictor-vector). Then, the RNN/LSTM input format will be a 3-tensor of dimensions (100, 10, 1).
+
+X <- matrix(x, nrow = 200, ncol = 5)
+Y <- matrix(y, nrow = 200, ncol = 5)
+dim(X); dim(Y)
+
+# Plot noisy waves
+# plot(as.vector(X), col='blue', type='l', ylab = "X,Y", main = "Noisy input (X), periodic output (Y)", lwd=2)
+# lines(as.vector(Y), col = "red", lty=2, lwd=2)
+# legend("topright", c("X", "Y"), col = c("blue","red"), lty = c(1, 2), lwd = c(2,2))
+library(plotly)
+plot_ly(x=~c(1:length(as.vector(X))), y=~as.vector(X), type="scatter", mode="lines", name="Noisy Signal") %>%
+  add_trace(x=~c(1:length(as.vector(X))), y=~as.vector(Y), name="Periodic Model (y=sin(t*w))") %>%
+  layout(title="Noisy input and periodic model",
+         xaxis=list(title="time"), yaxis=list(title="value"), legend = list(orientation='h'))
+
+# The RNN/LSTM algorithm requires the input data to be normalized, centered and scaled
+# mean_x <- mean(X); mean_y <- mean(Y); sd_x <- sd(X); sd_y <- sd(Y) 
+# X = (X-mean_x)/sd_x; Y = (Y-mean_y)/sd_y 
+
+# RNN requires standardization in the interval 0 - 1
+min_x <- min(X); min_y <- min(Y); max_x <- max(X); max_y <- max(Y)
+
+# Generic transformation:
+# forward (scale), for raw data, and reverse (unscale), for predicted data
+my.scale <- function (x, forward=TRUE, input=TRUE) {
+  if (input && forward) {           # X=Input==predictors & Forward scaling
+    x <- (x - min_x) / (max_x - min_x)
+  } else if (input && !forward) {   # X=Input==predictors & Reverse scaling
+    x <- x * (max_x - min_x) + min_x
+  } else if (!input && forward) {   # X=Output==response & Forward scaling
+    x <- (x - min_y) / (max_y - min_y)
+  } else if (!input && !forward) {  # X=Output==response & Reverse scaling
+    x <- x * (max_y - min_y) + min_y
+  }
+  return (x)
+}
+
+# Save these transform parameters; center/scale, so we can invert the transforms
+# after we get the predicted values.
+X <- my.scale(X, forward=TRUE, input=TRUE)
+Y <- my.scale(Y, forward=TRUE, input=FALSE)
+# Check (forward o reversed)(X) ==X
+# plot(X, my.scale(X, forward=FALSE, input=TRUE))
+# plot(Y, my.scale(Y, forward=FALSE, input=FALSE)) 
+
+# random 80-20% training-testing split; 20-5 row (series) split, using all 40 features
+set.seed(1234)
+train_index <- sample(seq_len(nrow(X)), size = 0.8*nrow(X))
+
+# Train the RNN model using only the training data
+set.seed(1234)
+model_rnn <- rnn::trainr(Y = Y[train_index,],
+                X = X[train_index,],
+                learningrate = 0.06,
+                hidden_dim = 200,
+                learningrate_decay =0.99,
+                numepochs = 100,
+                network_type = "rnn")
+
+
+# Predicted RNN values
+pred_Y <- predictr(model_rnn, X)
+#hist(pred_Y)
+plot_ly(x=~pred_Y[,1], type="histogram", name="Lag 1") %>%
+  add_histogram(x=~pred_Y[,2], name="Lag 2") %>%
+  add_histogram(x=~pred_Y[,3], name="Lag 3") %>%
+  add_histogram(x=~pred_Y[,4], name="Lag 4") %>%
+  add_histogram(x=~pred_Y[,5], name="Lag 5") %>%
+  layout(title="Y Histograms",
+         xaxis=list(title="value"), yaxis=list(title="frequency"), legend = list(orientation='h'))
+
+# pred_Y_unscale <- my.scale(pred_Y, forward=FALSE, input=FALSE); hist(pred_Y_unscale)
+ 
+# Plot predicted vs actual time-series using the complete data (training AND testing data)
+# plot(as.vector(Y), col = 'red', type = 'l', main = "All Data: Actual vs predicted", ylab = "Y, pred_Y", lwd=1)
+# lines(as.vector(pred_Y), type = 'l', lty=2, col = 'blue', lwd=2)
+# legend("topright", c("Predicted", "Real"), col = c("blue","red"), lty = c(1,1), lwd = c(2,2))
+
+plot_ly(x=~c(1:length(as.vector(Y))), y=~as.vector(X), type="scatter", mode="lines", name="Noisy Signal") %>%
+  add_trace(x=~c(1:length(as.vector(pred_Y))), y=~as.vector(pred_Y), name="Model Prediction") %>%
+  layout(title="(Training range) raw data vs. RNN model prediction",
+         xaxis=list(title="time"), yaxis=list(title="value"), legend = list(orientation='h'))
+
+# Plot predicted vs actual timeseries using only the testing data
+# plot(as.vector(Y[-train_index, ]), col = 'red', type='l', main = "Testing Data: Actual vs predicted", ylab = "Y, pred_Y", lwd=2)
+# lines(as.vector(pred_Y[-train_index, ]), type = 'l', lty=1, col = 'blue', lwd=2)
+# legend("topright", c("Predicted", "Real"), col = c("blue","red"), lty = c(1,1), lwd = c(2,1))
+
+plot_ly(x=~c(1:length(as.vector(Y[-train_index, ]))), y=~as.vector(X[-train_index, ]), 
+        type="scatter", mode="lines", name="Noisy Signal") %>%
+  add_trace(x=~c(1:length(as.vector(pred_Y[-train_index, ]))), y=~as.vector(pred_Y[-train_index, ]), 
+            name="Model Prediction") %>%
+  layout(title="(Testing range) raw data vs. RNN model prediction",
+         xaxis=list(title="time"), yaxis=list(title="value"), legend = list(orientation='h'))
+```
+
+Notice the learning process expressed indirectly as progressive improvement of the RNN prediction (blue curve) over the time span. Three specific (longitudinally-expressed) characteristics of the forecasting are clearly shown:
+
+ - The improved amplitude, signal intensity magnitude,
+ - Reduced level of noise, and
+ - Reduction of the phase offset (initial phase was $\frac{\pi}{8}$).
+
+
+### Climate Data Study
+
+Let's use the [2009-2017 Climate Data from the Max Planck Institute in Jena, Germany](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/24_ClimateData_2009_2017_Jena_Germany_MaxPlanck) to demonstrate time-series analysis via RNN. You can find more [details about this study here](https://umich.instructure.com/files/8014607/download?download_frd=1). In a nutshell, this sequence data represents a time-series recorded at the Weather Station at the Max Planck Institute for Biogeochemistry in Jena, Germany. The data includes date-time and 14 climate measurements/features (e.g., atmospheric pressure, temperature and humidity), which are recorded every 10 minutes over 9 years. 
+
+We will start by ingesting the large climate data (~50MB).
+
+```{r eval=T}
+# Download the climate data	
+clim_data_url <- "https://umich.instructure.com/files/8014703/download?download_frd=1"	
+clim_data_zip_file <- tempfile(); download.file(clim_data_url, clim_data_zip_file, mode="wb")	
+climate_data <- read.csv(unzip(clim_data_zip_file))
+dim(climate_data); 	head(climate_data)
+unlink(clim_data_zip_file)	
+```
+
+Prior to modeling the data using RNN, we can plot some of the data.
+
+```{r warning=F, message=F}
+# Date only: climate_time <- as.Date(climate_data$Date_Time, tryFormats = "%d/%m/%Y %H:%M")
+climate_time <- as.POSIXct(climate_data$Date_Time, format = "%d/%m/%Y %H:%M")
+head(climate_time)
+
+# install.packages("zoo")
+library("zoo")
+
+# define each time series separately
+anyDuplicated(climate_time)   # there are some 9517 duplicated date-time points
+
+# extract unique elements
+# (climate_time1 <- climate_time[!duplicated(climate_time)])
+climate_data_ts_temp <- zoo(climate_data$T_degC[!duplicated(climate_time)],
+                            climate_time[!duplicated(climate_time)])
+climate_data_ts_pressure <- zoo(climate_data$p_mbar[!duplicated(climate_time)],
+                                climate_time[!duplicated(climate_time)])
+climate_data_ts_humid <- zoo(climate_data$sh_g_kg[!duplicated(climate_time)],
+                             climate_time[!duplicated(climate_time)])
+
+# define aggregate TS object including all individual time-series for each feature
+climate_data_ts_aggregate = cbind(climate_data_ts_temp, 
+                                  climate_data_ts_pressure, climate_data_ts_humid)
+
+#plot(climate_data_ts_aggregate, main="Climate TS Data (Temperature, Pressure, Humidity)", 
+#     col=c("red", "green", "blue"), lty=1, lwd=2, plot.type="single") 
+# plot(climate_data_ts_aggregate, main="Climate TS Data (Temperature, Pressure, Humidity)", 
+#      col=c("red", "green", "blue"), lty=1, lwd=2) 
+# legend("center", legend=c("Temperature", "Pressure", "Humidity"), 
+#       col=c("red", "green", "blue"), lty=1, lwd=2, cex=0.6, x.intersp=0.5)
+
+x_len <- dim(climate_data_ts_aggregate)[1]
+pl1 <- plot_ly(x=~climate_time[!duplicated(climate_time)], y=~climate_data_ts_aggregate[, 1], 
+        type="scatter", mode="lines", name=colnames(climate_data_ts_aggregate)[1]) %>% 
+  layout(hovermode = "x unified")
+pl2 <- plot_ly(x=~climate_time[!duplicated(climate_time)], y=~climate_data_ts_aggregate[, 2], 
+        type="scatter", mode="lines", name=colnames(climate_data_ts_aggregate)[2])  %>% 
+  layout(hovermode = "x unified")
+pl3 <- plot_ly(x=~climate_time[!duplicated(climate_time)], y=~climate_data_ts_aggregate[, 3], 
+        type="scatter", mode="lines", name=colnames(climate_data_ts_aggregate)[3])  %>% 
+  layout(hovermode = "x unified")
+subplot(pl1, pl2, pl3, nrows=3,  shareX = TRUE, titleX = TRUE) %>% 
+  layout(title="(Climate Data) Temperature, Pressure & Humidity",
+         xaxis=list(title="time"), yaxis=list(title="value"), legend = list(orientation='h'))
+```
+
+Now we can proceed with the RNN time-series modeling and prediction.
+
+```{r warning=F, message=F}
+#colnames(climate_data)
+# [1] "Date_Time"     "p_mbar"        "T_degC"        "Tpot_K"        "Tdew_degC"  "rh_percent" 
+# [7] "VPmax_mbar"    "VPact_mbar"    "VPdef_mbar"    "sh_g_kg"       "H2OC_mmol_mol" "rho_g_m3"
+# [13] "wv_m_s"        "max_wv_m_s"    "wd_deg"       
+
+# Create random data frame and date column, then bind into a DF
+
+# Recall: Bivariate Input=(X,Y); Univariate Outcome (Z)
+X <- climate_data_ts_pressure
+Y <- climate_data_ts_humid
+Z <- climate_data_ts_temp
+
+# X <- smooth.spline(X, spar=0.3)$y   # rh_percent (Humidity)
+# Y <- smooth.spline(Y, spar=0.3)$y   # p_mbar (pressure)
+# Z <- smooth.spline(Z, spar=0.3)$y   # T_degC (temperature)
+
+# The RNN/LSTM algorithm requires the input data to be normalized, centered and scaled
+# mean_x <- mean(X); mean_y <- mean(Y); sd_x <- sd(X); sd_y <- sd(Y) 
+# X = (X-mean_x)/sd_x; Y = (Y-mean_y)/sd_y 
+
+# RNN requires standardization in the interval 0 - 1
+min_x <- min(X); min_y <- min(Y); min_z <- min(Z)
+max_x <- max(X); max_y <- max(Y); max_z <- max(Z)
+
+# Generic transformation:
+# forward (scale), for raw data, and reverse (unscale), for predicted data
+my.scale <- function (x, forward=TRUE, input="X") {
+  if (input=="X" && forward) {           # X=Input==predictors & Forward scaling
+    x <- (x - min_x) / (max_x - min_x)
+  } else if (input=="X" && !forward) {   # X=Input==predictors & Reverse scaling
+    x <- x * (max_x - min_x) + min_x
+  } else if (input=="Y" && forward) {    # Y=Input==predictors & Forward scaling
+    x <- (x - min_y) / (max_y - min_y)
+  } else if (input=="Y" && !forward) {   # Y=Input==predictors & Reverse scaling
+    x <- x * (max_y - min_y) + min_y
+  } else if (input=="Z" && forward) {    # Z=Output==predictors & Forward scaling
+    x <- (x - min_z) / (max_z - min_z)
+  } else if (input=="Z" && !forward) {   # Z=Output==predictors & Reverse scaling
+    x <- x * (max_z - min_z) + min_z
+  } 
+  return (x)
+}
+
+# Save these transform parameters; center/scale, so we can invert the transforms
+# after we get the predicted values.
+X <- my.scale(X, forward=TRUE, input="X")
+Y <- my.scale(Y, forward=TRUE, input="Y")
+Z <- my.scale(Z, forward=TRUE, input="Z")
+# Check (forward o reversed)(Y) == Y
+# plot(Y, my.scale(Y, forward=FALSE, input="Y"))
+
+# length(Z) = 472731 ~ 9(yrs) * 6(min/hr) *24 (hrs/day) *365(day/yr)
+
+# For example, suppose we have a total of 472731 observations that are stacked in annual samples of 52560 time-points (per lag=year), 9 time steps (9 lags), and 2 features (bivariate predictor-vector, (X,Y)). Then, the RNN/LSTM input format will be a 3-tensor of dimensions (52560, 9, 2).
+
+X <- matrix(X, nrow = 52560, ncol = 9)
+Y <- matrix(Y, nrow = 52560, ncol = 9)
+Z <- matrix(Z, nrow = 52560, ncol = 9)
+X_tensor <- array(0, dim=c(52560,9,2))
+X_tensor[,,1] <- X
+X_tensor[,,2] <- Y
+dim(X_tensor); dim(Z)
+
+# Plot the time courses of the Input (predictor) tensor and the Output (Z) as time-series
+X_ts <- zoo(as.vector(X_tensor[ , , 1]), climate_time[!duplicated(climate_time)])
+Y_ts <- zoo(as.vector(X_tensor[ , , 2]), climate_time[!duplicated(climate_time)])
+Z_ts <- zoo(as.vector(Z[ , ]), climate_time[!duplicated(climate_time)])
+
+# plot(X_ts, col='green', type='l', ylab = "X-tensor, Z", 
+#         main = "Renormalized Input (X-tensor), Output (Z)", lwd=2)    # ,log = "y")
+# lines(Y_ts, col = "blue", lty=1, lwd=2)
+# lines(Z_ts, col = "red", lty=1, lwd=2)
+# legend("topright", c("X-tensor(Pressure)", "X-tensor(Humid)", "Z(Temp)"), col = c("green", "blue","red"), 
+#        lty = c(1, 1, 1), lwd = c(2,2,2), cex=0.6, x.intersp=0.5)
+
+x_len <- dim(X_ts)[1]
+# Vertically stacked subplot
+# pl1 <- plot_ly(x=~climate_time[!duplicated(climate_time)], y=~X_ts,
+#         type="scatter", mode="lines", name="X-tensor(Pressure)") %>% 
+#   layout(hovermode = "x unified")
+# pl2 <- plot_ly(x=~climate_time[!duplicated(climate_time)], y=~Y_ts, 
+#         type="scatter", mode="lines", name="X-tensor(Humidity)")  %>% 
+#   layout(hovermode = "x unified")
+# pl3 <- plot_ly(x=~climate_time[!duplicated(climate_time)], y=~Z_ts, 
+#         type="scatter", mode="lines", name="Z(Temp)")  %>% 
+#   layout(hovermode = "x unified")
+# subplot(pl1, pl2, pl3, nrows=3,  shareX = TRUE, titleX = TRUE) %>% 
+#   layout(title="(Climate Data) Renormalized Input (X-tensor), Output (Z)",
+#          xaxis=list(title="time"), yaxis=list(title="X-tensor, Z"), legend = list(orientation='h'))
+
+plot_ly(x=~climate_time[!duplicated(climate_time)], y=~X_ts,
+        type="scatter", mode="lines", name="X-tensor(Pressure)") %>% 
+  add_trace(x=~climate_time[!duplicated(climate_time)], y=~Y_ts, 
+        type="scatter", mode="lines", name="X-tensor(Humidity)")  %>% 
+  add_trace(x=~climate_time[!duplicated(climate_time)], y=~Z_ts, 
+        type="scatter", mode="lines", name="Z(Temp)")  %>% 
+  layout(title="(Climate Data) Renormalized Input (X-tensor), Output (Z)",
+         xaxis=list(title="time"), yaxis=list(title="X-tensor, Z"), legend = list(orientation='h'))
+
+# training-testing split; 52560(annual) and 9 (years) of data.
+# Train on first 8 years of data and predict the final, 9th year of data
+# train_index <- sample(seq_len(nrow(X)), size = 0.8*nrow(X))
+
+# Train the RNN model using only the training data
+# Running the full model is extremely computationally expensive:
+#     model_rnn <- rnn::trainr(Y=Z[train_index,], X=X_tensor[train_index, , ], ....
+# We run a reduced model as a demo, only learning on 1:10000, 1 (yr1) time points
+set.seed(1234)
+model_rnn <- rnn::trainr(Y=Z[1:10000, ], X=X_tensor[1:10000, , ],
+                learningrate = 0.06,
+                hidden_dim = 32,
+                learningrate_decay =0.99,
+                numepochs = 3,
+                network_type = "rnn")
+
+# Predicted RNN values
+pred_Z <- predictr(model_rnn, X_tensor[10001:20000, , ])
+# hist(pred_Z)
+pl <- plot_ly()
+for (i in 1:dim(pred_Z)[2]) {
+  pl <- pl %>% add_trace(x=~pred_Z[ , i], type="histogram", name=paste0("Lag ", i))
+}
+pl <- pl %>%
+  layout(title="Z Histograms",
+         xaxis=list(title="value"), yaxis=list(title="frequency"), legend = list(orientation='h'))
+pl
+
+# pred_Y_unscale <- my.scale(pred_Y, forward=FALSE, input=FALSE); hist(pred_Y_unscale)
+ 
+# Plot (transformed/normalized) predicted vs actual time series using the small-sample data
+# plot(as.vector(Z[10001:20000, ]), col = 'red', type = 'l', main = "Normalized Small Data: Actual vs predicted", ylab = "Z, pred_Z", lwd=1)
+# lines(as.vector(pred_Z), type = 'l', lty=1, col = 'blue', lwd=2)
+# legend("topright", c("Predicted", "Real"), col = c("blue","red"), lty = c(1,1), lwd = c(2,2), cex=0.6, x.intersp=0.5)
+
+x_sample <- climate_time[!duplicated(climate_time)]
+x1_sample <- x_sample[10001:20000]
+   
+plot_ly(x=~x1_sample, y=~as.vector(Z[10001:20000, 1]),
+        type="scatter", mode="lines", name="Raw Data") %>% 
+  add_trace(x=~x1_sample, y=~as.vector(pred_Z[ , 1]), 
+        type="scatter", mode="lines", name="Model Predicted")  %>% 
+  layout(title="Normalized Small Data: Actual vs Predicted",
+         xaxis=list(title="time"), yaxis=list(title="X-tensor, Z"), legend = list(orientation='h'))
+
+# # Plot (Native C temperature space) predicted vs actual time series
+# plot(my.scale(as.vector(Z[10001:20000, ]), forward=FALSE, input="Z"), 
+#      col = 'red', type = 'l', main = "Small Data: Actual vs predicted (orig-temp-domain)", 
+#      ylab = "Celsius Temperature (Observed_Z vs. Predicted_Z", lwd=1)
+# lines(my.scale(as.vector(pred_Z), forward=FALSE, input="Z"),
+#       type = 'l', lty=1, col = 'blue', lwd=2)
+# legend("topright", c("Predicted", "Real"), col = c("blue","red"), lty = c(1,1), lwd = c(2,2), cex=0.6, x.intersp=0.5)
+# 
+# plot_ly(x=~x1_sample, y=~as.vector(Z[10001:20000, 1]),
+#         type="scatter", mode="lines", name="Raw Data") %>% 
+#   add_trace(x=~x1_sample, y=~as.vector(pred_Z[ , 1]), 
+#         type="scatter", mode="lines", name="Model Predicted")  %>% 
+#   layout(title="Normalized Small Data: Actual vs Predicted",
+#          xaxis=list(title="time"), yaxis=list(title="X-tensor, Z"), legend = list(orientation='h'))
+# 
+# # Add time on X-axis
+# obs_Temp_Z_ts <- zoo(my.scale(as.vector(Z[10001:20000, ]), forward=FALSE, input="Z"),
+#                             climate_time[10001:20000])
+# pred_Temp_Z_ts <- zoo(my.scale(as.vector(pred_Z[1:10000]), 
+#                      forward=FALSE, input="Z"), climate_time[10001:20000])
+# plot(obs_Temp_Z_ts, col = 'red', type = 'l',
+#      main = "Small Data: Actual vs predicted", 
+#      ylab = "Celsius Temperature (Observed_Z vs. Predicted_Z", lwd=1)
+# lines(pred_Temp_Z_ts, type = 'l', lty=1, col = 'blue', lwd=2)
+# legend("topleft", c("Predicted", "Real"), col = c("blue","red"), lty = c(1,1), lwd = c(2,2), cex=1.0, x.intersp=0.4)
+```
+
+These results can be significantly improved, by extending the scope of the learning; here we only used $10,000$ points (about 10 weeks of data) to learn. In addition, only 10 epochs were used to quickly complete the learning, prediction and plotting operations. 
+
+Try to run the experiment with a larger sample-size, modify the `rnn::trainr()` method parameters, and try to plot observed vs. predicted outcomes (temperature in Celsius). What conclusions can be drawn from this RNN forecasting?
+
+#### Examine the ACF
+
+The Autocorrelation Function (ACF) determines the self-correlation within the time series by identifying similar repeats or lagged versions of itself. The `stats::acf()` function computes the ACF values for all lags and plots the results. We can also obtain the raw ACF values for the time series using a new function `my_acf()`.
+
+```{r warning=F, message=F}
+acf(climate_data_ts_temp, lag.max = 52560)
+# myACF <- acf(climate_data_ts_temp, lag.max = 52560)
+# myACF$acf
+# plot_ly(x=~c(1:length(myACF$acf[, 1, 1])), y=~myACF$acf[, 1, 1],
+#         type="scatter", mode="lines", name="Raw Data", fill = 'tozeroy') %>% 
+#   add_trace(x=~x1_sample, y=~as.vector(pred_Z[ , 1]), 
+#         type="scatter", mode="lines", name="Model Predicted")  %>% 
+#   layout(title="Auto-correlation function plot",
+#          xaxis=list(title="lag"), yaxis=list(title="ACF"), legend = list(orientation='h'))
+```
+
+The ACF is useful to identify that we have autocorrelation exceeding $0.5$ beyond the lag 52,560 (corresponding to annual measures). We can theoretically use this high autocorrelation lag to develop an LSTM model.
+
+We can employ **backtesting** as time-series modeling cross-validation (CV). [Cross validation (Chapter 9)](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html) allows assessment of the model performance and evaluation of the statistical reliability using data sub-sampling. We aim to quantify the expected accuracy level and error range, we can iteratively split the complete dataset into training data and a complementary validation set. As time-series have intrinsic auto-correlation, they are distinct from cross-sectional data, so modified cross validation strategies are needed. In particular, the special time dependency on previous time samples has to be accounted for when developing a time-series CV sampling strategy. The simplest way to design a time-series CV approach is to use an offset window, e.g., one lag wide, to select sequential sub-samples. This type of strategy is called *backtesting*. This strategy suggests that the time-series CV splits the longitudinal data into multiple contiguous sequences offset by lag-windows, which facilitates testing and validation of past, current, and prospective (in time) observations.
+
+We can employ the `rsample` package to perform time-series sampling, cross-validation, and backtesting. In our *Climate Data*, one sampling strategy may use 2 years of data (initial $105,120 = 24\times 6\times 365\times 2$ observations, each 10-minutes apart) as a training set. The sequence of time-points, covering the 3-rd year, will include $105,121:157,681$) and will serve as a validation/testing dataset. [More information is available here](https://www.business-science.io/timeseries-analysis/2018/04/18/keras-lstm-sunspots-time-series-prediction.html).
+
+```{r warning=F, message=F}
+library(ggplot2)
+df_Temp_Time <- data.frame(Z=climate_data$T_degC[!duplicated(climate_time)], 
+                           t=as.Date(climate_time[!duplicated(climate_time)]))
+# plot1 <- ggplot(df_Temp_Time, aes(x=t, y=Z)) +
+#     geom_line(color = 'darkblue', alpha = 0.5) +   # plot Temp in C
+#     # geom_smooth(method = "loess", span = 0.2, se = TRUE) +  # plot smoothed-Temp
+#     labs(title = "2009-2017 (Full Data Set)")
+# plot1
+
+plot_ly(data=df_Temp_Time, x=~t, y=~Z,
+        type="scatter", mode="lines", name="Raw Data") %>%
+  layout(title="2009-2017 Temperature (Full Data Set)",
+         xaxis=list(title="time"), yaxis=list(title="T_degC"), legend = list(orientation='h'))
+```
+
+### Keras-based Multi-covariate LSTM Time-series Analysis and Forecasting
+
+The LSTM RNN model may be appropriate if there is evidence of periodicity in the data with autocorrelation that can be estimated using the autocorrelation function (ACF). LSTM uses the autocorrelation estimate to make forward series predictions. For instance, to generate a 1-year *batch forecasting*, we can create a single pass prediction (batch mode) across the entire forecast time domain. This is different from the more traditional time-point based prediction, which can also be used to iteratively estimate a sequence of predictions on prospective time points (intervals). Of course, batch prediction requires that the autocorrelation lag is bigger than the one year (365 days, or $52,560$ ten-minute time increments that the *Climate Data* is actually acquired at).
+
+#### Using Keras to Model Stateful LSTM Time-series
+
+Recurrent Neural Networks are typically affected by *gradient vanishing*, which in ML refers to the  reduction of the gradient during the process of interactively training the artificial RNN using backpropagation and gradient-based learning. At each learning epoch, the updates of the neural networks' weights are proportional to the magnitude of the *gradient of the error function*, relative to the current weights. The ranges of the activation function values, e.g., hyperbolic tangent, include zero, e.g., $(-1,1)$ or $[0,1)$, and the use of chain rule in the backpropagation process may lead to multiplication of $n$ by small, or trivial, numbers. Thus, the gradient estimates of the "front" layers in an $n$-layer RNN yield to exponential decrease in the gradient (error signal) w.r.t. $n$, which in turn, leads to very slow training. 
+
+Stateful LSTM networks allow fine control over resetting the internal state of the LSTM network, which avoids the gradient vanishing by replacing update multiplication by *addition* when computing the candidate weights at each iteration. This additive update of the state of every cell in the network prevents the rapid decay of the gradient. A nice [visualization of the core LSTM RNN nets is available here](https://colah.github.io/posts/2015-08-Understanding-LSTMs/).
+
+*Statefulness* is a property that determines if the network cell states are reset at each recursive iteration. *Stateless* models reset all cell states at each sequence, whereas *stateful* models propagate the cell states to the next batch; the state of the sample, $X_i$, located at index $i$, will be used in the computation of the sample $X_{i+bs}$ in the next batch, where $b$s is the batch size, i.e., no shuffling is applied. In practice, the `stateful` argument is a Boolean. The default is `stateful=False`, all cell states are reset at the next batch. In this situation, `keras` shuffles (i.e., permutes) the samples in the input matrix $X$ and the dependencies between $X_i$ and $X_{i+1}$ are lost.
+
+However, when `stateful=True`, the last state for each sample at index $i$ in a batch is used as the initial state of the following batch for the same sample index $i$.
+
+Building the input matrix $X$ is important. It's *shape* depends on `nb_samples`, `timesteps`, `input_dim`, and `batch_size`, which must divide `nb_samples`. A LSTM model with ratio `nb_samples/batch_size` will receive this many blocks of samples, compute each output (number of timesteps for each sample), average the gradients, and propagate it to update the weight parameters vector.
+
+```{r warning=F, message=F}
+# install.packages("keras")
+# install.packages("devtools")
+# devtools::install_github("rstudio/keras")
+library(keras)
+```
+
+Here is an example of building a single `keras` stateful LSTM model using a single sample. It's simpler to merge the training and testing datasets into a single long-format dataset, including a separate column specifying the data type - *training* or *testing*. We need to re-specify the *tbl_time* object during the `bind_rows()` step.
+
+```{r}
+# install.packages("tidyverse")
+# library("tidyverse")
+
+df_train <- as.numeric(df_Temp_Time[1:10000, 1])
+df_test <- as.numeric(df_Temp_Time[10001:20000, 1])
+```
+
+The LSTM model assumptions include standardized (centered and scaled) input. 
+
+```{r}
+df_train.std <- scale(df_train)
+df_test.std <- scale(df_test)
+```
+
+Save the standardizing transformation, so that later we would be able to transform back the results into the domain of the original data.
+
+```{r}
+mean.train <- mean(df_train); sd.train <- sd(df_train) 
+mean.test <- mean(df_test); sd.test <- sd(df_test) 
+
+c("TRAIN: center" = mean.train, "TRAIN: SD" = sd.train)
+c("TEST: center" = mean.test, "TEST: SD" = sd.test)
+```
+
+#### Definitions
+
+To build an LSTM plan we should clarify the basic terms.
+
+ - **Tensor Format**: The predictors ($X$) are 3D arrays of dimensions $[D_1=samples, D_2=timesteps, D_3=features]$, where $D_1$ is the length of values, $D_2$ is the number of time steps (lags), and $D_3$ is the number of predictors (1 if univariate, or $n$ if multivariate)
+ - **Outcomes/Targets**: ($y$) is a 2D Array of dimensions: $[D_1=samples, D_2=timesteps]$.
+ - **Training/Testing**: The training and testing length must be evenly divisible (e.g., $\frac{training\ length}{testing\ length}$ must be an integer).
+ - **Batch Size**: Represents the number of training examples in one forward/backward pass of the RNN prior to a weight update. The batch size must be evenly divisible into both the training and the testing lengths.
+ - **Time Steps**: The time step is the number of lags included in the training/testing set.
+ - **Epochs**: The epochs represent the total number of forward/backward pass iterations. Higher number of epochs tends to improve model performance, unless overfitting occurs, however, it's more computationally intense.
+
+#### Keras modeling of time-series data
+
+Let's try to fit a stateful RNN model for a time-series problem on a subset of the *Climate Data*, covering 2 years of data. For training, we will use the initial $105,120 = 24\times 6\times 365\times 2$ observations, each 10-minutes apart, the 3-rd year of observations including $105,121:157,681$ will serve as a validation/testing dataset. [More information is available here](https://www.business-science.io/timeseries-analysis/2018/04/18/keras-lstm-sunspots-time-series-prediction.html). 
+
+```{r warning=F, message=F}
+# Install TensorFlow in R
+# https://tensorflow.rstudio.com/installation/
+# install.packages("tensorflow")
+
+# May also need to install TensorFlow in Anaconda
+# See: https://docs.anaconda.com/anaconda/user-guide/tasks/tensorflow/
+# Run these in Anaconda terminal shell
+# conda create -n tf tensorflow
+# conda activate tf
+
+# for stateful LSTM rnn, tsteps can be set to 1
+tsteps <- 1
+batch_size <- 25
+epochs <- 25
+# number of elements ahead that are used to make the prediction
+lahead <- 1
+
+# Prep the data
+df_Temp_Humid_Time <- data.frame(C=climate_data$T_degC[!duplicated(climate_time)], 
+                           H=climate_data$rh_percent[!duplicated(climate_time)],
+                           T=as.Date(climate_time[!duplicated(climate_time)]))
+df_Temp_train <- as.numeric(df_Temp_Humid_Time[1:10000, 1])
+df_Temp_test <- as.numeric(df_Temp_Humid_Time[10001:20000, 1])
+df_Humid_train <- as.numeric(df_Temp_Humid_Time[1:10000, 2])
+df_Humid_test <- as.numeric(df_Temp_Humid_Time[10001:20000, 2])
+
+# The LSTM model assumptions include standardized (centered and scaled) input. 
+df_Temp_train.std <- scale(df_Temp_train); df_Temp_test.std <- scale(df_Temp_test)
+df_Humid_train.std <- scale(df_Humid_train); df_Humid_test.std <- scale(df_Humid_test)
+
+x <- as.POSIXct(climate_data$Date_Time, format = "%d/%m/%Y %H:%M")
+head(x[1:6])
+
+# Reformat the data as a 3D tensor, see above
+df_Temp_train.std.tensor <- array(data = df_Temp_train.std, dim = c(dim(df_Temp_train.std)[1], 1))
+df_Humid_train.std.tensor <- array(data=df_Humid_train.std, dim = c(dim(df_Humid_train.std)[1], 1,1))
+
+y <- df_Temp_train.std.tensor; x <- df_Humid_train.std.tensor
+dim(x); dim(y); summary(x); summary(y)
+
+# model formulation
+model.2 <- keras_model_sequential()
+model.2 %>%
+  layer_lstm(units = 50, input_shape = c(tsteps, 1), batch_size = batch_size,
+             return_sequences = TRUE, stateful = TRUE) %>% 
+  layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_dense(units = 1)
+model.2 %>% compile(loss = 'mse', optimizer = 'rmsprop')
+
+### Iterative model fitting on training data
+for (i in 1:epochs) {
+  model.2 %>% fit(x, y, batch_size = batch_size,
+                epochs = 1, verbose = 1, shuffle = FALSE)
+            
+  model.2 %>% reset_states()
+}
+
+# Predict the (standardized) Temp (C) using (standardized) Humidity (Time=1:10K)
+predicted_output <- model.2 %>% predict(x, batch_size = batch_size)
+# plot(df_Temp_Time$t[1:10000], y, xlab = 'time', 
+#      main="Time: [1:10K] Training model (Temp~Humidity): rNN vs. Observed",  
+#      lty=1, ylab='(std) T_degC ~ rh_percent', type="l", col="green")
+# lines(df_Temp_Time$t[1:10000], predicted_output,  col="blue", lwd=2)
+# legend("bottom", legend=c("Observed Temp", "LSTM rNN Predicted Temp"),
+#        col=c("green", "blue"), lty=c(1,1), cex=0.8)
+# legend("top", legend=sprintf("Temperature Corr(Obs,Pred)=%s", 
+#                              round(cor(y[,1], predicted_output[,1]), 2)), cex=0.8)
+
+x1 <- as.POSIXct(climate_data$Date_Time, format = "%d/%m/%Y %H:%M")
+plot_ly(x=~x1[1:10000], y=~y[ , 1], type="scatter", mode="lines", name="Observed Temp") %>%
+  add_trace(x=~x1[1:10000], y=~predicted_output[ , 1], name="LSTM RNN Predicted Temp") %>%
+  layout(title="2009-2017 Temperature (Full Data Set)",
+         xaxis=list(title="time"), yaxis=list(title="T_degC"), legend = list(orientation='h'))
+
+### Prospective Forecasting/Prediction of Temp using Humidity (time: 10001 - 20000)
+x_test <- array(data=df_Humid_test.std, dim = c(dim(df_Humid_test.std)[1], 1,1))
+y_test <- array(data=df_Temp_test.std, dim = c(dim(df_Temp_test.std)[1], 1))
+
+predicted_output_test <- model.2 %>% predict(x_test, batch_size = batch_size)
+# plot(df_Temp_Time$t[10001:20000], y_test, xlab = 'time', 
+#      main="Time: [10K:20K]) Forecasting (Temp~Humidity): rNN vs. Observed",  
+#      lty=1, ylab='(std) T_degC ~ rh_percent', type="l", col="green")
+# lines(df_Temp_Time$t[10001:20000], predicted_output_test,  col="blue", lwd=2)
+# legend("bottom", legend=c("Observed Temp", "LSTM rNN Predicted Temp"),
+#        col=c("green", "blue"), lty=c(1,1), cex=0.8)
+# legend("top", legend=sprintf("Temperature Corr(Obs,Pred)=%s", 
+#                              round(cor(y_test[,1], predicted_output_test[,1]), 2)), cex=0.8)
+
+plot_ly(x=~x1[10001:20000], y=~y_test[ , 1], type="scatter", mode="lines", name="Observed Temp") %>%
+  add_trace(x=~x1[10001:20000], y=~predicted_output_test[ , 1], name="LSTM RNN Predicted Temp") %>%
+  layout(title=paste0("Temperature Corr(Obs,Pred)=", round(cor(y_test[,1], predicted_output_test[,1]), 2)),
+         xaxis=list(title="time"), yaxis=list(title="T_degC"), legend = list(orientation='h'))
+```
+
+#### Keras modeling of image classification data (CIFAR10)
+
+The [CIFAR-10 dataset](https://en.wikipedia.org/wiki/CIFAR-10) includes common images along with human derived class-labels. Specifically, CIFAR-10 contains 60,000 color images of size $32\times 32$, each labeled in 10 different classes: *airplanes, cars, birds, cats, deer, dogs, frogs, horses, ships, and trucks*. There are 6,000 images of each class. Each class label is represented as a nominal factor (from 0 to 9), representing the ground truth (human labeling of each image). These labels are included in the file *batches.meta.mat*. 
+
+Let's try to build a `keras` deep learning model that can predict the image class labels.
+
+```{r echo=T, eval=T, message=F, warning=F}
+# For using GPU TensorFlow, follow these instructions:
+# GPU install instructions for tf and you require the exact CUDA and cuDNN versions:
+# https://www.tensorflow.org/install/gpu
+# Check if you installed CUDA 9.0 and cuDNN > 7.2 (follow the install instructions here)
+# Reinstall keras with install_keras(tensorflow = "gpu")
+# You can list the devices with:
+#     library(keras)
+#     k = backend()
+#     sess = k$get_session()
+#     sess$list_devices()
+
+library(keras)
+# 1. define model parameters
+batch_size <- 50
+epochs <- 4   # increase the epochs to improve the results
+data_augmentation <- TRUE
+
+# 2. prepare the data, also available on canvas
+# https://umich.instructure.com/courses/38100/files/folder/Case_Studies/29_CIFAR_10_Labeled_Images
+# run ?dataset_cifar10 for more info on the data that is provided with keras distribution
+cifar10 <- dataset_cifar10()
+
+# 3. scale RGB values in test and train inputs to [0; 1] range
+x_train <- cifar10$train$x/255
+x_test <- cifar10$test$x/255
+y_train <- to_categorical(cifar10$train$y, num_classes = 10)
+y_test <- to_categorical(cifar10$test$y, num_classes = 10)
+class_labels <- c("airplanes", "cars", "birds", "cats", "deer", "dogs", 
+      "frogs", "horses", "ships", "trucks")
+
+y_class_label <- rep("", dim(y_train)[1]); str(y_class_label)
+
+for (i in 1:dim(y_train)[1]) {   # dim(y_train) is 50000(images) * 10 (class-label-indicators)
+  for (j in 1:dim(y_train)[2]) {
+    if (y_train[i,j] == 1) 
+      y_class_label[i] <- class_labels[j]
+  }
+}
+# y_class_label[1001]
+
+# 4. Visualize some of the images
+library("imager")
+dim(x_train)
+# [1] 50000    32    32     3
+# first convert the CSV data (one row per image, 42,000 rows)
+N <- 4
+array_3D <- array(x_train[1001:(1000+N), , , 1], c(4, 32, 32, 3)) # array_3D[index, x, y, RGB]
+mat_2D <- t(matrix(array_3D[1, , , 1], nrow = 32, ncol = 32))
+plot(as.cimg(mat_2D))
+
+pretitle <- function(index) {
+  sprintf("Image: %d, true label: %s", index, y_class_label[index])
+}
+op <- par(mfrow = c(2,2), oma = c(5,4,0,0) + 0.1, mar = c(0,0,1,1) + 0.1)
+img_3D <- as.cimg(array_3D[N , , , 1], 32, 32, 1)
+for (k in 1:N) {
+  img_3D <- as.cimg(t(matrix(array_3D[k, , , 1], nrow = 32, ncol = 32)))
+  plot(img_3D, k, xlim = c(0,32), ylim = c(32,0), axes=F, ann=T, main=pretitle(1000+k))
+}
+
+pretitle0 <- function(index) { sprintf("Image: %d,\n true label:\n %s", index, y_class_label[index])  }
+plt_list <- list()
+N=2 
+for (i in 1:N) {
+  for (j in 1:N) {
+    plt_list[[i+(j-1)*N]] <- 
+      plot_ly(z=255*array_3D[i+ (j-1)*N,,,], type="image", showscale=FALSE, 
+              name=pretitle0(1000+i+(j-1)*N), hoverlabel=list(namelength=-1)) %>%     
+      layout(showlegend=FALSE,  # hovermode = "y unified",
+             xaxis=list(zeroline=F, showline=F, showticklabels=F, showgrid=F),
+             yaxis=list(zeroline=F,showline=F,showticklabels=F,showgrid=F)) #,
+             # yaxis = list(scaleratio = 1, scaleanchor = 'x'))
+  }
+}
+
+# plt_list[[2]]     
+plt_list %>%    
+  subplot(nrows = N, margin = 0.0001, which_layout=1) %>%  
+  layout(title="Sample of CIFAR-10 Images")
+
+# 5. define a sequential LSTM rNN model 
+#### Initialize sequential model
+model.3 <- keras_model_sequential()
+
+model.3 %>%
+  # First hidden 2D convolutional layer of 32x32 pixel 2D images
+  layer_conv_2d(
+    filter = 32, kernel_size = c(4,4), padding = "same", 
+    input_shape = c(32, 32, 3)
+  ) %>%
+  layer_activation("relu") %>%
+
+  # Second hidden layer
+  layer_conv_2d(filter = 32, kernel_size = c(4,4)) %>%
+  layer_activation("relu") %>%
+
+  # Use max pooling
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+  layer_dropout(0.25) %>%
+  
+  # add 2 additional hidden 2D convolutional layers
+  layer_conv_2d(filter = 32, kernel_size = c(4,4), padding = "same") %>%
+  layer_activation("relu") %>%
+  layer_conv_2d(filter = 32, kernel_size = c(4,4)) %>%
+  layer_activation("relu") %>%
+
+  # Use max pooling again
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+  layer_dropout(0.25) %>%
+  
+  # Flatten max filtered output into feature vector 
+  # and feed into dense layer
+  layer_flatten() %>%
+  layer_dense(512) %>%
+  layer_activation("relu") %>%
+  layer_dropout(0.5) %>%
+
+  # Outputs from dense layer are projected onto 10-unit output layer
+  layer_dense(10) %>%
+  layer_activation("softmax")
+
+opt <- optimizer_rmsprop(learning_rate = 0.0001)  #, decay = 1e-6)
+
+### Compile the model (i.e., specify loss function, optimizer, and metrics)
+model.3 %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = opt,
+  metrics = "accuracy"
+)
+
+# 6. Model training
+if(!data_augmentation){
+  history <- model.3 %>% fit(
+    x_train, y_train,
+    batch_size = batch_size,
+    epochs = epochs,
+    validation_data = list(x_test, y_test),
+    shuffle = TRUE
+  )
+
+} else {
+    datagen <- image_data_generator(
+    rotation_range = 20,
+    width_shift_range = 0.2,
+    height_shift_range = 0.2,
+    horizontal_flip = TRUE
+  )
+
+  datagen %>% fit_image_data_generator(x_train)
+
+  history <- model.3 %>% fit(
+    flow_images_from_data(x_train, y_train, datagen, batch_size = batch_size),
+    steps_per_epoch = as.integer(20000/batch_size),
+    # increase the iterations (steps_per_epoch) to improve the results, comp-complexity increases
+    # steps_per_epoch = as.integer(40000/batch_size),
+    epochs = epochs,
+    validation_data = list(x_test, y_test)
+  )
+}
+
+# 7. Validation: illustrate the relation between real and predicted class labels
+# Generate the 10 * 10 confusion matrix to 
+pred_prob <- predict(object = model.3, x = x_test)
+
+y_pred_class_label <- rep("", dim(y_test)[1]); str(y_pred_class_label)
+
+for (i in 1:dim(y_test)[1]) {   # dim(y_test) is 10000(images) * 10 (class-label-indicators)
+  for (j in 1:dim(y_test)[2]) {
+    if(j==1) j_max = 1
+    else if (pred_prob[i,j] > pred_prob[i, j_max]) j_max = j
+  }
+  y_pred_class_label[i] <- class_labels[j_max]
+}
+
+y_test_class_label <- rep("", dim(y_test)[1]); str(y_test_class_label)
+
+for (i in 1:dim(y_test)[1]) {   # dim(y_train) is 10000(images) * 10 (class-label-indicators)
+  for (j in 1:dim(y_test)[2]) {
+    if (y_test[i,j] == 1) 
+      y_test_class_label[i] <- class_labels[j]
+  }
+}
+
+length(y_test_class_label)==length(y_pred_class_label)
+table(y_pred_class_label, y_test_class_label)
+caret::confusionMatrix(as.factor(y_pred_class_label), as.factor(y_test_class_label))
+
+# Plot algorithm convergence history
+# plot(history, type="l")
+time <- 1:epochs
+hist_df <- data.frame(time=time, loss=history$metrics$loss, acc=history$metrics$accuracy,
+                      valid_loss=history$metrics$val_loss, valid_acc=history$metrics$val_accuracy)
+plot_ly(hist_df, x = ~time)  %>%
+  add_trace(y = ~loss, name = 'training loss', type="scatter", mode = 'lines') %>%
+  add_trace(y = ~acc, name = 'training accuracy', type="scatter", mode = 'lines+markers') %>%
+  add_trace(y = ~valid_loss, name = 'validation loss', type="scatter",mode = 'lines+markers') %>%
+  add_trace(y = ~valid_acc, name = 'validation accuracy', type="scatter", mode = 'lines+markers') %>% 
+  layout(title="CIFAR-10 Classificaiton - NN Model Performance",
+           legend = list(orientation = 'h'), yaxis=list(title="metric"))
+
+# Plot heatmap of actual and predicted CIFAR-10 class labels
+# car_mat <- caret::confusionMatrix(as.factor(y_pred_class_label), as.factor(y_test_class_label))$table
+heat <- table(factor(y_pred_class_label), factor(y_test_class_label))
+plot_ly(x =~class_labels, y = ~class_labels, z = ~matrix(heat, 10,10), name="NN Model Performance",
+        hovertemplate = paste('<i>Matching</i>: %{z:.0f}', 
+                              '<br><b>True</b>: %{x}<br>', '<b>Pred</b>: %{y}'),
+        colors = 'Reds', type = "heatmap") %>% 
+  layout(title="CIFAR-10 Predicated vs. True Image Class Labels", 
+         xaxis=list(title="Actual Image Class"), yaxis=list(title="Predicted Image Class"))
+```
+
+Although the prediction accuracy may only be around $\sim 0.4$, this is pretty good as the expected random classifier accuracy is just $0.1$ (1 out of 10 classes).
+
+Additional examples illustrating the practical use of `keras` are included in [Chapter 14 (Deep Learning)](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html).
+
+
+
+
+<!----------------------FIX THESE 2 EXAMPLES------------------------------------
+
+# Example 1: Temperature Time-series LSTM Modeling
+
+Suppose we choose a prediction of window 12 months (1 year) and a batch size of 4 units (evenly dividing the number of testing and training observations), time steps = 1 (specifying one lag), and epochs = 100.
+
+```{r eval=F, message=F, warning=F}
+# Model inputs
+lag_setting  <- 12 # = nrow(df_test)
+batch_size   <- 0
+train_length <- 10000
+
+# the number of predictions we'll make equals the length of the hidden state
+tsteps       <- 1
+epochs       <- 100
+
+# how many features = predictors we have
+n_features <- 1
+```
+
+```{r eval=F, message=F, warning=F}
+library("dplyr")
+library("recipes")
+library("tibble")
+#install.packages("tibbletime")
+library("tibbletime")
+
+df_train <- as.data.frame(cbind(df_Temp_Time$t[1:10000], df_train.std))
+# head(df_train)
+df_test <- as.data.frame(cbind(df_Temp_Time$t[1:10000], df_test.std))
+colnames(df_train) <- c("value"); colnames(df_test) <- c("value")
+colnames(df_Temp_Time) <- c("Z", "index")
+
+df <- bind_rows(
+    df_train %>% add_column(key = "training"),
+    df_test %>% add_column(key = "testing")
+) # %>% 
+    # as_tbl_time(index = as.Date(df_Temp_Time$index[1:10000]))
+# df
+
+
+df1 <- as.data.frame(cbind(as.Date(df_Temp_Time$index[1:20000]),
+            as.double(df$value), df$key))
+colnames(df1) <- c("index", "value", "class")
+head(df1)
+dates <- as.Date(df_Temp_Time$index[1:20000])
+# head(as_tbl_time(df, dates))
+
+df2 <- tibble::tibble(
+  index  = as.POSIXct(dates),
+  value = as.numeric(as.character(df1$value)),
+  class = df1$class
+); head(df2)
+df3 <- as_tbl_time(df2, index)
+head(df3); tail(df3); str(df3$value); head(df3$value)
+
+rec_obj <- recipe(value ~ ., df3) %>%
+    step_sqrt(value) %>%
+    step_center(value) %>%
+    step_scale(value) %>%
+    prep()
+    
+tail(rec_obj$template)
+
+# define time, value and labels for 10,000 timepoints
+climate_time_10000 <- climate_time[1:10000]
+trainLables <- rep("training", 10000); testLabels <- rep("testing", 10000)
+TrainTestLabels <- rbind(trainLables, testLabels)
+TrainTestValues <- rbind(df_train.std, df_test.std)
+tibble(date = as.Date(as.vector(rbind(climate_time_10000, climate_time_10000))), 
+       value = TrainTestValues[ , 1], key=as.vector(TrainTestLabels))
+
+# Training Set
+lag_train_tbl <- rec_obj$template %>%
+    mutate(value_lag = lag(value, n = lag_setting)) %>%
+    filter(!is.na(value_lag)) %>%
+    filter(class == "training") %>%
+    tail(train_length)
+
+if (is.na(lag_train_tbl$value)) lag_train_tbl$value <- 0
+
+x_train_vec <- lag_train_tbl$value_lag
+x_train_arr <- array(data = x_train_vec, dim = c(length(x_train_vec), 1, 1))
+
+y_train_vec <- lag_train_tbl$value
+y_train_arr <- array(data = y_train_vec, dim = c(length(y_train_vec), 1))
+
+# Testing Set
+lag_test_tbl <- rec_obj$template %>%
+    mutate(value_lag = lag(value, n = lag_setting)) %>%
+    filter(!is.na(value_lag)) %>%
+    filter(class == "testing")
+
+x_test_vec <- lag_test_tbl$value_lag
+x_test_arr <- array(data = x_test_vec, dim = c(length(x_test_vec), 1, 1))
+
+y_test_vec <- lag_test_tbl$value
+y_test_arr <- array(data = y_test_vec, dim = c(length(y_test_vec), 1))
+```
+
+We build the LSTM model, which is a linear stack of layers representing a sequential model, using the `keras_model_sequential()` function. Let's start with two LSTM layers each with 10 units. *LSTM layer 1* takes the required input shape, $[time\ steps, number\ of\ features]$ and returns a 3D shape, stateful LSTM sequence (*return_sequences = TRUE* and *stateful = TRUE*). 
+
+*LSTM layer 2* takes the layer 1 output and returns a 2D shape (*return_sequences = FALSE*). Adding a `layer_dense(units = 1)` provides a standard ending to the `keras` sequential model. At the end, we can use `compile()` with `loss = "mae"` and `optimizer = "adam"`.
+
+```{r eval=F, message=F, warning=F}
+model.1 <- keras_model_sequential()
+
+model.1 %>%
+    layer_lstm(units            = 50, 
+               # batch_input_shape = c(batch_size, tsteps, n_features),
+               batch_input_shape=c(32, 1, 1),
+               return_sequences = TRUE, 
+               stateful         = TRUE) %>% 
+    layer_lstm(units            = 50, 
+               return_sequences = FALSE, 
+               stateful         = TRUE) %>% 
+    layer_dense(units = 1)
+
+model.1 %>% 
+    compile(loss = 'mae', optimizer = 'adam')
+
+model.1
+```
+
+Next we can begin the stateful LSTM model fitting, manually using a `for` loop (where we reset the states). To preserve sequences, we specify `shuffle = FALSE` which allows us direct control over the states reset after each epoch, `reset_states()`.
+
+```{r eval=F, message=F, warning=F}
+for (i in 1:epochs) {
+    model.1 %>% fit(x          = x_train_arr[1:(166*32), ,], 
+                    y          = y_train_arr[1:(166*32), ], 
+                    batch_size = 32,
+                    epochs     = 1, 
+                    verbose    = 1, 
+                    shuffle    = FALSE)
+    
+    model.1 %>% reset_states()
+    cat("Epoch: ", i)
+}
+
+
+
+########################### RStudio Documentation
+# https://cran.rstudio.com/web/packages/keras/vignettes/sequential_model.html
+
+# define a model along with the compilation step (
+model.2 <- keras_model_sequential() 
+model.2 %>% 
+  layer_dense(units = 32, input_shape = c(100)) %>% 
+  layer_activation('relu') %>% 
+  layer_dense(units = 10) %>% 
+  layer_activation('softmax')
+
+# the compile() function has appropriate arguments for a multi-class/binary classification problem
+model.2 %>% compile(
+  optimizer = 'rmsprop',
+  # loss = 'categorical_crossentropy',
+  # metrics = c('accuracy')
+  loss = loss_binary_crossentropy,
+  metrics = metric_binary_accuracy
+)
+
+#  Compilation for mean squared error regression problem
+model %>% compile(
+  optimizer = optimizer_rmsprop(lr = 0.002),
+  loss = 'mse'
+)
+
+# Train the Keras models on R matrices or higher dimensional arrays of input data and labels using 
+# the fit() function, e.g., a single-input model with 2 classes (binary classification)
+
+# Generate dummy data
+data <- matrix(runif(1000*100), nrow = 1000, ncol = 100)
+labels <- matrix(round(runif(1000, min = 0, max = 1)), nrow = 1000, ncol = 1)
+
+# Train the model, iterating on the data in batches of 32 samples
+model.2 %>% fit(data, labels, epochs=10, batch_size=32)
+
+# constants
+data_dim <- 16
+timesteps <- 8
+num_classes <- 10
+
+# define and compile model
+# expected input data shape: (batch_size, timesteps, data_dim)
+data_dim <- 1
+timesteps <- 2
+num_classes <- 2
+
+model <- keras_model_sequential() 
+model %>% 
+  layer_lstm(units = 32, return_sequences = TRUE, input_shape = c(timesteps, data_dim)) %>% 
+  layer_lstm(units = 32, return_sequences = TRUE) %>% 
+  layer_lstm(units = 32) %>% # return a single vector dimension 32
+  layer_dense(units = 10, activation = 'softmax') %>% 
+  compile(
+    loss = 'categorical_crossentropy',
+    optimizer = 'rmsprop',
+    metrics = c('accuracy')
+  )
+  
+# training data
+x_train <- array(runif(1000 * timesteps * data_dim), dim = c(1000, timesteps, data_dim))
+y_train <- matrix(runif(1000 * num_classes), nrow = 1000, ncol = num_classes)
+x_train <- array(rec_obj$template$value[1:10000], dim = c(1000, 2, 1))
+y_train <- matrix(rec_obj$template$class[1:10000], nrow = 5000, ncol = 2)
+
+
+# testing validation data
+x_val <- array(runif(100 * timesteps * data_dim), dim = c(100, timesteps, data_dim))
+y_val <- matrix(runif(100 * num_classes), nrow = 100, ncol = num_classes)
+
+x_val <- array(rec_obj$template$value, dim = c(2000, 2, 1))
+y_val <- matrix(rec_obj$template$class, nrow = 10000, ncol = 2)
+
+# train
+model %>% fit( 
+  x_train, y_train, batch_size = 64, epochs = 5, validation_data = list(x_val, y_val)
+)
+
+```
+
+Once the LSTM model is estimated, we can use it to predict outcomes for the testing dataset, `x_test_arr`, using the `predict()` function. 
+
+Once we get the predictions, these need to be inversely transformed into the original measuring units using the saved mean and SD of the standardizing transformation.
+
+Finally, we combine the predictions with the original data into a single column vector, using `reduce()` and the `time_bind_rows()` function.
+
+```{r eval=F, message=F, warning=F}
+# Make Predictions
+pred_out <- model %>% 
+    predict(x_test_arr, batch_size = batch_size) %>%
+    .[,1] 
+
+# Retransform values
+pred_tbl <- tibble(
+    index   = lag_test_tbl$index,
+    value   = (pred_out * scale_history + center_history)^2
+) 
+
+# Combine actual data with predictions
+tbl_1 <- df_trn %>%
+    add_column(key = "actual")
+
+tbl_2 <- df_tst %>%
+    add_column(key = "actual")
+
+tbl_3 <- pred_tbl %>%
+    add_column(key = "predict")
+
+# Create time_bind_rows() to solve dplyr issue
+time_bind_rows <- function(data_1, data_2, index) {
+    index_expr <- enquo(index)
+    bind_rows(data_1, data_2) %>%
+        as_tbl_time(index = !! index_expr)
+}
+
+ret <- list(tbl_1, tbl_2, tbl_3) %>%
+    reduce(time_bind_rows, index = index) %>%
+    arrange(key, index) %>%
+    mutate(key = as_factor(key))
+
+ret
+```
+
+The final step involves evaluating the stateful LSTM model.
+
+The `caret` package and `yardstick::rmse()` function may be appropriate to quantify the performance. As the data is in  long format we can write a wrapper function `calc_rmse()` that transforms the data into the `yardstick::rmse()` format.
+
+```{r eval=F, message=F, warning=F}
+calc_rmse <- function(prediction_tbl) {
+    
+    rmse_calculation <- function(data) {
+        data %>%
+            spread(key = key, value = value) %>%
+            select(-index) %>%
+            filter(!is.na(predict)) %>%
+            rename(
+                truth    = actual,
+                estimate = predict
+            ) %>%
+            rmse(truth, estimate)
+    }
+    
+    safe_rmse <- possibly(rmse_calculation, otherwise = NA)
+    
+    safe_rmse(prediction_tbl)
+        
+}
+
+# assess the RMSE on the model
+calc_rmse(ret)
+```
+
+To visualize the performance, we can use a plotting function, `plot_prediction()`.
+
+```{r eval=F, message=F, warning=F}
+# Setup single plot function
+plot_prediction <- function(data, id, alpha = 1, size = 2, base_size = 14) {
+    
+    rmse_val <- calc_rmse(data)
+    
+    g <- data %>%
+        ggplot(aes(index, value, color = key)) +
+        geom_point(alpha = alpha, size = size) + 
+        theme_tq(base_size = base_size) +
+        scale_color_tq() +
+        theme(legend.position = "none") +
+        labs(
+            title = glue("{id}, RMSE: {round(rmse_val, digits = 1)}"),
+            x = "", y = ""
+        )
+    
+    return(g)
+}
+```
+
+Let's test the plotting function.
+
+```{r eval=F, message=F, warning=F}
+ret %>% 
+    plot_prediction(id = split_id, alpha = 0.65) +
+    theme(legend.position = "bottom")
+```
+
+# Example 2: Text Generation
+
+## Implementing character-level LSTM text generation
+
+
+Let's put these ideas in practice in a Keras implementation. The first thing we need is a lot of text data that we can use to learn a language model. You could use any sufficiently large text file or set of text files -- Wikipedia, the Lord of the Rings, etc. In this example we will use some of the writings of Nietzsche, the late-19th century German philosopher (translated to English). The language model we will learn will thus be specifically a model of Nietzsche's writing style and topics of choice, rather than a more generic model of the English language.
+
+## Preparing the data
+
+Let's start by downloading the corpus and converting it to lowercase:
+
+```{r eval=F}
+library(keras)
+library(stringr)
+
+data.csv <- read.csv("https://umich.instructure.com/files/12554194/download?download_frd=1", header=T)
+text <- tolower(data.csv$text)
+cat("Corpus length:", nchar(text), "\n")
+```
+
+
+Extract partially overlapping sequences of length `maxlen`,  generate dummy indicator variables (one-hot encoding), and pack them in a 3D array `x` of shape `(sequences, maxlen, unique_characters)`. The array `y` contains the corresponding targets - the one-hot-encoded characters that come after each extracted sequence.
+
+
+```{r eval=F}
+maxlen <- 60  # Length of extracted character sequences
+step <- 3  # We sample a new sequence every `step` characters
+  
+text_indexes <- seq(1, nchar(text) - maxlen, by = step)
+# This holds our extracted sequences
+sentences <- str_sub(text, text_indexes, text_indexes + maxlen - 1)
+# This holds the targets (the follow-up characters)
+next_chars <- str_sub(text, text_indexes + maxlen, text_indexes + maxlen)
+cat("Number of sequences: ", length(sentences), "\n")
+# List of unique characters in the corpus
+chars <- unique(sort(strsplit(text, "")[[1]]))
+cat("Unique characters:", length(chars), "\n")
+# Dictionary mapping unique characters to their index in `chars`
+char_indices <- 1:length(chars) 
+names(char_indices) <- chars
+# Next, one-hot encode the characters into binary arrays.
+cat("Vectorization...\n") 
+x <- array(0L, dim = c(length(sentences), maxlen, length(chars)))
+y <- array(0L, dim = c(length(sentences), length(chars)))
+for (i in 1:length(sentences)) {
+  sentence <- strsplit(sentences[[i]], "")[[1]]
+  for (t in 1:length(sentence)) {
+    char <- sentence[[t]]
+    x[i, t, char_indices[[char]]] <- 1
+  }
+  next_char <- next_chars[[i]]
+  y[i, char_indices[[next_char]]] <- 1
+}
+```
+
+## Building the LSTM network
+
+This network consists of a single LSTM layer, a dense classifier, and softmax over all possible characters. Recurrent neural networks represent just one way to generate sequence data.
+
+
+```{r eval=F}
+model <- keras_model_sequential() %>% 
+  layer_lstm(units = 128, input_shape = c(maxlen, length(chars))) %>% 
+  layer_dense(units = length(chars), activation = "softmax")
+```
+
+The targets are dummy indicator variables (i.e., one-hot encoded features) and we can use `categorical_crossentropy` as the loss to train the model.
+
+```{r eval=F}
+optimizer <- optimizer_rmsprop(lr = 0.01)
+model %>% compile(
+  loss = "categorical_crossentropy", 
+  optimizer = optimizer
+)   
+```
+
+## Training the language model and sampling from it
+
+
+Given a trained model and a seeding text, we can generate new synth-text by:
+
+* Draw from the model a probability distribution over the next character given the available text
+* Re-weight the distribution to a certain "temperature"
+* Sample the next character at random according to the re-weighted distribution
+* Append the new character at the end of the synth-text.
+
+The `sample_next_char()` function re-weights the original probability distribution from the current model and draws a new character index.
+
+```{r eval=F}
+sample_next_char <- function(preds, temperature = 1.0) {
+  preds <- as.numeric(preds)
+  preds <- log(preds) / temperature
+  exp_preds <- exp(preds)
+  preds <- exp_preds / sum(exp_preds)
+  which.max(t(rmultinom(1, 1, preds)))
+}
+```
+
+At each learning epoch, train the model and generate synth-text with a range of different temperatures.
+
+
+```{r eval=F}
+for (epoch in 1:50) {
+  
+  cat("Epoch", epoch, "\n")
+  
+  # Fit the LSTM model for 1 epoch on the available training data
+  model %>% fit(x, y, batch_size = 64, epochs = 1) 
+  
+  # Select a random seed
+  start_index <- sample(1:(nchar(text) - maxlen - 1), 1)  
+  seed_text <- str_sub(text, start_index, start_index + maxlen - 1)
+  
+  cat("--- Synth-Text Generation with seed:", seed_text, "\n\n")
+  
+  for (temperature in c(0.2, 0.5, 1.0, 1.2)) {
+    
+    cat("----------- temperature:", temperature, "\n")
+    cat(seed_text, "\n")
+    
+    generated_text <- seed_text
+    
+    # Generate text with 500 characters
+    for (i in 1:500) {
+      
+      sampled <- array(0, dim = c(1, maxlen, length(chars)))
+      generated_chars <- strsplit(generated_text, "")[[1]]
+      for (t in 1:length(generated_chars)) {
+        char <- generated_chars[[t]]
+        sampled[1, t, char_indices[[char]]] <- 1
+      }
+        
+      preds <- model %>% predict(sampled, verbose = 0)
+      next_index <- sample_next_char(preds[1,], temperature)
+      next_char <- chars[[next_index]]
+      
+      generated_text <- paste0(generated_text, next_char)
+      generated_text <- substring(generated_text, 2)
+      
+      cat(next_char)
+    }
+    cat("\n")
+  }
+}
+```
+
+
+
+Report results at  `epoch 50`. Is there evidence of model convergence?
+
+
+Report results for `temperature=0.2`: ...
+
+Report results for `temperature=0.5`: ....
+
+
+Report the result for `temperature=1.0`: ...
+
+Lower temperature results may yield extremely repetitive and predictable text 
+with realistic English-language structure. 
+
+Higher temperatures may yield more elaborate synthetic text, however, new plausible words/phrases/tokens may sometimes be invented and break the local sentence structure or include semi-random strings of characters. 
+
+One has to experiment with multiple sampling strategies to identify optimal balance between learned structure and randomness.
+
+Training larger models will take longer and demand more data, but also generate more coherent and realistic text.
+
+
+## Summary
+
+* LSTM modeling allows generating pseudo-clinical notes by training an LSTM model to predict the subsequent terms/tokens given some text.
+* These clinical text/notes generators represent "language modeling".
+* Sampling additional words/phrases/tokens requires a balance between model proposals and stochastic randomness. T his balance is controlled by the *softmax temperature* parameter.
+---------------------------------------------------------------------->
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->
+

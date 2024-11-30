@@ -1,0 +1,64 @@
+{
+  "metadata": {
+    "created_at": "2024-11-30T13:46:17.065710",
+    "total_sections": 5,
+    "total_code_chunks": 3,
+    "total_tables": 1,
+    "r_libraries": [
+      "brainR",
+      "plotly",
+      "tidyverse"
+    ]
+  },
+  "sections": [
+    {
+      "title": "Main",
+      "content": "---\ntitle: \"DSPA2: Data Science and Predictive Analytics (UMich HS650)\"\nsubtitle: \"<h2><u>Visualization of Solids using Volume Rendering</u></h2>\"\nauthor: \"<h3>SOCR/MIDAS (Ivo Dinov)</h3>\"\ndate: \"`r format(Sys.time(), '%B %Y')`\"\ntags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] \noutput:\n  html_document:\n    theme: spacelab\n    highlight: tango\n    includes:\n      before_body: ../SOCR_header.html\n    toc: true\n    number_sections: true\n    toc_depth: 2\n    toc_float:\n      collapsed: false\n\n\nThis DSPA section Appendix.3.5 (3D Volume Rendering) is part of the [DSPA Appendix on visualization of geometric and parametric surfaces](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_03_Geometric_Parametric_Surface_Viz.html). This DSPA Appendix (5) the isosurface-based volume rendering of 3D solids, such as 3D MRI brain scans.",
+      "word_count": 89
+    },
+    {
+      "title": "Load 3D MRI Data",
+      "content": "[DSPA Chapter 2 (Visualization)](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization_Part2.html) covers much of the necessary background.\nBelow we provide some additional 3D/4D PET, sMRI, and fMRI volumes in *.nii.gz* format:\n\n - [sMRI (3D real-valued structural MRI volume)](https://socr.umich.edu/HTML5/BrainViewer/data/ABIDE_MRI_MPRAGE_peds_defaced.nii.gz)\n - [fMRI (4D real-valued functional MRI hyper-volume)](https://socr.umich.edu/HTML5/BrainViewer/data/fMRI_FilteredData_4D.nii.gz)\n - [PET (3D perfusion Positron Emission Tomography volume)](https://socr.umich.edu/HTML5/BrainViewer/data/PET_FDG_3D_vol.nii.gz).",
+      "word_count": 46
+    },
+    {
+      "title": "3D Volume Rendering",
+      "content": "This function plots functions that can be described in this parametric form $w = f(x,y,z)$. This will allow us to render 3D solid as a data frame of four columns representing the flattened (unwinded) $x,y,z, value$ location and intensity value pairs of the 3D solid volume.",
+      "word_count": 46
+    },
+    {
+      "title": "AI-Synthetic Generation of 2D and 3D Brain Images and Volumes",
+      "content": "The [SOCR Synthetic Brain Data Generator AI-App](https://socr.umich.edu/HTML5/)\nprovides interactive demonstrations\nof synthetically generating 2D (image) and 2D (volume) data using SOCR-pre-trained \ngenerative Artificial Intelligence models, [GAIMs](http://gaim.world/).",
+      "word_count": 26
+    },
+    {
+      "title": "References",
+      "content": "- [Back to the DSPA visualization of geometric and parametric surfaces Appendix](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_03_Geometric_Parametric_Surface_Viz.html).\n - [Back to the main DSPA Topics](https://dspa2.predictive.space).\n - [R plot_ly documentation and details are available here](https://plot.ly/r/).\n\n<!--html_preserve-->\n<div>\n    \t<footer><center>\n\t\t\t<a href=\"https://www.socr.umich.edu/\">SOCR Resource</a>\n\t\t\t\tVisitor number \n\t\t\t\t<img class=\"statcounter\" src=\"https://c.statcounter.com/5714596/0/038e9ac4/0/\" alt=\"Web Analytics\" align=\"middle\" border=\"0\">\n\t\t\t\t<script type=\"text/javascript\">\n\t\t\t\t\tvar d = new Date();\n\t\t\t\t\tdocument.write(\" | \" + d.getFullYear() + \" | \");\n\t\t\t\t</script> \n\t\t\t\t<a href=\"https://socr.umich.edu/img/SOCR_Email.png\"><img alt=\"SOCR Email\"\n\t \t\t\ttitle=\"SOCR Email\" src=\"https://socr.umich.edu/img/SOCR_Email.png\"\n\t \t\t\tstyle=\"border: 0px solid ;\"></a>\n\t \t\t </center>\n\t \t</footer>\n\n\t<!-- Start of StatCounter Code -->\n\t\t<script type=\"text/javascript\">\n\t\t\tvar sc_project=5714596; \n\t\t\tvar sc_invisible=1; \n\t\t\tvar sc_partition=71; \n\t\t\tvar sc_click_stat=1; \n\t\t\tvar sc_security=\"038e9ac4\"; \n\t\t</script>\n\t\t\n\t\t<script type=\"text/javascript\" src=\"https://www.statcounter.com/counter/counter.js\"></script>\n\t<!-- End of StatCounter Code -->\n\t\n\t<!-- GoogleAnalytics -->\n\t\t<script src=\"https://www.google-analytics.com/urchin.js\" type=\"text/javascript\"> </script>\n\t\t<script type=\"text/javascript\"> _uacct = \"UA-676559-1\"; urchinTracker(); </script>\n\t<!-- End of GoogleAnalytics Code -->\n</div>\n<!--/html_preserve-->",
+      "word_count": 123
+    }
+  ],
+  "tables": [
+    {
+      "section": "Main",
+      "content": "      smooth_scroll: true\n---",
+      "row_count": 2
+    }
+  ],
+  "r_code": [
+    {
+      "section": "Main",
+      "code": "knitr::opts_chunk$set(echo = TRUE)",
+      "line_count": 1
+    },
+    {
+      "section": "Load 3D MRI Data",
+      "code": "#, results=\"hide\"}\nlibrary(plotly)\nlibrary(tidyverse)\n\n# install.packages(\"brainR\") ## if necessary\nlibrary(brainR)\n# Test data: https://socr.umich.edu/HTML5/BrainViewer/data/TestBrain.nii.gz\n\nbrainURL <- \"https://socr.umich.edu/HTML5/BrainViewer/data/TestBrain.nii.gz\"\nbrainFile <- file.path(tempdir(), \"TestBrain.nii.gz\")\ndownload.file(brainURL, dest=brainFile, quiet=TRUE)\nbrainVolume <- readNIfTI(brainFile, reorient=FALSE)\n\nbrainVolDims <- dim(brainVolume); brainVolDims",
+      "line_count": 14
+    },
+    {
+      "section": "3D Volume Rendering",
+      "code": "# lower resolution to speed interactive 3D volume rendering\nscaleDownFactor <- 2\nx = seq(1, brainVolDims[1], by=scaleDownFactor)  \ny = seq(1, brainVolDims[2], by=scaleDownFactor)\nz = seq(1, brainVolDims[3], by=scaleDownFactor)\n\nvolume_df <- expand.grid(x = x, y = y, z= z)\na = brainVolume@.Data\naDownSample <- a[x,y,z]\ndim(a) <- c(brainVolDims[1]*brainVolDims[2]*brainVolDims[3])\n# str(a)\nnormalize<-function(x){\t\n  return((x-min(x))/(max(x)-min(x)))\t\n}\t\n\t\nvolume_df$value <- normalize(as.vector(aDownSample))\nminVol <- min(volume_df$value)\nmaxVol <- max(volume_df$value)\nminVol <- minVol + 0.1*(maxVol-minVol)\nmaxVol <- maxVol - 0.1*(maxVol-minVol)\n\ncolorscale_3dplot <- c(\"Viridis\", \"Cividis\", \"Inferno\", \"Magma\", \"Plasma\", \n                       \"Turbo\", \"Hot\", \"Jet\", \"Rainbow\", \"Electric\",\n                       \"YlGnBu\", \"RdBu\", \"Blues\", \"Greens\", \"Greys\")\n                                                                             \nplot_ly(showscale = FALSE) %>% \n  # add_surface(x = x, y = y, z = z, opacity = 0.4) %>%\n  add_trace(type = \"volume\", data = volume_df,\n            x = ~x, y = ~y, z = ~z, value = ~value, opacity = 0.8,\n            #isomin = minVol, isomax = maxVol, surface = list(count = 3),\n            isomin = 0.1, isomax = 0.6, surface = list(count = 3),\n            # colorscale = list(c(minVol, maxVol), c(\"lightgray\", \"red\"))) %>%\n            colorscale = colorscale_3dplot[1]) %>%\n  layout(title=\"Isosurface Rendering of a 3D MRI Brain\") %>% hide_colorbar()",
+      "line_count": 34
+    }
+  ]
+}

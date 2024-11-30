@@ -1,0 +1,660 @@
+---
+title: "Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Geometric and Parametric Surface Visualization</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+In this [DSPA Appendix section](https://dspa2.predictive.space) we will demonstrate the surface rendering of various mathematical representations of shape, form and size.
+
+It is important to realize that there are different types of [manifolds](https://en.wikipedia.org/wiki/Manifold) and their shape can be represented as a number of alternative mathematical objects. There are [parametric](https://en.wikipedia.org/wiki/Parametric_surface), [PDE](https://en.wikipedia.org/wiki/PDE_surface), [triangulated](https://en.wikipedia.org/wiki/Surface_triangulation), [implicit ($f(x,y,x)=0$)](https://en.wikipedia.org/wiki/Implicit_surface) explicit ($r=r(u,v)$), and other analytic strategies to represent the [surface topology](https://en.wikipedia.org/wiki/Surface_(topology)). In addition, some manifolds are [orientable](https://en.wikipedia.org/wiki/Orientability) and some are non-orientable, some are [closed with no boundaries](https://en.wikipedia.org/wiki/Closed_manifold) and some are [open with boundaries](https://en.wikipedia.org/wiki/Topological_manifold#Manifolds_with_boundary). The deep topological [classification of manifolds](https://en.wikipedia.org/wiki/Classification_of_manifolds) provides further details on the mathematical analytic approaches to represent form, shape and size. Below. We will demonstrate examples of visualizing common geometric manifolds and some mathematical models representing the boundaries of specific manifolds.
+
+For example, a parametric mesh-based representation of an open surface with boundaries requires individual definition of each component: $x=x(u,v)$,$y=y(u,v)$, $z=z(u,v)$. In the saddle point surface example below, we use a single parameter $0\leq u=\phi <2\pi$. However, all other 3D scene components need to be transformed using [spherical coordinates](https://en.wikipedia.org/wiki/Spherical_coordinate_system), e.g., the orthogonal vertical planes need to be parameterized using
+$0\leq u=\phi <2\pi \text { and } 0\leq v=\psi <\pi$.
+
+```{r warning=F, error=F, message=F}
+library(plotly)
+
+# Define Saddle-point Surface
+x <- sin(seq(0, 2*pi, length.out = 200))
+y <- cos(seq(0, 2*pi, length.out = 200))
+z <- sin(seq(0, 2*pi, length.out = 200))*cos(seq(0, 2*pi, length.out = 200))
+#plot_ly(x = ~x, y = ~y, z = ~z, type = 'mesh3d',
+#             contour=list(show=TRUE, color="#000", width=15, lwd=10),
+#             opacity=1.0, hoverinfo="none", legendshow=F)
+
+# Define plane 1 (X=Y)
+phi1 <- pi/4  # x=y in spherical coordinates
+psi1 <- seq(from = 0, to = pi, by = ((pi - 0)/(200 - 1)))
+r1 = seq(from = -1, to = 1, by = ((1 - (-1))/(200 - 1)))  # r = radius
+scale1 <- 1.1
+
+# if you want to display planes as rectangles/squares
+# you need to transform the radial measure (r1)
+#for (i in 1:length(psi1)) {
+#  r1[i] = min(1/abs(cos(psi1[i])), 1/abs(sin(psi1[i])))
+#}
+# plot(x=r1*cos(psi1), y=r1*sin(psi1))
+
+x1 = scale1 * cos(phi1) * (r1 %o% sin(psi1))     # x1 = r1 cos(phi1)sin(psi1)
+y1 = scale1 * x1                                 # x1 = y1
+z1 = scale1 * (r1 %o% cos(psi1)) 
+
+# Define plane 2 (Orthogonal to Plane 1 and along the Z axis)
+phi2 <- (3*pi)/4  #  in spherical coordinates
+psi2 <- seq(from = 0, to = pi, by = ((pi - 0)/(200 - 1)))
+r2 = seq(from = -1, to = 1, by = ((1 -(-1))/(200 - 1)))  # r = radius
+
+x2 = scale1 * cos(phi2) * (r2 %o% sin(psi2))     # x2 = r2 cos(phi2)sin(psi2)
+y2 = scale1 * sin(phi2) * (r2 %o% sin(psi2))     # y2 = r2 sin(phi2)sin(psi2)
+z2 = scale1 * (r2 %o% cos(psi2)) 
+
+p <- plot_ly(x=~x1, y=~y1, z=~z1,   # draw vertical plane 1
+        colors = c("yellow", "white"),type="surface", 
+        hoverinfo="none", opacity=0.7, 
+        legendshow=FALSE, showscale = FALSE) %>%
+  add_trace(x=~x2, y=~y2, z=~z2,    # draw vertical plane 2 (orthogonal to 1)
+        colors = c("blue", "yellow"),type="surface", 
+        hoverinfo="none", opacity=0.7, 
+        legendshow=FALSE, showscale = FALSE) %>%
+  # draw the saddle point surface
+  add_trace(x = ~x, y = ~y, z = ~z, type = 'mesh3d',
+       contour=list(show=TRUE, color="#000", width=15, lwd=10),
+       opacity=1.0, hoverinfo="none", legendshow=F) %>%
+  # trace the boundary of the saddle point surface
+  add_trace(x=~x, y=~y, z=~z, type="scatter3d", mode="lines", 
+              line = list(width = 10, color="red"), name="Surface Boundary",
+              hoverinfo="none", legendshow=F) %>%
+  # trace the main Z-axis
+  add_trace(x=0, y=0, z=~(scale1*2*z), type="scatter3d", mode="lines", 
+              line = list(width = 10, color="navy blue"), name="Z",
+              hoverinfo="none", legendshow=F) %>%
+  layout(title = "Saddle Point with Planes")
+p
+```
+
+On the other hand, an orientable closed surface without boundary can be displayed by explicitly defining a triangulation of the surface, as illustrated below for a [tetrahedron](https://en.wikipedia.org/wiki/Tetrahedron).
+
+```{r warning=F, error=F, message=F}
+library(plotly)
+
+p <- plot_ly(type = 'mesh3d',
+             # Define all (4) zero-cells (points or vertices)
+             # P_i(x,y,z), 0<=i<4
+             x = c(0, 0, 2, 0),
+             y = c(0, 0, 0, 2),
+             z = c(0, 2, 0, 0),
+             
+             # Next define all triples (i,j,k) of vertices that form a 2-cell face. 
+             # All Tetrahedra have 4 faces
+             i = c(0, 0, 0, 1),
+             j = c(1, 2, 3, 2),
+             k = c(2, 3, 1, 3),
+             
+             # Define the appearance of the 4 faces (2-cells)
+             intensity = c(0, 0.33, 0.66, 1),
+             color = c(0, 0.33, 0.66, 1),
+             colors = colorRamp(c("yellow", "light blue", "navy blue"))
+); p
+```
+
+Next, we demonstrate how to render a more complex, naturally-triangulated surface; [12-face Icosahedron](https://en.wikipedia.org/wiki/Icosahedron): 
+
+```{r warning=F, error=F, message=F}
+library(plotly)
+# http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
+
+phi <- (1 + sqrt(5))/2
+
+p <- plot_ly(type = 'mesh3d',
+             # define 12 vertices
+             x = c(-1, 1, -1, 1, 0, 0, 0, 0, phi, phi, -phi, -phi),
+             y = c(phi, phi, -phi, -phi, -1, 1, -1, 1, 0, 0, 0, 0),
+             z = c(0, 0, 0, 0, phi, phi, -phi, -phi, -1, 1, -1, 1),
+ 
+             # Define all 20 2-cells (faces) 
+             i = c(0,0,0,0,0,1,5,11,10,7,3,3,3,3,3,4,2,6,8,9),
+             j = c(11,5,1,7,10,5,11,10,7,1,9,4,2,6,8,9,4,2,6,8),
+             k = c(5,1,7,10,11,9,4,2,6,8,4,2,6,8,9,5,11,10,7,1),
+             # 0 1 2 3 4 5 6 7 8 9 10 11 
+             # A B C D E F G H I J  K  L
+             
+             # Define the appearance
+             facecolor = toRGB(viridisLite::viridis(20)),
+             showscale = TRUE, 
+             opacity=0.5
+) 
+traceEdges <- list( 
+  x = c(-1, -phi, -phi, -1), 
+  y = c(phi, 0, 0, phi), 
+  z = c(0, -1, 1, 0), 
+  line = list(
+    color = "rgb(10, 10, 10)",  #dark color for line traces
+    width = 20 # width of line
+  ), 
+  mode = "lines", 
+  opacity = 1,
+  type = "scatter3d"
+)
+
+# emphasize one of the faces by stressing the three 1-cells (edges)
+p <- add_trace(p, x=traceEdges$x, y=traceEdges$y, z=traceEdges$z, type="scatter3d", mode="lines", line = list(color=traceEdges$line$color, width=traceEdges$line$width), showscale=T); p
+```
+
+# Geometric Primitive Surfaces with and without Boundaries
+
+## Saddle Point Surface
+
+A [saddle point](https://en.wikipedia.org/wiki/Saddle_point) is a point on the surface represented by a function $z=z(x,y)$, where the gradient slopes (partial derivatives) of orthogonal function components defining the surface are trivial ($0$), however the point does not represent a local extremum on both axes, as may be expected. We already showed a simple example of a saddle point earlier, which we rendered as a `surface`. Now we will illustrate the parametric definition of a surface with a saddle point and it's triangulated representation as a  `mesh3d`.
+
+```{r warning=F, error=F, message=F}
+library (geometry)
+
+# Plotly layout 
+axs <- list(
+  backgroundcolor="rgb(200,200,200)", # gray
+  gridcolor="rgb(255,255,255)",       # white
+  showbackground=TRUE,
+  zerolinecolor="rgb(255,255,255)"     # white
+)
+
+n <- 36
+h <- 1/(n-1)
+r = seq(h, 1, length.out=n)
+theta = seq(0, 2*pi, length.out=100)
+ 
+grid.df <- expand.grid(r=r, theta=theta)
+ 
+x <- c(grid.df$r * cos(grid.df$theta), 0)
+y <- c(grid.df$r * sin(grid.df$theta), 0)
+z <- sin(x*y)
+ 
+mat <- matrix(
+  c(x,y,z), 
+  ncol = 3,
+  dimnames = list(NULL, c("x", "y", "z"))
+)
+ 
+triangulated <- delaunayn(mat[,1:2])
+ 
+# now figure out the colormap
+zmean <- apply(triangulated, MARGIN=1, function(row){mean(mat[row,3])})
+ 
+library(scales)
+
+facecolor = colour_ramp(
+  colorRampPalette(c("pink", "purple"))(20)
+)(rescale(x=zmean))
+ 
+plot_ly(
+  x=x, y=y, z=z,
+  i=triangulated[,1]-1, j=triangulated[,2]-1, k=triangulated[,3]-1,
+  facecolor=facecolor,
+  type="mesh3d",
+  opacity = 0.7,
+  contour=list(show=TRUE, color="#000", width=15)
+) %>%
+  layout(
+    title="Triangulated Saddle Point surface",
+    scene=list(
+      xaxis=axs,
+      yaxis=axs,
+      zaxis=axs,
+      camera=list(
+        eye=list(x=1.75,y=-0.7,z=0.75)
+      )
+    )
+  )
+
+```
+
+## Geometric Shapes: 3D Spherical Parameterization
+
+Below, we show three complementary examples of rendering synthetic geometric shapes; convex shapes (*cone*, *sphere*) and a non-convex surface (*complex*). It's worthwhile reviewing the [fundamentals of the spherical coordinate system representation](https://en.wikipedia.org/wiki/Spherical_coordinate_system).
+
+```{r warning=F, error=F, message=F}
+# library(plotly)
+
+# sweep or define (u,v) spherical coordinate parameter ranges
+phi <- seq(from = 0, to = 2*pi, by = ((2*pi - 0)/(200 - 1)))
+psi <- seq(from = 0, to = pi, by = ((pi - 0)/(200 - 1)))
+
+#p <- plot_ly(x = ~x, y = ~y, z = ~z, type = 'surface', opacity=1,
+#             contour=list(show=TRUE, color="#000", width=15, lwd=10))  %>%
+#  layout(title = paste("Layout ", shape), 
+#         scene = list(xaxis=x_label,yaxis=y_label, zaxis=z_label))
+#p
+
+# shape=="complex")
+    # rendering (u,v) parametric surfaces requires x,y,z arguments to be 2D arrays
+    # In out case, the three coordinates have to be 200*200 parameterized tensors/arrays
+    r1 = 2 + sin(3 * phi + 5 * psi)    # r = 2 + sin(7phi+5psi)
+    x1 = (r1 * cos(phi)) %o% sin(psi)    # x = r*cos(phi)*sin(psi)
+    y1 = (r1 * sin(phi)) %o% sin(psi)     # y = r*sin(phi)*sin(psi)
+    z1 = r1 %o% cos(psi)  # z = r*cos(psi)
+    
+#shape=="cone")
+    h2= 10   # cone height
+    r2 = seq(from = 0, to = h2, by = ((h2 - 0)/(200 - 1)))  # r = radius
+    x2 = 3* ((h2 - r2)/h2 ) %o% rep(1, 200)             # x = 3*r
+    y2 = 3* ((h2 - r2)/h2 ) %o% sin(phi)   # y = r*sin(phi)
+    z2 = 3* ((h2 - r2)/h2 ) %o% cos(phi)   # z = r*cos(phi)
+
+#shape=="sphere") 
+    r3 = 1                           # r = 1
+    x3 = r3 * cos(phi) %o% sin(psi)   # x = r*cos(phi)*sin(psi)
+    y3 = r3 * sin(phi) %o% sin(psi)   # y = r*sin(phi)*sin(psi)
+    z3 = r3 * rep(1, 200) %o% cos(psi) # still need z to be 200*200 parameterized tensor/array
+
+shape_names <- c("complex", "cone", "sphere")
+
+# https://plot.ly/r/custom-buttons/
+
+#p <- plot_ly(x = ~x, y = ~y, z = ~z, type = 'surface', opacity=1,
+#             contour=list(show=TRUE, color="#000", width=15, lwd=10),
+#             layout=layout_shapes)
+
+# updatemenus component
+updatemenus <- list(
+  list(
+    active = -1,
+    type = 'buttons',
+    buttons = list(
+      list(
+        label = shape_names[1],
+        method = "update",
+        args = list(list(visible = c(TRUE, FALSE, FALSE)),
+                    list(title = shape_names[1]))),
+      list(
+        label = shape_names[2],
+        method = "update",
+        args = list(list(visible = c(FALSE, TRUE, FALSE)),
+                    list(title = shape_names[2]))),
+      list(
+        label = shape_names[3],
+        method = "update",
+        args = list(list(visible = c(FALSE, FALSE, TRUE)),
+                    list(title = shape_names[3])))
+    )
+  )
+)
+
+p <- plot_ly(hoverinfo="none", legendshow=FALSE, showscale = FALSE) %>%
+  add_trace(x = ~x1, y = ~y1, z = ~z1, type = 'surface', opacity=1, visible=T,
+             contour=list(show=TRUE, color="#000", width=15, lwd=10,
+                          opacity=1.0, hoverinfo="none", legendshow=F)) %>%
+  add_trace(x = ~x2, y = ~y2, z = ~z2, type='surface', opacity=1,visible=F,
+             contour=list(show=TRUE, color="#000", width=15, lwd=10,
+                          opacity=1.0, hoverinfo="none", legendshow=F)) %>%
+  add_trace(x = ~x3, y = ~y3, z = ~z3, type = 'surface', opacity=0.7,visible=F,
+             contour=list(show=TRUE, color="#000", width=15, lwd=10,
+                          opacity=0.7, hoverinfo="none", legendshow=F)) %>%
+  layout(title = "Choose a Shape", showlegend = FALSE,
+         updatemenus = updatemenus)
+p
+
+```
+
+# Non-Orientable Surfaces
+
+## Mobius Band Triangulation
+
+The [Mobius band (or Moebius strip](https://en.wikipedia.org/wiki/Mobius_strip) is a non-orientable 2D surface with a single (curve) boundary. The example below shows the parameterization, triangulation and rendering of the Mobius band. The example also demonstrates how to add additional traces (curves or surfaces) to the same 3D scene.
+
+```{r warning=F, error=F, message=F}
+# library(plotly)
+library(geometry)
+ 
+# Create a data.frame of all (u,v) coordinates
+grid.df <- expand.grid(
+  u = seq(0, 2*pi, length.out = 100),
+  v = seq(-1, 1, length.out = 50)
+)
+
+# Define the Mobius Band parametric value
+tp <- 1 + (grid.df$v * cos(grid.df$u / 2))/2
+mat <- matrix(
+  c(tp * cos(grid.df$u), tp * sin(grid.df$u), 
+    0.5 * grid.df$v * sin(grid.df$u / 2)), 
+  ncol = 3, dimnames = list(NULL, c("x", "y", "z"))
+)
+ 
+# Delaunay triangulation on grid.df (not on the matrix of values mat)
+# The Delaunay matrix has m rows and dim+1 columns. For each row, the matrix contains a set of indices to the points (zero-cells), which describes a simplex of dimension dim. The 3D simplex is a tetrahedron.
+# grid.df is an n-by-dim matrix. The rows of grid.df represent 
+# n points in dim-dimensional space
+Delaunay.mat <- delaunayn(grid.df)
+Delaunay.mat.t <- t(Delaunay.mat)
+#  Use mat to plot (not the 2D grid grid.df
+ 
+# Plotly layout 
+axs <- list(
+  backgroundcolor="rgb(200,200,200)", # gray
+  gridcolor="rgb(255,255,255)",       # white
+  showbackground=TRUE,
+  zerolinecolor="rgb(255,255,255)"     # white
+)
+ 
+#  Apply the colormap
+#  Compute the mean of z for each row of the Delaunay vertices
+zmean <- apply(Delaunay.mat, MARGIN=1, function(row){mean(mat[row,3])})
+ 
+library(scales)
+# Determine the 2-cell face's colors
+# plotted color result will be slightly different
+#  since colour_ramp uses CIELAB instead of RGB
+#  could use colorRamp for exact replication
+facecolor = colour_ramp(
+  # brewer_pal(palette="RdBu")(10); # brewer_pal("div")(10)
+  colorRampPalette(c("gold", "navy blue"))(4)
+)(rescale(x=zmean))
+ 
+ 
+plot_ly(
+  # x = x, y = y, z = z,  # vertex (0-cell) coordinates
+  # i = i, j = j, k = k,  # indices to the vertices, which describe a 2-cell (face or a simplex) of dimension dim
+  # see docs: https://plot.ly/r/3d-mesh-plots/
+  x = mat[, 1], y = mat[, 2], z = mat[, 3],
+  # JavaScript is 0 based index so subtract 1
+  i=Delaunay.mat[, 1]-1, j=Delaunay.mat[, 2]-1, k=Delaunay.mat[, 3]-1,
+  facecolor = facecolor,
+  type = "mesh3d",
+  contour=list(show=TRUE, color="#000", width=15)
+) %>%
+  # add two planes as curve traces
+  add_trace(x=mat[, 1], y=mat[, 2], z=0, type="scatter3d", mode="lines", line = list(color="rgb(0, 255, 0)")) %>%
+  add_trace(x=mat[, 1], y=0, z=mat[, 3], type="scatter3d", mode="lines", line = list(color="rgb(255, 0, 0)"), opacity=0.5) %>%
+  layout(
+    title="Mobius Strip Triangulation",
+    scene=list(xaxis=axs, yaxis=axs, zaxis=axs)
+  )
+
+```
+
+## Klein Bottle
+
+A more interesting example of a non-orientable 2-manifold that is closed and has no boundary. It is natively embedded in $R^4$, but can be rendered in $R^3$ with some imagination. The Klein bottle surface does not intersect itself when it's natively embedded in $R^4$, however, it's projection in $R^3$ appears to be self-intersecting. See the [Klein Bottle parametrization details online](https://en.wikipedia.org/wiki/Klein_bottle).
+
+```{r warning=F, error=F, message=F}
+# library(plotly)
+library(geometry)
+
+grid.df <- expand.grid(
+  u = seq(0, pi, length.out = 100),
+  v = seq(0, 2*pi, length.out = 100)
+)
+
+# Define a 3D Klein Bottle parameterization (see Wikipedia)
+mat <- matrix(
+    c(
+      -2/15 * cos(grid.df$u) * 
+          (3*cos(grid.df$v)-30*sin(grid.df$u) + 
+              90*cos(grid.df$u)^4 * sin(grid.df$u)
+              -60*cos(grid.df$u)^6 * sin(grid.df$u) +
+              5*cos(grid.df$u) * cos(grid.df$v) * sin(grid.df$u)), # x
+      -1/15*sin(grid.df$u) * 
+          (3*cos(grid.df$v) - 5*cos(grid.df$u)^2 * cos(grid.df$v)
+              -48*cos(grid.df$u)^4 * cos(grid.df$v) + 
+              48*cos(grid.df$u)^6 * cos(grid.df$v) - 60*sin(grid.df$u) +
+              5*cos(grid.df$u)*cos(grid.df$v)*sin(grid.df$u) -
+              5*cos(grid.df$u)^3 * cos(grid.df$v) *sin(grid.df$u) -
+              80* cos(grid.df$u)^5 * cos(grid.df$v) *sin(grid.df$u) +
+              80*cos(grid.df$u)^7 * cos(grid.df$v) *sin(grid.df$u)), # y
+        4/15 *(3 + 5*cos(grid.df$u)*sin(grid.df$u)) *sin(grid.df$v) # z
+      ), 
+    ncol = 3, dimnames = list(NULL, c("x", "y", "z"))
+)
+
+Delaunay.mat <- delaunayn(grid.df)
+Delaunay.mat.t <- t(Delaunay.mat)
+#  Use mat to plot (not the 2D grid grid.df
+ 
+# Plotly layout 
+axs <- list(
+  backgroundcolor="rgb(200,200,200)", # gray
+  gridcolor="rgb(255,255,255)",       # white
+  showbackground=TRUE,
+  zerolinecolor="rgb(255,255,255)"     # white
+)
+ 
+#  Apply the colormap
+#  Compute the mean of z for each row of the Delaunay vertices
+zmean <- apply(Delaunay.mat, MARGIN=1, function(row){mean(mat[row,3])})
+ 
+library(scales)
+# Determine the 2-cell face's colors
+# plotted color result will be slightly different
+#  since colour_ramp uses CIELAB instead of RGB
+#  could use colorRamp for exact replication
+facecolor = colour_ramp(
+  # brewer_pal(palette="RdBu")(10); # brewer_pal("div")(10)
+  colorRampPalette(c("pink", "purple"))(10)
+)(rescale(x=zmean))
+ 
+ 
+plot_ly(
+  # x = x, y = y, z = z,  # vertex (0-cell) coordinates
+  # i = i, j = j, k = k,  # indices to the vertices, which describe a 2-cell (face or a simplex) of dimension dim
+  # see docs: https://plot.ly/r/3d-mesh-plots/
+  x = mat[, 1], y = mat[, 2], z = mat[, 3],
+  # JavaScript is 0 based index so subtract 1
+  i=Delaunay.mat[, 1]-1, j=Delaunay.mat[, 2]-1, k=Delaunay.mat[, 3]-1,
+  facecolor = facecolor,
+  type = "mesh3d",
+  opacity = 0.3,
+  contour=list(show=TRUE, color="#000", width=15)
+) %>%
+  # add_trace(x=mat[, 1], y=mat[, 2], z=0, type="scatter3d", mode="lines", line = list(color="rgb(0, 255, 0)")) %>%
+  layout(
+    title="Klein Bottle Triangulation",
+    scene=list(xaxis=axs, yaxis=axs, zaxis=axs)
+  )
+
+# Plot surface using markers
+p <- plot_ly() %>% 
+  add_trace(type = 'scatter3d', size = 1, 
+     x = mat[, 1], y = mat[, 2], z = mat[, 3], opacity=0.001, mode = "markers"); p
+
+# Plot surface using "surface"
+# To use add_surface instead, we will have to first convert the surface
+# into a different format, with a vector of x locations, a vector of y locations, z as a matrix (dimensions equal to x by y). 
+# As the Klein Bottle does not have boundary, we also need to split the 
+# z values into two separate surface layers one for the top half of the surface and one for the bottom half
+# p <- plot_ly(showscale = FALSE) %>%  add_surface(x = mat[, 1], y = mat[, 2], z = mat[, 3], opacity=0.5); p
+
+```
+
+We can also try to render the Klein Bottle using a precomputed JSON object including the geometric, topological and meta-data attributes needed for the 3D rendering of the surface.
+
+```{r Klein_Bottle, warning=F, error=F}
+library(plotly)
+
+library(jsonlite)
+KB_data <- fromJSON("http://socr.umich.edu/data/DSPA/surfaces/KlineBottle.json", flatten=TRUE)
+
+# Examine the 3 cardinal projection planes (Klein Bottle cross-sections)
+image(KB_data$data$z[[1]])
+image(KB_data$data$y[[1]])
+image(KB_data$data$x[[1]])
+
+p <- plot_ly( # 'mesh3d' assumes vector inputs where z=z(x,y)
+              #x = ~as.vector(KB_data$data$x[[1]]), 
+              #y = ~as.vector(KB_data$data$y[[1]]),
+              #z = ~as.vector(KB_data$data$z[[1]]),
+  
+              # 'surface' type assumes (u,v) parametric descriptions
+              # x=x(u,v), y=y(u,v), z=z(u,v)
+              x = ~KB_data$data$x[[1]], 
+              y = ~KB_data$data$y[[1]],
+              z = ~KB_data$data$z[[1]],
+              type = 'surface', opacity=0.7); p
+
+```
+
+
+# Brain Surfaces
+
+Oftentimes, we are interested in modeling the boundaries of complex 3D solids using 2D manifolds. One of these interesting examples is reconstructing the mammalian cortical brain surface, e.g., rodents or humans. Below, we demonstrate two examples of loading precomputed, i.e., triangulated, surface models into R/RStudio for rendering and visualization using `plotly`. You can also see the [SOCR Brian Viewer](https://socr.umich.edu/HTML5/BrainViewer/), which provides a more complex WebGL mechanism for visualization and interrogation of complex brain surfaces, models and stereotactic volumes. 
+
+## Human Brain
+
+There a many different software tools that can be used to model the human brain cortical surface using [3D sMRI data]( https://en.wikipedia.org/wiki/Magnetic_resonance_imaging), e.g., [Freesurfer](https://surfer.nmr.mgh.harvard.edu) and [BrainSuite](http://brainsuite.org). Below we demonstrate an example using a Freesurfer surface model using the [FS pial](http://www.grahamwideman.com/gw/brain/fs/surfacefileformats.htm) surface file format.
+
+```{r warning=F, error=F, message=F}
+rm(list=ls())  # clean the environment
+library(plotly)
+library(geomorph)
+# install.packages("freesurfer")
+# https://github.com/joebathelt/ZDHHC9_connectome
+# FS Data/Surfaces: http://www.freesurfer.net/pub/data/tutorial_data/long-tutorial/OAS2_0185_MR1.long.OAS2_0185/surf/
+
+library(freesurfer)
+
+fs <- freesurfer_read_surf('http://socr.umich.edu/data/DSPA/surfaces/lh.pial')
+colnames(fs$vertices) <- c('x', 'y', 'z')
+# str(fs)
+x <- fs$vertices[ , 'x']
+y <- fs$vertices[ , 'y']
+z <- fs$vertices[ , 'z']
+  
+mat <- matrix(c(x,y,z), ncol=3, dimnames=list(NULL,c("x","y","z")))
+
+# plot_ly(x = x, y = y, z = z, type = "scatter3d", 
+#        mode = "markers", marker = list(size = 3))
+
+# now figure out the colormap for each 2-cell (face) by averaging
+# the z-coordinates, mat[ , 3], of all 3 vertices of the face
+zmean <- apply(t(fs$faces),MARGIN=2,function(row){mean(mat[row,3])})
+# length(zmean); length(mesh$it[1,]) # equal?
+# str(zmean); str(mat[,3]); str(mesh) # check structures
+ 
+library(scales)
+# color each 2-cell (face), ideally, this would be cortical thickness or another 4D values (e.g., p-value, curvature, etc.)
+facecolor = colour_ramp(
+  colorRampPalette(c("light blue", "gold"))(5)
+)(rescale(x=zmean))
+
+#facecolor = colour_ramp(
+#   colorRampPalette(c("navy blue", "gold"))(5)
+# )(rescale(x=fs$faces[,4]))
+#length(fs$faces[,4])
+
+plot_ly(
+  x = x, y = y, z = z,
+  i = fs$faces[ , 1], j = fs$faces[ , 2], k = fs$faces[ , 3],
+  facecolor = facecolor,
+  type = "mesh3d",
+  opacity = 0.7,  # change opacity to make see through the surface
+  contour=list(show=TRUE, color="#000", width=15)
+)
+```
+
+## Rodent Brain
+
+This final example illustrates a simpler model of a rodent brain represented as a [PLY](https://en.wikipedia.org/wiki/PLY_(file_format)) surface model.
+
+```{r warning=F, error=F, message=F}
+# library("plotly")
+plyFile <- 'http://socr.umich.edu/data/DSPA/surfaces/Mouse_Brain.ply'
+dest <- basename(plyFile)
+if (!file.exists(dest)) {
+  download.file(plyFile, dest)
+}
+
+# For ASCII PLY data: 
+mesh <- geomorph::read.ply(dest, ShowSpecimen = F)
+
+# For Binary PLY data use: mesh <- vcgPlyRead(dest, updateNormals = TRUE, clean = TRUE)
+
+# see getS3method("shade3d", "mesh3d") for details on how to plot 
+
+# plot point cloud
+x <- mesh$vb["xpts",]
+y <- mesh$vb["ypts",]
+z <- mesh$vb["zpts",]
+mat <- matrix(c(x,y,z), ncol=3, dimnames=list(NULL,c("x","y","z")))
+
+# plot_ly(x = x, y = y, z = z, type = "scatter3d", 
+#        mode = "markers", marker = list(size = 3))
+
+# now figure out the colormap for each 2-cell (face) by averaging
+# the z-coordinates, mat[ , 3], of all 3 vertices of the face
+zmean <- apply(t(mesh$it),MARGIN=1,function(row){mean(mat[row,3])})
+# length(zmean); length(mesh$it[1,]) # equal?
+# str(zmean); str(mat[,3]); str(mesh) # check structures
+ 
+library(scales)
+# color each 2-cell (face)
+facecolor = colour_ramp(
+  colorRampPalette(c("light blue", "gold"))(5)
+)(rescale(x=zmean))
+
+plot_ly(
+  x = x, y = y, z = -z,  # flip in z-direction to show anatomically
+  i = mesh$it[1,]-1, j = mesh$it[2,]-1, k = mesh$it[3,]-1, # JS indices start at zero
+  facecolor = facecolor,
+  type = "mesh3d",
+  opacity = 0.8,
+  contour=list(show=TRUE, color="#000", width=15)
+)
+```
+
+# References
+
+* Additional [brain surface data are available online](http://www.freesurfer.net/pub/data/tutorial_data/long-tutorial/).
+* [R plot_ly documentation and details are available here](https://plot.ly/r/).
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->
+
+

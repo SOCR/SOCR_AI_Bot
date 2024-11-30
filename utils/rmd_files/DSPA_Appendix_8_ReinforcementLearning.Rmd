@@ -1,0 +1,385 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Appendix 8: Reinforcement Learning</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: ../SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+---
+
+This [DSPA Appendix](https://dspa2.predictive.space/) presents the mathematical foundations, computational algorithms, and analytical applications of *Reinforcement Learning* (RL).
+
+In principle, most modern artificial intelligence (AI) can be classified as:
+
+ - *Supervised learning* methods: These are applicable when a meaningful outcome feature can be identified, measured and modeled. SUpervised strategies aim to expose the (multivariate) relationships between a set of predictor variables (covariates) and the observed outcome variable of interest. In general, we want to accurately model, predict and track the outcome with respect to the other covariates. The most frequently used supervised learning approaches generate classification or regression models that can be estimated (fitted or trained) on some a priori observed (training) dataset that includes instances of the covariates and the outcome. Typically, some parametric assumption, independence requirements, and/or normalization constraints are assumed.
+ 
+ - *Unsupervised learning* methods: These methods consider equally all features in the data without assuming there is a specific outcome variable that needs to be forecasted in terms of the remaining features. The goals of unsupervised learning methods are to (1) model the joint distribution of all variables, or (2) uncover hidden (latent) structure in the high-dimensional data that may suggest intricate (mechanistic, causal, or relational) interdependences between all features included in the observed information.
+ 
+ - *Reinforcement learning* techniques: These approaches are useful for adaptive, i.e., temporally-dynamic, decision-making based on stochastic interactions between an agent
+and an ambient environment where the agent makes discrete time actions within the state-space within the constraint environment. The (AI) agent is driven by learning algorithm that rewards (carrot) or penalizes (stick) the agent to reinforce *optimal* decision-making, balancing short- and long-term benefits (instant- and delayed-gratification). In this learning process, the agent is subjected to some predefined rules, and the environment controls all other aspects iteratively curtailing the actions/decisions of the agent during the RL process. In general, outside of the penalty/reward reinforcement, the agent only has limited information about the ambient environment or the end-game. During the temporally-dynamic exploration of the environment, the agent is simply trying to decide on the most advantageous behavior to increase the *total reward* (balancing short- and long-term gratification). RL learning using deep neural networks tries to mimic biological behavior and human brain plasticity, especially during neurodevelopment.
+
+```{r setup, echo=FALSE, warning=F, error=F, message=F}
+library(knitr)
+library(plotly)
+```
+
+# Mathematical Foundations of Reinforcement Learning
+
+In previous [DPSA chapters](https://dspa2.predictive.space/), we introduced many alternative model-based and model-free methods for supervised and unsupervised regression, classification, clustering, and forecasting. The following figure shows a schematic of the main components of any reinforcement learning technique - agent, state-space, environment, action and reward.
+
+![Schematic of key RL components](http://wiki.stat.ucla.edu/socr/uploads/e/e6/RL_Agent_State_Env_Diag.png)
+The sequential RL decision-making reflects the dynamic interaction between the agent and the environment which iteratively over time explores the available state-space. The agent acts to increase reward (optimizing a certain objective function). Aside from the agent and its action, the state-space and the reward are controlled by the environment. In general, the agent does not have access to the complete environmental information, thus, the agent explores the available state-space and learns environmental characteristics according to the award corresponding to specific actions; this is accomplished by optimization of the objective function.  
+
+The RL is initialized by a random initial state $S_{t=1}$. Subsequently, at a given time $t$, the agent decides to take action, $A_t \in  \mathcal{A}(S_t)$, from the available actions at the given state, $S_t$. The environmental response to the action $A_t$ includes: (1) a new state observation $S_{t+1} \in \mathcal{S}$, and (2) a reward $R_{t+1}\in \mathcal{R}$. Note that the RL training process allows for unlimited time increase, $t\in \mathbb{N}=\{1,2,3,\cdots\}$
+Thus, the RL process resembles the notion of a [data stream](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/15_SpecializedML_FormatsOptimization.html#3_Data_Streaming) where each time-anchored data point represents the triple: 
+
+$$Data=\displaystyle\cup_{t\in \mathbb{N}}\{(state_t,action_t,reward_t)\}.$$ 
+
+ - $state_t$: represents the current problem state information, e.g., current values, boundaries/restrictions, and other time $t$ related state information;
+ - $action_t$: represents the agent-proposed action (decision) subject to current state information;
+ - $reward_t$: is the reward response to current forward action subject to the information state. This is typically a scalar quantifying the performance (carrot or stick) reflecting advantageous vs. detrimental action of the agent. This is what drives the self-learning process forward. Rewards represent positive reinforcement, whereas penalties are coded as low or negative rewards that diminish the from total-reward, which impacts the global objective function. As the agent's goal is to *maximize the total return*, the RL process incentivizes the agent to select *optimal* actions that reward good behavior, i.e., seek higher reward actions and avoid low-reward/penalty actions.
+ 
+In practice, just like in the board game [Careers](https://www.amazon.com/Unknown-Careers-Game/dp/B00008WFWQ/), where early long-term investments yield few short-term benefits, but provide enormous long-term advantages, in RL, high-rewards may be rare and may be often delayed. This pragmatic realization requires reinforcement learning agents to strategically examine the effects of multiple sequential moves to  aggregate and gauge the long-term award total. This balance between short- and long-term gains (instantaneous and delayed gratification) benefits from embedding stochasticity in the agent's decision-making process to allow the agent direct exploratory mechanism to learn the long-term responses of proposed actions based on environmental states and rewards.
+
+* Notes:
+
+ - Contrary to other supervised ML techniques, in RL there are no predefined outcome-variable values to guide the agent towards correct action. The agent continuously learns from the data-stream of past (state, action, rewards) triples. 
+ - RL is also distinct from unsupervised AL methods as the agent is not aiming to mechanistically describe latent structure present in the data. Rather, the agent's goal is to optimize the total return (maximize the reward).
+ - In RL, there is no static predefined training dataset. The agent actions are first initialized, and then, the iterative RL process begins the exploration process of optimizing the total return based on continuously streamed subsequent data-triples responding to agent decision actions. 
+
+## Decision policy
+
+The dynamic actions of the agent follow a predefined specific *policy*, $\Pi$, which maps states $s$ to concrete action proposals, $a$:
+
+$$\Pi(a|s) = P(A_t = a\ |\ S_t = s).$$
+
+Many alternative policies can be designed to guide the time-varying decision-making. Some policies may be deterministic whereas others may be stochastic and rely on a given prior action probability distribution. Given a state $s\in \mathcal{S}$, the policy $\Pi(a|s)$ quantifies the expectations of the likelihood of the action $a$ to increase the total reward.
+
+As the data-stream progresses, the policy may be updated over time to optimize the objective function, aiming for higher returns (better rewards). Actions taken at each time point influence all future states and all future rewards. This prospective influence may need to be weighted by the corresponding time increment (time interval). The agent tries to get a balanced mixture blending instant-gratification (immediate reward) and delayed gratification (delayed reward) over the entire life-span. This overall long-term reward is called the *total return*.
+
+## Total return
+
+An optimal agent would minimize the learning process (training period) and maximize the total return (achieve maximal reward). First, let's focus just on the second strategy, maximizing the total return which is expressed as:
+
+$$G_t = R_{t+1} + \gamma R_{t+2} + \gamma R_{t+3} +  \cdots = 
+\sum_{s=0}^{\infty}{\gamma^s R_{t+s}}, \ \ \ \ 
+\underbrace{\gamma}_{discount\\ factor} \in [0,1]\ .$$
+
+The estimation of the discount factor $\gamma$ may be considered part of the optimization problem solved by the agent. To balance the *instant* and *delayed* gratifications, immediate and remote rewards, myopic and farsighted vision of success, the $0\leq \gamma\leq 1$ parameter is continuously tuned in the iterative optimization process. At the extremes, discount values $\gamma\longrightarrow 0^+$ or $\gamma\longrightarrow 1^-$ correspond to instant-immediate or equi-delayed rewarding strategies, respectively. In principle, delayed future gratification terms, $\gamma^s R_{t+s}$, contribute less to the current action decision and certainly much less than the present-time reward, $\underbrace{\gamma^0}_{1}\times R_{t+1}$. As the total (prospective) return $G_t$ needs to be finite, distant incremental rewards have to be marginalized. This normalization constraint introduces a weight balance towards immediate gratification by increasingly discounting distant rewards. The latter prevents infinite reward singularities as the time horizon of the rewards-series expands towards $\infty$.
+
+Let's demonstrate the process by explicitly defining exemplary functions controlling the main learning and choice processes. For instance, we can use the [Rescorla-Wagner prediction error learning rule](https://en.wikipedia.org/wiki/Rescorla%E2%80%93Wagner_model), as the updating learning function `rw.func()`, and the [softmax selection function](https://en.wikipedia.org/wiki/Softmax_function), as a decision-making choice function `softmax.func()`.
+
+```{r example2, error=F, message=F, warning=F}
+library(plotly)
+# define Rescorla-Wagner prediction error updating function
+rw.func <- function(
+  prior.expect = c(1, 5, 3, 7),    # A vector of prior expectations
+  new.info=c(1, NA, 2, NA),  # A vector of new information (NAs except for selected option)
+  alpha = 0.3)    # Updating rate hyper-parameter
+{
+  # Set the prior expectations as new expectations
+  new.expect <- prior.expect
+  
+  # Determine which option was selected
+  selection <- which(is.finite(new.info))
+  
+  # Update expectation of selected option
+  new.expect[selection] <- new.expect[selection] + 
+    alpha * (new.info[selection] - new.expect[selection])
+  
+  return(new.expect)
+}
+
+# Softmax selection function
+softmax.func <- function(current.exp=c(2, 5, 3, 6), theta=0.5) {
+  # Note about (temperature - coldness) parameter, theta:
+  # For high temperatures (large theta), all actions have nearly the same probability and the
+  # lower the temperature, the more expected rewards affect the probability. 
+  # For a low temperature (theta near 0+), the probability of the action with the highest
+  # expected reward tends to 1. 
+  output <- exp(current.exp * theta) / sum(exp(current.exp * theta))
+  
+  return(output)
+}
+```
+
+
+Next, we can use these *updating* and *selection* functions to conduct a simulation using a new reinforcement-learning function `rl.sim.func()` that returns a dataframe object containing the agent's action results. We can also plot the agent’s performance (cumulative rewards).
+
+```{r example3, error=F, message=F, warning=F}
+# RL Simulation function
+rl.sim.func <- function(n.trials = 1000,     # Number of simulation trials
+                       option.mean = c(0, 1, -1, 0),   # Mean of each option
+                       option.sd = c(5, 2, 10, .01),   # SD of each option
+                       prior.expect.start = rep(0, 4), # initial prior expectations
+                       theta = 0.5,   # coldness (or thermodynamic beta, or inverse temperature)
+                       alpha = 0.2)   # Updating rate hyper-parameter
+{
+
+  # Gather simulation input parameters
+  n.options <- length(option.mean)
+  
+  # Declare the type of the outcome matrix of dimensions trial - by - options
+  outcome.matrix <- matrix(NA, nrow = n.trials, ncol = n.options)
+  
+  for(option.i in 1:n.options) {
+    outcome.matrix[ , option.i] <- 
+      rnorm(n=n.trials, mean=option.mean[option.i], sd=option.sd[option.i])
+  }
+  
+  # Declare the prior.exp matrix and new.exp matrix
+  # For each option and each trial, the cells in these matrices hold 
+  # the agent's prior and  new/current expectations, respectively 
+  prior.exp.matrix <- matrix(NA, nrow = n.trials, ncol = n.options)
+  prior.exp.matrix[1,] <- prior.expect.start
+  new.exp.matrix <- matrix(NA, nrow = n.trials, ncol = n.options)
+  
+  # Instantiate selection, outcome-reward, and selection probability matrices
+  selection.v <- rep(NA, n.trials)      # Actual selections
+  outcome.v <- rep(NA, n.trials)        # Actual outcomes
+  select.prob.matrix <- matrix(NA, nrow=n.trials, ncol=n.options) # Selection probabilities
+  
+  # Perform the simulation
+  for(trial.i in 1:n.trials) {
+    # Step 1: Retrieve the prior expectations for current current trial iteration
+    prior.exp.i <- prior.exp.matrix[trial.i, ]
+    
+    # Step 2: Choose an option
+    ##### 2.1: Selection probabilities
+    select.prob.i <- softmax.func(current.exp=prior.exp.i, theta=theta)
+    
+    ##### 2.2: Randomly choose a selection option
+    selection.i <- sample(1:n.options, size=1, prob=select.prob.i)
+    
+    ##### 2.3: Retrieve the reward outcome corresponding to the selected option
+    outcome.i <- outcome.matrix[trial.i, selection.i]
+    
+    # Step 3: Determine the new expectations
+    #### 3.1: Create a new.info vector with NAs except for outcome of selected option
+    
+    new.info <- rep(NA, n.options)
+    new.info[selection.i] <- outcome.i
+    
+    #### 3.2:  Get new expectations
+    new.exp.i <- rw.func(prior.expect=prior.exp.i, new.info=new.info, alpha=alpha)
+    
+    #### 3.3: Assign new expectations to the new.exp.matrix[trial.i,]
+    #  and the prior.expectation.matrix[trial.i + 1,]
+    new.exp.matrix[trial.i,] <- new.exp.i
+    if(trial.i < n.trials) {
+      prior.exp.matrix[trial.i + 1,] <- new.exp.i
+    }
+    
+    #### 3.3: Save the resulting values
+    select.prob.matrix[trial.i,] <- select.prob.i  # Selection probabilities
+    selection.v[trial.i] <- selection.i # Actual selection
+    outcome.v[trial.i] <- outcome.i     # Actual outcome
+  }   # end simulation
+  
+  # Generate a dataframe, sim.result.df, that will store the entire results matrix
+  sim.result.df <- data.frame(
+    "selection" = selection.v, "outcome" = outcome.v,
+    "outcome.cum" = cumsum(outcome.v), stringsAsFactors=FALSE)
+  
+  # Return the simulation dataframe result
+  return(sim.result.df)
+}
+
+# Test the simulation for different values of theta (cooling parameter)
+# 1. High exploiter - theta = 1.0
+set.seed(1234) # to facilitate result replication
+exploiter.sim <- rl.sim.func(theta=1.0)
+
+# 2. High–explorer - theta = 0.1
+set.seed(1234) 
+explorer.sim <- rl.sim.func(theta = 0.1)
+
+# 3. Random-walk decision - theta = 0.0
+set.seed(1234) 
+random.sim <- rl.sim.func(theta = 0.0)
+
+sim.list <- list(exploiter.sim, explorer.sim, random.sim)
+```
+
+Plot and compare the results of these 3 simulations: *High exploiter* $(\theta = 1.0)$,
+*High–explorer* $(\theta = 0.1)$, and *Random-walk decision* $(\theta = 0.0)$.
+
+```{r example4, error=F, message=F, warning=F}
+rl.plotly.func <- function(dataFrameList=NULL,   
+                           # a list of dataframes containing different RL results to compare
+                       n.trials = 1000,     # Number of simulation trials
+                       option.mean = c(2, 1, -1, 0),   # Mean of each option
+                       option.sd = c(5, 2, 10, .01),   # SD of each option
+                       prior.expect.start = rep(0, 4), # initial prior expectations
+                       theta = 0.5,   # coldness (or thermodynamic beta, or inverse temperature)
+                       alpha = 0.2)   # Updating rate hyper-parameter
+{
+library(plotly)
+library(magrittr)
+  
+list.length <- length(dataFrameList)
+# Generalize Plotting to any number of list elements. 
+# Current implementation works only with lists of length=3!
+
+myPlot <- plot_ly(x = ~c(1:n.trials), y=~dataFrameList[[1]]$outcome.cum, 
+                  name="Model: exploiter.sim; Param: theta=1.0", type = "scatter", 
+                  mode='lines+markers')  %>%
+      add_trace(y =~ dataFrameList[[2]]$outcome.cum, 
+                name="Model: explorer.sim; Param: theta=0.1",
+                type = "scatter", mode='lines+markers') %>%
+      add_trace(y =~ dataFrameList[[3]]$outcome.cum, 
+                name="Model: random.sim; Param: theta=0.0",
+                type = "scatter", mode='lines+markers') %>%
+      layout(title=paste0("RL-Simulation | alpha=", alpha, ", n.trials=", n.trials),
+             font=list(size=12), showlegend= T,
+             xaxis = list(title = "Trial Iteration"),
+             yaxis = list(title = "Cumulative Reward (Outcome)"),
+             shapes = list(
+               list(type="rect", fillcolor="lightblue", line=list(color="lightblue"), 
+                    opacity = 0.2,
+                    x0 = -1, x1 = 1001, xref = "x",
+                    y0 = -1, y1 = 801, yref = "y")),
+             legend=list(x=0.1, y = 1.0, bgcolor = 'rgba(0,0,0,0)',
+                                  title=list(text='<b>Simulation Models</b>'))
+             )
+myPlot 
+}
+
+rl.plotly.func(dataFrameList=sim.list)
+
+```
+
+## Simulating multiple agents
+
+We can also simulate the performance of multiple agents using the function `many.agent.func()`.
+
+```{r example5, error=F, message=F, warning=F}
+# simulate multiple agents using a fixed theta value
+n.trials = 1000
+
+many.agent.func <- function(n.agent,      # Number of agents
+                           theta) {       # Agent's (common) theta value
+  
+  sapply(1:n.agent, FUN = function(x) {
+  
+      sim.result.i <- rl.sim.func(theta = theta)
+      final.reward.i <- sim.result.i$outcome.cum[nrow(sim.result.i)]
+      return(final.reward.i)
+    }
+  )
+}
+
+# call many.agent.func() to simulate the result of 200 agents using 
+# different types of exploitation-exploration balancing thetas:
+# theta=1 (high-exploit), theta=0.75 (moderate-exploit), theta=0.5 (50-50 exploit-explore),
+# theta=0.25 (moderate-explore), and theta=0.0 (high-exploration) strategies
+
+# Number of agents
+n.agent <- 200
+
+# Create a vector of agent outcomes for each cooling parameter theta
+highExploit.agents <- many.agent.func(n.agent, theta = 1.0)
+moderateExploit.agents <- many.agent.func(n.agent, theta = 0.75)
+exploit50Explore50.agents <- many.agent.func(n.agent, theta = 0.5)
+moderateExplore.agents <- many.agent.func(n.agent, theta = 0.25)
+highExplore.agents <- many.agent.func(n.agent, theta = 0)
+
+many.agent.df1 <- data.frame(highExploit.agents, moderateExploit.agents,
+                             exploit50Explore50.agents, moderateExplore.agents, 
+                             highExplore.agents)
+names(many.agent.df1) <- c("high-exploit", "moderate-exploit", "50-50 exploit-explore", 
+                "moderate-explore", "high-exploration (random)")
+
+# Plot simulation results!
+myPlot <- plot_ly(x = ~c(1:n.agent), y=~many.agent.df1[, 1], name=colnames(many.agent.df1)[1],
+                 height=800, width=1000, type = "scatter", mode='lines+markers')  %>%
+      add_trace(y=~many.agent.df1[, 2], name=colnames(many.agent.df1)[2], 
+                type = "scatter", mode='lines+markers') %>%
+      add_trace(y=~many.agent.df1[, 3], name=colnames(many.agent.df1)[3],
+                type = "scatter", mode='lines+markers') %>%
+      add_trace(y=~many.agent.df1[, 4], name=colnames(many.agent.df1)[4], 
+                type = "scatter", mode='lines+markers') %>%
+      add_trace(y=~many.agent.df1[, 5], name=colnames(many.agent.df1)[5],
+                type = "scatter", mode='lines+markers') %>%
+      layout(title=paste0("Multiple Agent RL-Simulation (n.trials=", n.trials,", n.agent=",n.agent,")"),
+             font=list(size=12), showlegend= T,
+             xaxis = list(title = paste0("Agent Number (1:", n.agent, ")")),
+             yaxis = list(title = "Cumulative Reward (Outcome)"),
+             shapes = list(
+               list(type="rect", fillcolor="lightblue", line=list(color="lightblue"), 
+                    opacity = 0.2,
+                    x0 = -1, x1 = 201, xref = "x",
+                    y0 = -1, y1 = 821, yref = "y")),
+             legend=list(x=0.1, y = -0.1, bgcolor = 'rgba(0,0,0,0)',
+                                  title=list(text='<b>Simulation Models</b>'))
+      )
+myPlot
+```
+
+There are substantial differences between Reinforcement Learning AI and other supervised and unsupervised ML techniques. RL allows balancing *exploration* and *exploitation* of the learning algorithm. The restricted view-horizon of RL agents limits their knowledge access to only local spatio-temporal information about the ambient environment. Thus, the iterative optimization relies on state-space *exploration* to identify potentially rewarding actions, effective moves, and beneficial decisions, while reducing punitive detrimental outcomes. 
+
+The traversal of the state-space is represented as actions randomly navigating the possible decision states. These stochastic maneuvers are counterbalanced by proportional *exploitation* strategies that  maximize the reward gratification achieved by highly-rewarding decisions. This push-pull interaction is controlled by hyperparameters and attempts to continuously rebalance the *exploration* and *exploitation* tug-of-war between the pair of opposite forces. *Exploration* by random state-space traversal gives up short-term gratification in the hope that some of these stochastic moves may pay substantially higher (future) dividends and expand the agent's internal mapping of the operating environment. 
+
+On the other hand, *exploitation* capitalizes on immediate instantaneous gratification at the current phase of the optimization process, and discourages random surveying of the state-space, which may or may not bring gains. This is related to the "*A bird at hand is better than two birds in the bush*" phenomenon. In general, during the early phase of the RL training, deeper exploration strategies may be more beneficial while the agent is rapidly gaining environmental knowledge. Whereas during later phases of decision-making, following the acquired basic knowledge, deeper exploitation approaches may lead to higher returns - think about small but early investments, vs. larger but delayed investments in retirement accounts.  In practice, optimal exploration/exploitation approaches depend on the specifics of the problem formulation. For instance, more stationary processes may favor predominant exploitation, whereas continued exploration may dominate in highly non-stationary problems. This counterbalancing act between *exploration* and *exploitation* is a key element in designing reinforcement learning algorithms.
+
+
+# Computational RL Algorithms
+
+...
+
+# Analytical Applications
+
+...
+
+# References
+
+ - [DSPA](https://dspa2.predictive.space/).
+ - [Sutton and Barto 2018 (Reinforcement Learning: An Introduction)](http://incompleteideas.net/book/the-book.html).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

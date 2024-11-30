@@ -1,0 +1,552 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Appendix: Power Analysis in Experimental Design</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: ../SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+In this [DSPA Appendix section](https://dspa2.predictive.space) we will demonstrate the classical
+approaches for statistical power-analysis and balancing sample-size vs. statistical-power 
+to detect effects of interest.
+
+# Power Analysis in Experimental Design
+
+## Background
+
+*Power analysis* represents a statistical approach to explicate the relations between a number of parameters that affect most experimental designs. It is well known that data are proxies of the natural phenomena, or processes, about which we try to make inference, and the *size of a sample* is associated with our ability to derive useful information about the underlying process or make predictions about its past, present or future states. In some situations, given the sample-size and a certain degree of confidence, we can compute the **power** to statistically detect an effect of interest. Similarly, we can determine the likelihood of detecting an effect of a certain size, subject to a predefined *level of confidence* and specific sample size constraints. This power, or probability, to detect the effect of interest may be *low*, *medium*, or *high*, which would help us determine the *potential* value of the experiment.
+
+In most experimental designs, *power analyses* establish a relation between 5 quantities:
+
+ - *Statistical test*, an explicit reference to the statistical inference that will be conducted on the data collected by the experiment
+ - *Sample size*, there are pros and cons to running large, or small, experiments
+ - *Effect size*, how strong is the expected effect that we are trying to uncover by the experiment
+ - *Significance level*, false-positive rate $\alpha=P(Type I error) =$ probability of finding an effect that is not there
+ - *Power* = $\beta=1 - P(Type II error) =sensitivity=$ probability of finding an effect that is there
+
+In mathematical terms, having any 3 of the last 4 parameters *may* allow us to estimate the last one. Note that there is no general analytical expression that provides an exact closed-form expression (e.g., implicit or explicit function) encoding relation between all 5 terms.
+
+## R-based Power Analysis
+
+The [R package pwr](https://cran.r-project.org/web/packages/pwr/index.html) provides the core functionality to conduct power analysis for some situations. It includes the following methods:
+
+function 	| Corresponding Statistical Inference
+----------|------------------------------------
+*cohen.ES* | Conventional effects size
+*ES.h* |	Effect size calculation for proportions
+*ES.w1*	| Effect size calculation in the chi-squared test for goodness of fit
+*ES.w2* |	Effect size calculation in the chi-squared test for association
+*pwr.2p.test* |	Two proportions test (equal sample sizes, n)
+*pwr.2p2n.test* |	Two proportions (unequal n)
+*pwr.anova.test* |	Balanced one way ANOVA
+*pwr.chisq.test* |	Chi-square test
+*pwr.f2.test* |	General linear model (GLM)
+*pwr.norm.test* |	Power calculations for the mean of a normal distribution (known variance)
+*pwr.p.test* |	Single sample proportion 
+*pwr.r.test* |	Correlation
+*pwr.t.test* 	| T-tests (one sample, 2 sample, paired)
+*pwr.t2n.test* |	T-test (two samples with unequal n), t-tests of means
+
+As each method explicitly specifies the statistical inference procedure, we need to only specify 3 of the remaining 4 quantities (effect size, sample size, significance level, and power) to calculate the last parameter.
+A common practice is to use the default significance level of $\alpha=0.05$, and hence we are down to specifying 2 out of 3 remaining parameters. For instance, given an effect size (from prior research or an oracle) and a desired power, we can calculate an appropriate experimental design sample size.
+
+Determining an effective and appropriate effect size is often a challenge that can be tackled either by running simulations, collecting data, or using Cohen's social-studies protocol, which provides an outline of categorizing the effect size as small, medium or large.
+
+## Cohen's Protocol for categorizing the effect size
+
+Let's look at some examples.
+
+ - `pwr.t.test(n = n, d = d, sig.level = a, power = b, type = c("two.sample", "one.sample", "paired"))`: In this method definition, $n$ is the sample size, $d$ is Cohen's effect size, the desired power is $b$, and  type indicates the specific parametric t-test we choose. 
+ - `pwr.t2n.test(n1 = n1, n2= n2, d = d, sig.level = a, power = b)`: This is a more general call for unequal sample-sizes $n1$ and $n2$, for independent t-tests. **Cohen's d** characterizes the effect size to three values, $0.2$, $0.5$, and $0.8$ representing *small*, *medium*, and *large* effect sizes, respectively.
+
+ - `pwr.anova.test(k = k, n = n, f = f, sig.level = a, power = b)`: A one-way analysis of variance (ANOVA) test with $k$ number of groups, $n$ common sample size within each group, and effect size $f$. **Cohen's f** values of 0.1, 0.25, and 0.4 represent small, medium, and large effect sizes, respectively.
+
+ - `pwr.r.test(n = n, r = r, sig.level = a, power = b)`: Correlation coefficient analysis, where $n$ is the sample size and $r$ is the correlation, which uses the population correlation coefficient as a measure of the effect size. **Cohen's r** values of 0.1, 0.3, and 0.5 represent small, medium, and large effect sizes, respectively.
+
+ - `pwr.f2.test(u = u, v = v, f2 = f2, sig.level = a, power = b)`: Multivariate linear Models, including multiple linear regression, with $u$, $v$, and $f2 representing the ANOVA numerator and denominator degrees of freedom, and the effect size measure. **Cohen's f2** values of 0.02, 0.15, and 0.35 approximately represent small, medium, and large effect sizes, respectively.
+
+ - `pwr.chisq.test(w = w, N = N, df = df, sig.level = a, power = b)`: Chi-square Test with $w$ the effect size, $N$ the total sample size, and $df$ the degrees of freedom.  **Cohen's w** values of 0.1, 0.3, and 0.5 represent small, medium, and large effect sizes, respectively.
+
+## R power calculation examples
+
+### One-way ANOVA 
+
+Let's try to run power analysis for a 1-way ANOVA comparing 5 groups. Specifically, we are interested in
+estimating the sample size needed in each group to secure a power $\beta \geq 0.80$, given a moderate effect size ($0.25$) and a significance level of 0.025.
+
+```{r warning=F, error=F}
+# install.packages("pwr")
+library(pwr)
+
+pwr.anova.test(k=5, f=0.25, sig.level=0.025, power=0.8)
+```
+
+This suggests that at least $47$ participants will be required ($n=46.12892$).
+
+Would that sample size estimate increase or decrease when we increase or decrease the effect-size? Inspect the following two examples.
+
+```{r warning=F, error=F}
+# install.packages("pwr")
+# library(pwr)
+
+pwr.anova.test(k=5, f=0.1, sig.level=0.025, power=0.8) # small effect-size
+pwr.anova.test(k=5, f=0.4, sig.level=0.025, power=0.8) # large effect-size
+```
+
+For a 1-way ANOVA test, Cohen's effect size $f$ is categorized as 0.1 (small), 0.25 (medium), and 0.4 (large), but computed by:
+
+$$f=\sqrt{\frac{\sum_{i=1}^k{p_i\times(\mu_i-\mu)^2}}{\sigma^2}},$$
+where $n$ is the total number of observations in all groups, $n_i$ is the number of observations in group $i$, $p_i=\frac{n_i}{n}$, $\mu_i$ and $\mu$ are the group $i$ and overall means, and $\sigma^2$ is the within-group variance. Similar analytical expressions exist for other statistical tests and there are corresponding sample-driven estimates of these effects that can be used for the practical calculations. 
+
+###  Two-sample T-test
+
+Let's run power analysis for a two-sample, one-sided, T-test using a significance level of $\alpha=0.001$, $n=30$ participants per group, and a large effect size of $0.8$.
+
+```{r}
+# install.packages("pwr")
+# library(pwr)
+
+pwr.t.test(n=30, d=0.8, sig.level=0.001, alternative="greater") # large effect-size
+```
+
+This yields a power of $\beta = 0.4526868$ to detect an effect.
+
+
+## Power and Sample Size Graphs
+
+The `pwr` package also provides some functions to generate power and sample size plots. 
+
+### Correlation Test
+For instance, we can plot sample-size vs. effect-size curves for the power of detecting different levels of correlations, $0.1\leq \rho\leq 0.8$, for a number of power values, $0.3\leq\beta\leq 0.85$.
+
+```{r}
+# install.packages("pwr")
+# library(pwr)
+
+r <- seq(0.1, 0.8, 0.01) # define a range of correlations and sampling rate within this range
+nr <- length(r)
+
+p <- seq(0.3, 0.85, 0.1) # define a range for the power values, and their sampling rate
+np <- length(p)
+
+# Compute the corresponding sample sizes for all combinations of correlations and power values
+sampleSize <- array(numeric(nr*np), dim=c(nr, np))
+for (i in 1:np) {
+  for (j in 1:nr) {
+    # solve for sample size (n)
+    testResult <- pwr.r.test(n = NULL, r = r[j], sig.level = 0.05, power = p[i], alternative = "two.sided")
+    sampleSize[j, i] <- ceiling(testResult$n) # round sample sizes up to nearest integer
+    # print(sprintf("sampleSize[%d,%d]=%s", j,i, round(sampleSize[j, i], 2)))
+  }
+}
+
+# Graph the power plot
+xRange <- range(r)
+yRange <- round(range(sampleSize))
+colors <- rainbow(length(p))
+plot(xRange, yRange, type="n", xlab="Correlation Coefficient (r)", ylab="Sample Size (n)")
+# Add power curves
+for (i in 1:np) lines(r, sampleSize[ , i], type="l", lwd=2, col=colors[i])
+# add annotations (grid lines, title, legend)
+abline(v=0, h=seq(0, yRange[2], 100), lty=2, col="light gray")
+abline(h=0, v=seq(xRange[1], xRange[2], 0.1), lty=2, col="light gray")
+title("Effect-size (X) vs. Sample-size (Y) for \n different Power values in 
+      (0.3, 0.85), Significance=0.05 (Two-tailed Correlation Test)")
+legend("topright", title="Power", as.character(p), fill=colors)
+```
+
+In this case, we can also plot the sample-size against power. This graph indicates the *optimal* sample-size selection that achieves the lower-bound of the power ($0.8$) for the minimal sample-size ($n=20$).
+
+```{r}
+p.out <- pwr.r.test(n = NULL, r = r[50], sig.level = 0.05, power = p[6], alternative = "two.sided")
+plot(p.out, lwd=2)
+```
+
+### Cohen's $d$ measure of effect size 
+
+The Cohen's $d$ measure is used to quantify the *standardized difference between two means.* 
+It is often used in the context of *t-tests* and *ANOVA* to quantify the magnitude
+of a *treatment effect* or the difference between two groups. SYmbolically, Cohen's $d$ is
+
+$$d = \frac{\bar{X}_1 - \bar{X}_2}{s_p}, $$
+
+where $\bar{X}_1$ and $\bar{X}_2$ are the *means* of the two groups, and $s_p$
+is the *pooled standard deviation*
+
+$$s_p = \sqrt{\frac{(n_1 - 1)s_1^2 + (n_2 - 1)s_2^2}{n_1 + n_2 - 2}}, $$
+
+where $n_1$ and $n_2$ are the *sample sizes* of the two groups, respectively, and 
+$s_1$ and $s_2$ are the *standard deviations* of the groups, respectively.
+
+When the sample sizes of the two groups are equal, the pooled standard deviation 
+$s_p$ simplifies to the average of the two standard deviations
+
+$$s_p = \sqrt{\frac{s_1^2 + s_2^2}{2}}$$
+
+and the Cohen's $d$ is $d = \frac{\bar{X}_1 - \bar{X}_2}{\sqrt{\frac{s_1^2 + s_2^2}{2}}}$.
+
+Interpretation pf $d$ always needs to be contextualized, but here is a general guideline:
+
+- Small effect: $d = 0.2$
+- Medium effect: $d = 0.5$
+- Large effect: $d = 0.8$
+
+
+###  Two paired samples T-test
+
+Let's run power analysis for a two paired samples T-test using a significance level of $\alpha=0.05$, $n$ participants per group, and $power=0.8$, under differetn *effect-sizes*.
+
+```{r mousePairedTtest, warning=FALSE, message=FALSE, error=FALSE}
+# install.packages("pwr")
+# library(pwr)
+# install.packages("tidyverse")
+# install.packages("pwr")
+library(tidyverse)
+library(pwr)
+library(plotly)
+
+# Load the data
+# data <- read.csv("seizure_burden_pilot.csv")
+data <- read.csv("https://umich.instructure.com/files/36068854/download?download_frd=1")
+
+# Replace non-numeric values with NA
+data[data == "."] <- NA
+
+# Separate the data into control and treatment groups
+control_data <- data %>% filter(Condition == "control")
+control_data <- control_data[,-2] %>% mutate_if(is.character, as.numeric)
+
+treatment_data <- data %>% filter(Condition == "treatment")
+treatment_data <- treatment_data[,-2] %>% mutate_if(is.character, as.numeric)
+
+# Calculate the mean and standard deviation of differences
+differences <- treatment_data[,-c(1,2)] - control_data[,-c(1,2)]
+mean_diff <- colMeans(differences, na.rm = TRUE)
+sd_diff <- apply(differences, 2, sd, na.rm = TRUE)
+
+# Compute the overall mean difference and standard deviation
+overall_mean_diff <- mean(mean_diff)
+overall_sd_diff <- mean(sd_diff)
+
+# Calculate effect size (Cohen's d)
+effect_size <- overall_mean_diff / overall_sd_diff
+
+# Perform power analysis to determine sample size
+sample_size <- pwr.t.test(d = effect_size, sig.level = 0.05, power = 0.80, type = "paired")
+
+# Print the required sample size
+sample_size
+
+# Run the gammut of effect-sizes
+effect_size <- c(0.2, 0.5, 0.7, 0.9, 1.1)  # Placeholder, adjust based on your data or literature
+sample_size <- rep(x=0, times=length(effect_size))
+
+for(i in 1:length(effect_size))  {
+   sample_size[i] = ceiling(pwr.t.test(d = effect_size[i], sig.level = 0.05, power = 0.80, type = "paired")$n)
+}
+
+plot_ly(x=effect_size, y=sample_size, type="scatter", mode="markers+lines") %>%
+  layout(title = 'Parametric T-Statistic \n Power=0.8, Effect-size (x-axis) vs. Number of Cases (y-axis)',
+         xaxis = list(title = '(assumed) effect-size'), yaxis = list(title = '(estim.) N'))
+```
+
+This yields a power of $\beta = 0.4526868$ to detect an effect.
+
+###  Power Analysis using hte Nonparametric Kruskal-Wallis Statistics
+
+In the above mouse experimental example, we made Normal parametric assumptions. 
+In this example we will relax these and rely on the nonparametric Kruskal-Wallis test.
+The Kruskal-Wallis test is a nonparametric method for testing whether samples 
+(e.g., control vs. intervention) originate from the same distribution. 
+
+As there isn't a direct power calculation function for the Kruskal-Wallis test, 
+we will need to use a simulation approach for *estimating* the required sample size.
+
+```{r mouseKWtest, warning=FALSE, message=FALSE, error=FALSE}
+# Protocol
+# 1. **Load Data and Preprocess**:
+#    - Read the CSV file.
+#    - Replace non-numeric values with NA.
+#    - Separate the data into control and treatment groups.
+# 
+# 2. **Perform Kruskal-Wallis Test**:
+#    - Use the `kruskal.test` function to perform the test.
+# 
+# 3. **Power Analysis**:
+#    - Use the `pwr` package or a suitable method for non-parametric tests to determine the required sample size.
+
+# Install and load necessary packages
+# install.packages("tidyverse")
+# install.packages("coin")  # For non-parametric tests
+# install.packages("Hmisc")  # For power analysis of non-parametric tests
+
+library(tidyverse)
+library(coin)
+library(Hmisc)
+library(foreach)
+library(doParallel)
+library(plotly)
+
+# Load the data
+# data <- read.csv("seizure_burden_pilot.csv")
+data <- read.csv("https://umich.instructure.com/files/36068854/download?download_frd=1")
+
+# Replace non-numeric values with NA
+data[data == "."] <- NA
+data1 <- data[, -2] %>% mutate_if(is.character, as.numeric)
+data1$Condition <- data$Condition
+
+# Reshape the data for Kruskal-Wallis test
+data_long <- data1 %>%
+  pivot_longer(cols = starts_with("Mouse"), names_to = "Mouse", values_to = "Seizures") %>%
+  filter(!is.na(Seizures))
+
+# Perform Kruskal-Wallis test
+kruskal_test <- kruskal_test(Seizures ~ as.factor(Condition) | as.factor(Mouse), data = data_long)
+print(kruskal_test)
+
+# Power analysis using simulation for Kruskal-Wallis test
+# Define a function to simulate data and perform the Kruskal-Wallis test
+simulate_power <- function(n, effect_size, n_sim = 1000, alpha = 0.05) {
+  p_values <- replicate(n_sim, {
+    # Simulate control and treatment groups
+    control <- rnorm(n, mean = 0, sd = 1)
+    treatment <- rnorm(n, mean = effect_size, sd = 1)
+    
+    # Combine data into a data frame
+    sim_data <- data.frame(
+      Condition = rep(c("control", "treatment"), each = n),
+      Seizures = c(control, treatment)
+    )
+    
+    # Perform Kruskal-Wallis test
+    test_result <- kruskal.test(Seizures ~ Condition, data = sim_data)
+    return(test_result$p.value)
+  })
+  
+  # Calculate the proportion of p-values less than alpha
+  power <- mean(p_values < alpha)
+  return(power)
+}
+
+# Define effect size (you may need to estimate this from the data or literature)
+effect_size <- c(0.2, 0.5, 0.7, 0.9, 1.1)  # Placeholder, adjust based on your data or literature
+sample_size <- rep(x=0, times=length(effect_size))
+
+# Set up parallel processing
+cl <- makeCluster(detectCores() - 3)  # Use one less core than available
+clusterExport(cl, c("simulate_power"))
+
+# Estimate the sample size needed for desired power (e.g., 0.80)
+# for (it in 1:length(effect_size)) {
+#   desired_power <- 0.80
+#   # sample_size[it] <- NULL
+#   for (n in seq(10, 100, by = 5)) {
+#     power <- simulate_power(n, effect_size[it])
+#     if (power >= desired_power) {
+#       sample_size[it] <- n
+#       break
+#     }
+#   }
+# }
+
+# Function to find sample size for a given effect size
+find_sample_size <- function(effect_size, desired_power=0.80, upperLimit=100, step=5) {
+  for (n in seq(10, upperLimit, by = step)) {
+    power <- simulate_power(n, effect_size)
+    if (power >= desired_power) {
+      return(n)
+    }
+  }
+  return(NA)  # If no suitable sample size found
+}
+
+# Pilot Test: find_sample_size(0.5) # find_sample_size(0.2, upperLimit=600, step=10, desired_power=0.8)
+
+# For speed, parallelize the outer loop
+# setup parallel backend to use many processors
+cl <- makeCluster(detectCores() - 3)  # Use one less core than available
+registerDoParallel(cl)
+
+sample_size <- foreach(i=1:length(effect_size), .combine=cbind) %dopar% {
+   t = find_sample_size(effect_size[i], upperLimit=(1+length(effect_size)-i)*200, 
+                        step=(1+length(effect_size)-i)*10, desired_power=0.8)
+   t 
+}
+#stop cluster
+stopCluster(cl)
+
+# Print the estimated sample size
+print(as.numeric(sample_size[1,]))
+
+plot_ly(x=effect_size, y=as.numeric(sample_size[1,]), type="scatter", mode="markers+lines") %>%
+  layout(title="Nonparametric Kruskal-Wallis Statistic\n Power=0.8: Effect-size (x-axis) vs. Number of Cases (y-axis)",
+         xaxis=list(title="(assumed) effect-size"), yaxis=list(title="(estim. N)"))
+```
+
+*Notes*:
+
+ - **Preprocessing**: First, load and clean the data.
+ - Next, run the **Kruskal-Wallis Test** on the dataset.
+ - The **Power Analysis** relies on a simulation approach to *estimate* the required sample size necessary to achieve the desired power for the Kruskal-Wallis test.
+ - Rationally adjust the *effect size* (needs to be backed up by prior literature reports!) to ensure accurate power analysis is reported.
+
+
+### Multivariate Linear Regression (MLR)
+
+Similarly, we can plot a sample-size vs. effect-size curve for a multivariate linear model of the efficacy of [Argus retinal prosthesis (treatment)](https://en.wikipedia.org/wiki/Argus_retinal_prosthesis) to enhance brain plasticity in the visual cortex. Suppose we are trying to determine the relation between the smallest possible sample size that can yield $\beta$ sensitivity to detect an a change in the functional connectivity (fMRI data) and in [Argus II blind patients](https://en.wikipedia.org/wiki/Argus_retinal_prosthesis). These two articles provide some background information and support for the range of effect-sizes used in this example:
+
+ - Samantha Cunningham; Yonggang Shi; James D. Weiland; Paulo Falabella; Lisa C. Olmos de Koo; David N. Zacks; Bosco Tjan (2015) [Investigate alteration in functional connectivity and cross-modal plasticity in Argus II patients](https://tvst.arvojournals.org/article.aspx?articleid=2474808).
+ - Samantha Cunningham; James D. Weiland; Pinglei Bao; Gilberto Raul Lopez-Jaime; Bosco Tjan. (2015) [Correlation of vision loss with tactile-evoked V1 responses in retinitis pigmentosa](https://doi.org/10.1016/j.visres.2014.10.015).
+
+The research goal is to model the outcome $Y$ in terms of eight (8) covariates $X_i$:
+
+ - *Outcome*: $Y$ representing an event-related functional magnetic resonance imaging (fMRI) scan of blind using an Argus II vision-enhancing device,
+ - *Covariates*: Eight $X=\{X_i\}_{i=1}^{u=8}$, including fMRI event-related task, duration of device use, participant cohort (e.g., retinitis pigmentosa), demographic characteristics (e.g., gender), clinical assessments (e.g., visual acuity), etc. 
+ 
+As shown in [Chapter 9 (Linear Modeling)](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/09_RegressionForecasting.html), the matrix form of the linear inference model, $Y=X\beta+\epsilon$, can also be explicated to:
+ 
+$$Y=\beta_o+\beta_1 X_1+\beta_2 X_2+...+\beta_u X_u+ \epsilon.$$
+
+```{r}
+# install.packages("pwr")
+# library(pwr)
+
+f2 <- seq(0.2, 4, 0.02) # define a range of effect-sizes and sampling rate within this range
+nf2 <- length(f2)
+
+p <- seq(0.3, 0.85, 0.1) # define a range for the power values, and their sampling rate
+np <- length(p)
+
+#`pwr.f2.test(u = u, v = v, f2 = f2, sig.level = a, power = b)`: Multivariate linear Models, including multiple linear regression, with $u$, $v$, and $f2 representing the ANOVA numerator and denominator degrees of freedom, and the effect size measure.
+# Cohen's f2 values of 0.02, 0.15, and 0.35 approximately represent small, medium, and large effect sizes, respectively.
+
+# Compute the corresponding sample sizes for all combinations of correlations and power values
+sampleSize <- array(numeric(nf2*np), dim=c(nf2, np))
+for (i in 1:np) {
+  for (j in 1:nf2) {
+    # solve for sample size (v), assuming we use u=8 predictors (X) explaining the outcome (Y)
+    testResult <- pwr.f2.test(u = 8, v = NULL, f2 = f2[j], sig.level = 0.05, power = p[i])  # num-covariates=8
+    sampleSize[j, i] <- ceiling(testResult$v) # extract and round sample sizes up to nearest integer
+    # print(sprintf("sampleSize[%d,%d]=%s", j,i, round(sampleSize[j, i], 2)))
+  }
+}
+
+# Graph the power plot
+xRange <- range(f2)
+yRange <- round(range(sampleSize))
+colors <- rainbow(length(p))
+plot(xRange, yRange, type="n", xlab="Effect-size", ylab="Sample Size (u)")
+# Add power curves
+for (i in 1:np) lines(f2, sampleSize[ , i], type="l", lwd=2, col=colors[i])
+# add annotations (grid lines, title, legend)
+abline(v=0, h=seq(0, yRange[2], 10), lty=2, col="light gray")
+abline(h=0, v=seq(xRange[1], xRange[2], 0.5), lty=2, col="light gray")
+title("Effect-size vs. Sample-size for \n different Power values in 
+      (0.3, 0.8), Significance=0.05 (MLR)")
+legend("topright", title="Power", as.character(p), fill=colors)
+```
+
+For a simpler balanced 5-group ANOVA test, we can plot the sample-size against power. This graph indicates the *optimal* sample-size selection that achieves the lower-bound of the power ($0.8$) for the minimal sample-size ($n=20$).
+
+```{r}
+p.out <- pwr.anova.test(k=5, f=0.4, sig.level=0.025, power=0.8) # large effect-size
+plot(p.out, lwd=2)
+```
+
+
+## Example: Clustered-Design Power Analysis
+
+Suppose we are interested in estimating the relation between sample-size and statistical-power  (power analyses) for a clustered study design within 12 units (sites). Assume the Intra-class correlation of $ICC=0.01$, and the proposed study design involves 2 steps and 40 participants per cluster (site). At each step, conditioning on enrolling four sites (clusters), we want to ensure 76% statistical power (based on a two-sided test, alpha=0.05) for detecting between-site effects, we get 80% statistical power.
+
+Using the [WebPower package](https://cran.r-project.org/web/packages/WebPower/index.html) and [WebPower manual/tutorial](https://webpower.psychstat.org/wiki/_media/grant/webpower_manual_book.pdf), we can estimate the sample-size corresponding with the desired power using the R function `wp.crt2arm`. The interface of this function involves: 
+
+ - *n*: sample size
+ - *f*: effect size
+ - *J*: number of clusters/sites
+ - *icc*: Intra-class correlation
+ - *alpha*: significance level
+ - *power*: statistical power
+ - *alternative*: two-sided or one-sided analysis
+
+`wp.crt2arm(n=NULL, f=NULL, J=NULL, icc=NULL, power=NULL, alternative = c("two.sided", "one.sided"), alpha=0.05)`
+
+The R inputs and outputs for several examples are given below:
+
+* *Case 1* (power=0.72): Total number of participants $n=2\times 4\times 40$, $icc=0.01$, and $f=0.5$.
+* *Case 2*: (power=0.8): Total number of participants $n=2\times 4\times 40$, $icc=0.01$, and $f=0.65$.
+
+```{r power, echo=TRUE}
+## calculate power given sample size and effect size
+## install.packages("WebPower", lib="C:/Users/Dinov/Documents/R/R-4.0.2/library")
+library(WebPower)
+# wp.crt2arm(f=0.6,n=20,J=10,icc=.1)
+wp.crt2arm(f=0.5, n=320, J=4, icc= 0.03)
+
+wp.crt2arm(f=0.65, n=320, J=4, icc= 0.01)
+```
+
+Note the strong effects of the parameters ICC, n, and effect-size, and number of sites. 
+
+## Summary
+
+Power analysis is an important statistical computing technique to design effective research studies based on the collection and interrogation of observational data. Power is the sensitivity or the probability of detecting a *true* effect when it exists. There is no perfect analytical expression (formula) determining the relation between sample size, effect size, and power for all possible research situations. In practice, assumptions and empirical evidence may be used to approximate this unknown relation even when for complex study designs.
+
+In practice, all sample size calculations are based on many assumptions. For instance, calculating the sample-size/power relation for a one-way ANOVA test requires normality assumptions for each group as well as variance [homoscedasticity](https://en.wikipedia.org/wiki/Homoscedasticity), equal variances, for all the groups. However, reasonable violations of core assumptions may still generate rough approximations of the expectation of the sensitivity for a test. Exact knowledge of the magnitude of effect size is also rarely tractable, however it can often be estimated from analogous processes, prior observations, or by other techniques. Practicing statisticians tend to use more conservative assumptions when estimating sample-size/power relations.
+
+There are no closed-form expressions to estimate the *power-size-effect relationships* for non-parametric models and most model-free machine learning techniques. In such situations, two complementary approaches may be utilized to ensure reliable analytics and reproducible inference. The first approach is based on identifying an approximate *power-size-effect relationship* for another analogous statistical test, which is based on a parametric model, compute the power-size-effect relationship and use it cautiously as a rough guide of the relation for the corresponding machine learning technique. An alternative approach is to employ resampling methods to confirm these affect relationships via [internal statistical cross-validation](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/20_PredictionCrossValidation.html).
+
+
+## References
+
+ - Cohen, J. 1988. [Statistical Power Analysis for the Behavioral Sciences](https://www.elsevier.com/books/statistical-power-analysis-for-the-behavioral-sciences/cohen/978-0-12-179060-8), Mahwah, NJ: Lawrence Erlbaum Associates.
+ - [SMHS EBook Bayesian Inference Chapter](https://wiki.socr.umich.edu/index.php/SMHS_BayesianInference)
+ - Che, Annie, Cui, Jenny, and Dinov, Ivo (2009). [SOCR Analyses: Implementation and Demonstration of a New Graphical Statistics Educational Toolkit](https://www.jstatsoft.org/v30/i03), JSS, Vol. 30, Issue 3, Apr 2009.
+ - Che, A, Cui, J, and Dinov, ID (2009) [SOCR Analyses - an Instructional Java Web-based Statistical Analysis Toolkit](https://jolt.merlot.org/vol5no1/dinov_0309.htm), JOLT, 5(1), 1-19, March 2009.
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

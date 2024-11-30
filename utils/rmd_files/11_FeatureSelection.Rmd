@@ -1,0 +1,2438 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Variable Importance and Feature Selection</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+# Variable Importance and Feature Selection
+
+As we mentioned earlier in [Chapter 4](https://socr.umich.edu/DSPA2/DSPA2_notes/04_DimensionalityReduction.html), variable selection is very important when dealing with bioinformatics, healthcare, and biomedical data where we may have more features than observations. Instead of trying to interrogate the complete data in its native high-dimensional state, we can apply variable selection, or feature selection, to focus on the most salient information contained in the observations Due to the presence of intrinsic and extrinsic noise, the volume and complexity of big health data, as well as different methodological and technological challenges, the process of identifying the salient features may resemble finding a needle in a haystack. Here, we will illustrate alternative strategies for feature selection using filtering (e.g., correlation-based feature selection), wrapping (e.g., recursive feature elimination), and embedding (e.g., variable importance via random forest classification) techniques. 
+
+Variable selection relates to *dimensionality reduction*, which we saw in [Chapter 4](https://socr.umich.edu/DSPA2/DSPA2_notes/04_DimensionalityReduction.html), however there are differences between them. 
+
+Method  |  Process Type  |  Goals  |  Approach
+--------|----------------|---------|-----------------------------------------
+Variable selection | Discrete process | To select unique representative features from each group of *similar* features | To identify highly correlated variables and choose a representative feature by post processing the data
+Dimension reduction | Continuous process | To denoise the data, enable simpler prediction, or group features so that low impact features have smaller weights | Find the *essential*, $k\ll n$, components, factors, or clusters representing linear, or nonlinear, functions of the $n$ variables which maximize an objective function like the proportion of explained variance
+
+Relative to the lower variance estimates in *continuous dimensionality reduction*, the intrinsic characteristics of the *discrete feature selection* process yields higher variance in bootstrap estimation and cross validation.
+
+In in this Chapter, we will also learn about another powerful technique for variable-selection using *decoy features* (knockoffs) to control for the false discovery rate of selecting inconsequential features as important.
+
+## Feature selection methods
+
+There are three major classes of variable or feature selection techniques - filtering-based, wrapper-based, and embedded methods.
+
+### Filtering techniques
+
+ - *Univariate*: Univariate filtering methods focus on selecting single features with high scores based on some statistics like $\chi^2$ or Information Gain Ratio. Each feature is viewed as independent of the others, effectively ignoring interactions between features. 
+    + Examples: $\chi^2$, Euclidean distance, $i$-test, and Information gain.
+ - *Multivariate*: Multivariate filtering methods rely on various (multivariate) statistics to select the principal features. They typically account for between-feature interactions by using higher-order statistics like correlation. The basic idea is that we iteratively triage variables that have high correlations with other features.
+    + Examples: Correlation-based feature selection, Markov blanket filter, and fast correlation-based feature selection.
+
+### Wrapper
+
+ - *Deterministic*: Deterministic wrapper feature selection methods either start with no features (forward-selection) or with all features included in the model (backward-selection) and iteratively refine the set of chosen features according to some model quality measures. The iterative process of adding or removing features may rely on statistics like the Jaccard similarity coefficient.
+    + Examples: Sequential forward selection, Recursive Feature Elimination, Plus $q$ take-away $r$, and Beam search.
+ - *Randomized*: Stochastic wrapper feature selection procedures utilize a binary feature-indexing vector indicating whether or not each variable should be included in the list of salient features. At each iteration, we *randomly* perturb to the binary indicators vector and compare the combinations of features before and after the random inclusion-exclusion indexing change. Finally, we pick the indexing vector corresponding with the optimal performance based on some metric like acceptance probability measures. The iterative process continues until no improvement of the objective function is observed.
+    + Examples: Simulated annealing, Genetic algorithms, Estimation of distribution algorithms.
+  
+### Embedded Techniques 
+  
+ - Embedded feature selection techniques are based on various classifiers, predictors, or clustering procedures. For instance, we can accomplish feature selection by using decision trees where the separation of the training data relies on features associated with the highest information gain. Further tree branching separating the data deeper may utilize *weaker* features. This process of choosing the vital features based on their separability characteristics continues until the classifier generates group labels that are mostly homogeneous within clusters/classes and largely heterogeneous across groups, and when the information gain of further tree branching is marginal. The entire process may be iterated multiple times and select the features that appear most frequently.
+    + Examples: Decision trees, random forests, weighted naive Bayes, and feature selection using weighted-SVM. 
+
+The different types of feature selection methods have their own pros and cons. In this chapter, we are going to introduce the randomized wrapper method using the `Boruta` package, which utilizes a random forest classification method to output variable importance measures (VIMs). Then, we will compare its results with Recursive Feature Elimination, a classical deterministic wrapper method.
+
+### Random Forest Feature Selection
+
+Let's start by examining random forest based feature selection, as an embedded technique. The good performance of random forest as a classification, regression, and clustering method is coupled with its ease-of-use, accurate, and robust results. Having a random forest, or more broadly a decision tree, prediction naturally leads to feature selection by using the mean decrease impurity or the mean accuracy decrease criteria.
+
+The many decision trees captured in a random forest include explicit conditions at each branching node, which are based on single features. The intrinsic bifurcation conditions splitting the data may be based on cost function optimization using the *impurity*, see [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html). We can also use other metrics information gain or entropy for classification problems. These measures capture the importance of variables by computing its impact (how much is the feature-based splitting decision decreasing the weighted impurity in a tree). In random forests, the ranking of feature importance, which is based on the average impurity decrease due to each variable, leads to effective feature selection.
+
+### Case Study - ALS
+
+*Step 1: Collecting Data*
+
+First things first, let's explore the dataset we will be using. Case Study 15, [Amyotrophic Lateral Sclerosis (ALS)](https://umich.instructure.com/files/1789624/download?download_frd=1), examines the patterns, symmetries, associations and causality in a rare but devastating disease, amyotrophic lateral sclerosis (ALS), also known as *Lou Gehrig disease*. This ALS case-study reflects a large clinical trial including big, multi-source and heterogeneous datasets. It would be interesting to interrogate the data and attempt to derive potential biomarkers that can be used for detecting, prognosticating, and forecasting the progression of this neurodegenerative disorder. Overcoming many scientific, technical and infrastructure barriers is required to establish complete, efficient, and reproducible protocols for such complex data. These pipeline workflows start with ingesting the raw data, preprocessing, aggregating, harmonizing, analyzing, visualizing and interpreting the findings.
+
+In this case-study, we use the training dataset that contains 2,223 observations and 131 numeric variables. We select `ALSFRS slope` as our outcome variable, as it captures the patients' clinical decline over a year. Although we have more observations than features, this is one of the examples where multiple features are highly correlated. Therefore, we need to preprocess the variables before commencing with feature selection. 
+
+*Step 2: Exploring and preparing the data*
+
+The dataset is located in our [case-studies archive](https://umich.instructure.com/courses/38100/files/folder/Case_Studies). We can use `read.csv()` to directly import the CSV dataset into R using the URL reference.
+
+```{r message=F, warning=F, error=F}
+ALS.train <- read.csv("https://umich.instructure.com/files/1789624/download?download_frd=1")
+summary(ALS.train)
+```
+
+There are $131$ features and some of variables represent statistics like *max*, *min* and *median* values of the same clinical measurements.
+
+*Step 3 - training a model on the data*
+
+Now let's explore the `Boruta()` function in the `Boruta` package to perform variable selection, based on random forest classification. `Boruta()` includes the following components:
+
+`vs <- Boruta(class~features, data=Mydata, pValue = 0.01, mcAdj = TRUE, maxRuns = 100, doTrace=0, getImp = getImpRfZ, ...)`
+
+ - `class`: variable for class labels.
+ - `features`: potential features to select from.
+ - `data`: dataset containing classes and features.
+ - `pValue`: confidence level. Default value is 0.01 (Notice we are applying multiple variable selection.
+ - `mcAdj`: Default TRUE to apply a multiple comparisons adjustment using the Bonferroni method.
+ - `maxRuns`: maximal number of importance source runs. You may increase it to resolve attributes left Tentative.
+ - `doTrace`: verbosity level. Default 0 means no tracing, 1 means reporting decision about each attribute as soon as it is justified, 2 means same as 1, plus at each importance source run reporting the number of attributes. The default is 0 where we don't do the reporting.
+ - `getImp`: function used to obtain attribute importance. The default is $getImpRfZ$, which runs random forest from the ranger package and gathers $Z$-scores of mean decrease accuracy measure.
+
+The resulting `vs` object is of class `Boruta` and contains two important components:
+
+ - `finalDecision`: a factor of three values: `Confirmed`, `Rejected` or `Tentative`, containing the final results of the feature selection process.
+ - `ImpHistory`: a data frame of importance of attributes gathered in each importance source run. Besides the predictors' importance, it contains maximal, mean and minimal importance of shadow attributes for each run. Rejected attributes get `-Inf` importance. This output is set to NULL if we specify `holdHistory=FALSE` in the Boruta call. 
+
+*Caution*: Running the code below will take several minutes.
+
+```{r warning=F, message=F, error=F}
+# install.packages("Boruta")
+library(Boruta)
+set.seed(123)
+als <- Boruta(ALSFRS_slope ~ . -ID, data=ALS.train, doTrace=0)
+print(als)
+als$ImpHistory[1:6, 1:10]
+```
+
+This is a fairly time-consuming computation. Boruta determines the *important* attributes from *unimportant* and *tentative* features. Here the importance is measured by the [Out-of-bag (OOB) error](https://en.wikipedia.org/wiki/Out-of-bag_error). The OOB estimates the prediction error of machine learning methods (e.g., random forests and boosted decision trees) that utilize bootstrap aggregation to sub-sample training data. **OOB** represents the mean prediction error on each training sample $x_i$, using only the trees that did not include $x_i$ in their bootstrap samples. Out-of-bag estimates provide *internal* assessment of the learning accuracy and avoid the need for an independent *external* validation dataset.
+
+The importance scores for all features at every iteration are stored in the data frame `als$ImpHistory`. Let's plot a graph depicting the essential features. 
+
+*Note*: Again, running this code will take several minutes to complete.
+
+```{r warning=F, message=F, error=F, fig.width=12, fig.height=10}
+library(plotly)
+# plot(als, xlab="", xaxt="n")
+# lz<-lapply(1:ncol(als$ImpHistory), function(i)
+# als$ImpHistory[is.finite(als$ImpHistory[, i]), i])
+# names(lz)<-colnames(als$ImpHistory)
+# lb<-sort(sapply(lz, median))
+# axis(side=1, las=2, labels=names(lb), at=1:ncol(als$ImpHistory), cex.axis=0.5, font = 4)
+
+df_long <- tidyr::gather(as.data.frame(als$ImpHistory), feature, measurement)
+
+plot_ly(df_long, x=~feature, y = ~measurement, color = ~feature, type = "box") %>%
+    layout(title="Box-and-whisker Plots across all 102 Features (ALS Data)",
+           xaxis = list(title="Features", categoryorder = "total descending"), 
+           yaxis = list(title="Importance"), showlegend=F)
+```
+
+We can see that plotting the graph is easy but extracting matched feature names may require more work. Another basic plot may be rendered using `plot(als, xlab="", xaxt="n")`, where `xaxt="n"` suppresses labeling the x-axis. To reconstruct the correct x-axis labels, we need to create a list by using the `apply()` function. Each element in the list contains all the important scores for a single feature in the original dataset. Then, we can exclude all rejected features and sort these non-rejected features according to their median importance and printed them on the x-axis by using `axis()`. 
+
+We have already seen similar groups of boxplots back in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html). In this graph, variables with *green* boxes are more important than the ones represented with *red* boxes, and we can see the range of importance scores within a single variable in the graph.
+
+It may be desirable to get rid of tentative features. Notice that this function should be used only when strict decision is highly desired, because this test is much weaker than Boruta and can lower the confidence of the final result.
+
+```{r warning=F, message=F, error=F}
+final.als <- TentativeRoughFix(als)
+print(final.als)
+final.als$finalDecision
+getConfirmedFormula(final.als)
+
+# report the Boruta "Confirmed" & "Tentative" features, removing the "Rejected" ones
+print(final.als$finalDecision[final.als$finalDecision %in% c("Confirmed", "Tentative")])
+# how many are actually "confirmed" as important/salient?
+impBoruta <- final.als$finalDecision[final.als$finalDecision %in% c("Confirmed")]; length(impBoruta)
+```
+
+This shows the final features selection result.
+
+*Step 4 - evaluating model performance*
+
+#### Comparing with RFE
+
+Let's compare the `Boruta` results against a classical variable selection method - *recursive feature elimination (RFE)*. First, we need to load two packages: `caret` and `randomForest`. Then, similar to [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html) we must specify a resampling method. Here we use *10-fold CV* to do the resampling. 
+
+```{r  warning=F, message=F, error=F}
+library(caret)
+library(randomForest)
+set.seed(123)
+control <- rfeControl(functions = rfFuncs, method = "cv", number=10)
+```
+
+Now, all preparations are complete and we are ready to do the RFE variable selection.
+
+```{r, message=FALSE, warning=FALSE}
+rf.train <- rfe(ALS.train[, -c(1, 7)], ALS.train[, 7], sizes=c(10, 20, 30, 40), rfeControl=control)
+rf.train
+```
+
+This calculation may take a long time to complete. The RFE invocation is different from `Boruta`. Here we have to specify the feature data frame and the class labels separately. Also, the `sizes=` option allows us to specify the number of features we want to include in the model. Let's try `sizes=c(10, 20, 30, 40)` to compare the model performance for alternative numbers of features.
+
+To visualize the results, we can plot the 5 different feature size combinations listed in the summary. The one with 30 features has the lowest RMSE measure. This result is similar to the `Boruta` output, which selected around 30 features.
+
+```{r message=F, warning=F, error=F}
+plot(rf.train, type=c("g", "o"), cex=1, col=1:5)
+
+# df <- as.data.frame(cbind(variables=rf.train$variables$var[1:5], RMSE=rf.train$results$RMSE,
+#                           Rsquared=rf.train$results$Rsquared, MAE=rf.train$results$MAE,
+#                           RMSESD = rf.train$results$RMSESD,
+#                           RsquaredSD= rf.train$results$RsquaredSD, MAESD=rf.train$results$MAESD))
+# 
+# data_long <- tidyr::gather(df, Metric, value, RMSE:MAESD, factor_key=TRUE)
+# 
+# plot_ly(data_long, x=~variables, y=~value, color=~as.factor(Metric), type = "scatter", mode="lines")
+```
+
+Using the functions `predictors()` and `getSelectedAttributes()`, we can compare the final results of the two alternative feature selection methods.
+
+```{r message=F, warning=F, error=F}
+predRFE <- predictors(rf.train)
+predBoruta <- getSelectedAttributes(final.als, withTentative = F)
+```
+
+The results are almost identical: 
+
+```{r message=F, warning=F, error=F}
+intersect(predBoruta, predRFE)
+```
+
+There are 26 common variables chosen by the two techniques, which suggests that both the `Boruta` and RFE methods are robust. Also, notice that the `Boruta` method can give similar results without utilizing the *size* option. If we want to consider 10 or more different sizes, the procedure will be quite time consuming. Thus, `Boruta` method is effective when dealing with complex real world problems.
+
+#### Comparing with stepwise feature selection
+
+Next, we can contrast the `Boruta` feature selection results against another classical variable selection method - *stepwise model selection*. Let's start with fitting a bidirectional stepwise linear model-based feature selection.
+
+```{r message=F, warning=F, error=F}
+data2 <- ALS.train[, -1]
+# Define a base model - intercept only
+base.mod <- lm(ALSFRS_slope ~ 1 , data= data2)
+# Define the full model - including all predictors
+all.mod <- lm(ALSFRS_slope ~ . , data= data2)
+# ols_step <- lm(ALSFRS_slope ~ ., data=data2)
+ols_step <- step(base.mod, scope = list(lower = base.mod, upper = all.mod), direction = 'both', k=2, trace = F)
+summary(ols_step); # ols_step
+```
+
+We can report the stepwise "Confirmed" (important) features:
+
+```{r message=F, warning=F, error=F}
+# get the shortlisted variable
+stepwiseConfirmedVars <- names(unlist(ols_step[[1]]))
+# remove the intercept 
+stepwiseConfirmedVars <- stepwiseConfirmedVars[!stepwiseConfirmedVars %in% "(Intercept)"]
+print(stepwiseConfirmedVars)
+```
+
+The feature selection results of `Boruta` and `step` are similar. 
+
+```{r message=F, warning=F, error=F}
+library(mlbench)
+library(caret)
+
+# estimate variable importance
+predStepwise <- varImp(ols_step, scale=FALSE)
+# summarize importance
+print(predStepwise)
+# plot predStepwise
+# plot(predStepwise)
+
+# Boruta vs. Stepwise feature selection
+intersect(predBoruta, stepwiseConfirmedVars) 
+```
+
+There are about $10$ common variables chosen by the Boruta and Stepwise feature selection methods.
+
+There is another more elaborate stepwise feature selection technique that is implemented in the function `MASS::stepAIC()` that is useful for a wider range of object classes.
+
+
+## Regularized Linear Modeling and Controlled Variable Selection
+
+Many biomedical and biosocial studies involve large amounts of complex data, including cases where the number of features ($k$) is large and may exceed the number of cases ($n$). In such situations, parameter estimates are difficult to compute or may be unreliable as the [system is underdetermined](https://en.wikipedia.org/wiki/Underdetermined_system). Regularization provides one approach to improve model reliability, prediction accuracy, and result interpretability. It is based on augmenting the fidelity term of the objective function used in the model fitting process with a regularization term that provides restrictions on the parameter space.
+
+Classical techniques for choosing *important* covariates to include in a model of complex multivariate data rely on various types of stepwise variable selection processes. These tend to improve prediction accuracy in certain situations, e.g., when a small number of features are strongly predictive, or heavily associated, with the clinical outcome or the specific biosocial trait. However, the prediction error may be large when the model relies purely on a fidelity term. Including an additional regularization term in the optimization of the cost function improves the prediction accuracy. For example, below we show that by shrinking large regression coefficients, ridge regularization reduces overfitting and improves prediction error. Similarly, the least absolute shrinkage and selection operator (LASSO) employs regularization to perform simultaneous parameter estimation and variable selection. LASSO enhances the prediction accuracy and provides a natural interpretation of the resulting model. *Regularization* refers to forcing certain characteristics on the model, or the corresponding scientific inference. Examples include discouraging complex models or extreme explanations, even if they fit the data, enforcing model generalizability to prospective data, or restricting model overfitting of accidental samples.
+
+In this section, we extend the mathematical foundation we presented in [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html) and (1) discuss computational protocols for handling complex high-dimensional data, (2) illustrate model estimation by controlling the false-positive rate of selection of salient features, and (3) derive effective forecasting models.
+
+### General Questions
+
+Applications of regularized linear modeling techniques will help us address problems like:
+
+ - How to deal with extremely high-dimensional data (hundreds or thousands of features)?
+ - Why mix fidelity (model fit) and regularization (model interpretability) terms in objective function optimization?
+ - How to reduce the false-positive rate, increase scientific validation, and improve result reproducibility (e.g., Knockoff filtering)?
+
+### Model Regularization
+
+In data-driven sciences, *regularization* is the process of introducing constraints, adding information to, or smoothing a model aiming to generate a realistic solution to an ill-posed (or under-determined) problem, to prevent overfitting, or to improve the model interpretability.
+
+Regularization of objective functions is a commonly used strategy to solve ill-posed [optimization problems (Chapter 13)](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html). This involves introducing another regularization term penalizing the model for not complying with the additional constraints or increasing the magnitude of the cost function to enforce convergence of the model to an "optimal" or a "unique" solution. The example below illustrates a schematic of regularization. 
+
+Suppose we fit several different (polynomial) models that have near perfect model-fidelity, i.e., all models go very close to the set of anchor points we specified. In that sense, all models represent near-perfect solutions to this unconstrained, not-regularized, optimization problem. They fit the data well. Now, we can introduce an additional constraint that we want a simple model, e.g., smooth, differentiable, integrable. We are looking for an easy to interpret model. This can be accomplished by adding a *regularization term* to the objective function that requires in addition to passing through (or near-by) the anchor points, the model to be "simple". Which of the different models appear simpler in the example below? The *fidelity* of the model is captured by how closely it fits the set of anchor points (see RMSE error). The model *regularizer* enforces simple model representation, i.e., lower polynomial order. 
+
+The following example demonstrates the heuristics of fitting a regularized model where the objective function is a mixture of a fidelity term (polynomial fit to data) and a penalty term (enforcing conditions restricting the model flexibility to specific points).
+
+```{r message=F, warning=F, error=F}
+# define a function of interest e.g., Runge's function
+runge <- function(x){
+  runge <- 1/(1+25*x^2)
+}
+
+# define the anchor (knot) points 
+knots <- seq(-1, 1, 0.01)
+
+# library(rSymPy)
+library(polynom)
+library(tidyverse)
+library(ModelMetrics)
+
+# function generator:
+# INPUT: (Number of Interpolation nodes - 1 == order) between -1 and 1
+# OUTPUT: A list containing the tuple (data_frame, f)
+#   where data_frame is the corresponding nodes
+#   where f is function object induced by the lagrange interpolation
+
+lag_poly <- function(order) {
+  X_nodes <- seq(-1, 1, 2/order)
+  Y_coor <- runge(X_nodes)
+  f <- as.function(poly.calc(X_nodes,Y_coor))
+  RMSE = rmse(f(knots), runge(knots))
+  print(paste("The ", order, " order polynomial interpolation has this RMS Error:", RMSE))
+  X <- data.frame(X_nodes)
+  Y <- data.frame(Y_coor)
+  lag_poly <- c(f, X, Y)
+}
+
+#Adding OTHER order functions here
+third_order <- lag_poly(3)
+fourth_order <- lag_poly(4)
+sixth_order <- lag_poly(6)
+eigth_order <- lag_poly(8)
+# twentyth_order <- lag_poly(20)
+
+# unlist other created polynomials
+X_dat <- c(
+  unlist(flatten(third_order[2])),
+  unlist(flatten(fourth_order[2])),
+  unlist(flatten(sixth_order[2])),
+  unlist(flatten(eigth_order[2])) # ,
+  #unlist(flatten(twentyth_order[2]))
+  )
+Y_dat <-c(
+  unlist(flatten(third_order[3])),
+  unlist(flatten(fourth_order[3])),
+  unlist(flatten(sixth_order[3])),
+  unlist(flatten(eigth_order[3])) #,
+  # unlist(flatten(twentyth_order[3]))
+  )
+Labels <- c(
+  rep("third_order",4),
+  rep("fourth_order",5),
+  rep("sixth_order",7),
+  rep("eigth_order",9) # ,
+  # rep("twentyth_order",21)
+  )
+dat <- data.frame(X=X_dat,Y=Y_dat,label=Labels) # print(second_order[[2]])
+
+ord=8
+X_nodes <- seq(-1, 1, 2/ord)
+Y_coor <- runge(X_nodes)
+# fit8 <- lm(Y_coor ~ poly(X_nodes, 8, raw=TRUE))
+
+library(plotly)
+xSample <- seq(-1, 1, length.out = 1000)
+plot_ly(x=~xSample, y=~third_order[[1]](xSample), type="scatter", mode="lines", name="third_order") %>%
+  add_trace(x=~xSample, y=~fourth_order[[1]](xSample), mode="lines", name="fourth_order") %>%
+  add_trace(x=~xSample, y=~sixth_order[[1]](xSample), mode="lines", name="sixth_order") %>%
+  add_trace(x=~xSample, y=~eigth_order[[1]](xSample), mode="lines", name="eigth_order") %>%
+  add_markers(x=~dat$X, y=~dat$Y, mode="markers", name="Anchor Points", marker=list(size=20)) %>%
+  layout(title="Objective Functions as a Mix of Fidelity and Regularization Terms", 
+         xaxis=list(title="Domain"), yaxis=list(title="Model Range"))
+
+# the color sequence will be reversed
+# ggplot(dat , aes(x=X, y=Y,color=label)) + labs(title= "Perfect Fidelity Models",
+#                       y="Y", x = "X")+ scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07","#CC79A7"))+
+#   theme(plot.title = element_text(hjust = 0.5))+
+#   geom_point(size=3,shape=1, aes(colour = label)) + 
+#   geom_function(fun = third_order[[1]], size=1, alpha=0.4,color="#CC79A7")+
+#   stat_function(fun = fourth_order[[1]], size=1, alpha=0.4,color = "#FC4E07")+
+#   stat_function(fun = sixth_order[[1]], size=1, alpha=0.4,color =  "#E7B800")+
+#   stat_function(fun = eigth_order[[1]], size=1, alpha=0.4, color= "#00AFBB")+
+#   stat_function(fun = runge, size=1, alpha=0.4)
+```
+
+
+### Matrix notation  
+
+We should review the basics of matrix notation, linear algebra, and matrix computing we covered in [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html). At the core of matrix manipulations are scalars, vectors and matrices.
+
+ - ${y}_i$: output or response variable, $i = 1, ..., n$ (cases, subjects, units, etc.)
+ - $x_{ij}$: input, predictor, or feature variable,  $1\leq j \leq k,\ 1\leq i \leq n.$
+
+$${y} = \begin{pmatrix} y_1 \\ y_2 \\ \vdots \\ y_n \end{pmatrix} \ ,$$
+
+and 
+
+$$\quad {X} = 
+  \begin{pmatrix} 
+    x_{1,1} & x_{1,2} & \cdots & x_{1,k} \\ 
+    x_{2,1} & x_{2,2} & \cdots & x_{2,k} \\ 
+    \vdots & \vdots & \ddots & \vdots \\ 
+    x_{n,1} & x_{n,2} & \cdots & x_{n,k} 
+  \end{pmatrix}_{cases\times features}.$$
+  
+### Regularized Linear Modeling
+
+In the [special case where we assume that the covariates are orthonormal and the number of cases exceeds the number of features ($k<n$)](https://doi.org/10.1098%2Frsta.2009.0159), we may have a *design matrix*, $X$, corresponding to an identity cross product matrix $X^T X = I$.
+
+ - The ordinary least squares (`OLS`) estimates minimize the following objective function: 
+$$\min_{ \beta \in \mathbb{R}^k } \left\{ \frac{1}{N} \left\| y - X \beta \right\|_2^2\right\}.$$ 
+
+In general, when $k<n$, $X^T X$ is a non-singular square matrix, which is invertible, and the OLS estimates are expressed analytically by 
+
+$$\hat{\beta}^{OLS} = (X^T X)^{-1} X^T y.$$
+Otherwise, when $k>n$, the cross product matrix $X^T X)$ is singular, i.e., not invertible, however a related $k\times k$ matrix $X^TX+\lambda I$, where $\lambda$ is a regularization constant, is invertible and leads to a *regularized* linear model solution.
+
+ - `LASSO` estimates minimize a modified cost function 
+ $$\min_{ \beta \in \mathbb{R}^{k+1}, \lambda \in \mathbb{R}^{+} } \left\{ \frac{1}{N} \left\| y - X \beta \right\|_2^2 + \lambda \| \beta \|_1 \right\}.$$ 
+
+These LASSO estimates may be expressed via a soft-thresholding function of the OLS estimates: 
+$$\hat{\beta}_j = S_{N \lambda}( \hat{\beta}^\text{OLS}_j ) = \hat{\beta}^\text{OLS}_j \max \left( 0, 1 - \frac{ N \lambda }{ |\hat{\beta}^{OLS}_j| } \right), $$
+
+where $S_{N \lambda}$ is a soft thresholding operator translating values *towards* zero. This is different from the hard thresholding operator, which *sets* smaller values to zero and leaves larger ones unchanged.
+
+ - `Ridge` regression minimizes a similar objective function (using a different norm):
+
+$$\min_{ \beta \in \mathbb{R}^{k+1}, \lambda \in \mathbb{R}^{+} } \left\{ \frac{1}{N} \| y - X \beta \|_2^2 + \lambda \| \beta \|_2^2 \right\}.$$
+
+This yields the ridge estimates $\hat{\beta}_j = (1 + N \lambda )^{-1} \hat{\beta}^{OLS}_j$. Thus, ridge regression shrinks all coefficients by a uniform factor, $(1 + N \lambda)^{-1}$, and does not set any coefficients to zero.
+
+ - `Best subset` selection regression, also known as orthogonal matching pursuit (OMP), minimizes the same cost function with respect to the zero-norm:
+
+$$\min_{ \beta \in \mathbb{R}^{k+1}, \lambda \in \mathbb{R}^{+} } \left\{ \frac{1}{N} \left\| y - X \beta \right\|_2^2 + \lambda \| \beta \|_0 \right\}, $$
+
+where $\|.\|_0$ is the "$\ell^0$ norm", defined for $z\in R^d$ as  $\| z \|_o = m$, where exactly $m$ components of $z$ are nonzero. In this case, a closed form of the parameter estimates is
+
+$$\hat{\beta}_j = H_{ \sqrt{ N \lambda } } \left( \hat{\beta}^{OLS}_j \right) = \hat{\beta}^{OLS}_j I \left( \left| \hat{\beta}^{OLS}_j \right| \geq \sqrt{ N \lambda } \right), $$
+
+where $H_\alpha$ is a `hard-thresholding` function and $I$ is an indicator function (it is 1 if its argument is true, and 0 otherwise).
+
+The LASSO estimates may share similar features selection/estimates with both `Ridge` and `Best (OMP)`. This is because they both shrink the magnitude of all the coefficients, like ridge regression, but also set some of them to zero, as in the best subset selection case.  `Ridge` regression scales all of the coefficients by a constant factor, whereas LASSO translates the coefficients towards zero by a constant value and then sets the small values to zero.
+
+#### Ridge Regression
+
+[Ridge regression](https://en.wikipedia.org/wiki/Tikhonov_regularization) relies on $L^2$ regularization to improve the model prediction accuracy. It improves prediction error by shrinking large regression coefficients and reducing overfitting. By itself, ridge regularization does not perform variable selection and does not really help with model interpretation.
+
+Let's show an example using the MLB dataset [01a_data.txt](https://umich.instructure.com/courses/38100/files/folder/data), which includes, player's Name, Team, Position, Height, Weight, and Age. We may fit in any regularized linear mode, e.g., $Weight \sim Age + Height$.
+
+```{r eval=TRUE, message=F, warning=F}
+# install.packages("doParallel")
+library("doParallel")
+library(plotly)
+library(tidyr)
+
+# Data: https://umich.instructure.com/courses/38100/files/folder/data   (01a_data.txt)
+data <- read.table('https://umich.instructure.com/files/330381/download?download_frd=1', as.is=T, header=T)    
+attach(data); str(data)
+
+# Training Data
+# Full Model: x <- model.matrix(Weight ~ ., data = data[1:900, ])
+# Reduced Model
+x <- model.matrix(Weight ~ Age + Height, data = data[1:900, ])
+# creates a design (or model) matrix, and adds 1 column for outcome according to the formula.
+y <- data[1:900, ]$Weight
+
+# Testing Data
+x.test <- model.matrix(Weight ~ Age + Height, data = data[901:1034, ])
+y.test <- data[901:1034, ]$Weight
+
+# install.packages("glmnet")
+library("glmnet")
+library(doParallel)
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl); getDoParWorkers()
+# getDoParName(); getDoParVersion()
+cv.ridge <-  cv.glmnet(x, y, type.measure="mse", alpha=0, parallel=T)
+## alpha =1 for lasso only, alpha = 0 for ridge only, and 0<alpha<1 to blend ridge & lasso penalty !!!!
+
+# plot(cv.ridge)
+
+plotCV.glmnet <- function(cv.glmnet.object, name="") {
+  df <- as.data.frame(cbind(x=log(cv.glmnet.object$lambda), y=cv.glmnet.object$cvm, 
+                           errorBar=cv.glmnet.object$cvsd), nzero=cv.glmnet.object$nzero)
+
+  featureNum <- cv.glmnet.object$nzero
+  xFeature <- log(cv.glmnet.object$lambda)
+  yFeature <- max(cv.glmnet.object$cvm)+max(cv.glmnet.object$cvsd)
+  dataFeature <- data.frame(featureNum, xFeature, yFeature)
+
+  plot_ly(data = df) %>%
+    # add error bars for each CV-mean at log(lambda)
+    add_trace(x = ~x, y = ~y, type = 'scatter', mode = 'markers',
+        name = 'CV MSE', error_y = ~list(array = errorBar)) %>% 
+    # add the lambda-min and lambda 1SD vertical dash lines
+    add_lines(data=df, x=c(log(cv.glmnet.object$lambda.min), log(cv.glmnet.object$lambda.min)), 
+              y=c(min(cv.glmnet.object$cvm)-max(df$errorBar), max(cv.glmnet.object$cvm)+max(df$errorBar)),
+              showlegend=F, line=list(dash="dash"), name="lambda.min", mode = 'lines+markers') %>%
+    add_lines(data=df, x=c(log(cv.glmnet.object$lambda.1se), log(cv.glmnet.object$lambda.1se)), 
+              y=c(min(cv.glmnet.object$cvm)-max(df$errorBar), max(cv.glmnet.object$cvm)+max(df$errorBar)), 
+              showlegend=F, line=list(dash="dash"), name="lambda.1se") %>%
+    # Add Number of Features Annotations on Top
+    add_trace(dataFeature, x = ~xFeature, y = ~yFeature, type = 'scatter', name="Number of Features",
+        mode = 'text', text = ~featureNum, textposition = 'middle right',
+        textfont = list(color = '#000000', size = 9)) %>%
+    # Add top x-axis (non-zero features)
+    # add_trace(data=df, x=~c(min(cv.glmnet.object$nzero),max(cv.glmnet.object$nzero)),
+    #           y=~c(max(y)+max(errorBar),max(y)+max(errorBar)), showlegend=F, 
+    #           name = "Non-Zero Features", yaxis = "ax", mode = "lines+markers", type = "scatter") %>%
+    layout(title = paste0("Cross-Validation MSE (", name, ")"),
+							xaxis = list(title=paste0("log(",TeX("\\lambda"),")"),	side="bottom", showgrid=TRUE), # type="log"
+							hovermode = "x unified", legend = list(orientation='h'),  # xaxis2 = ax,  
+							yaxis = list(title = cv.glmnet.object$name,	side="left", showgrid = TRUE))
+}
+
+plotCV.glmnet(cv.ridge, "Ridge")
+
+coef(cv.ridge)
+sqrt(cv.ridge$cvm[cv.ridge$lambda == cv.ridge$lambda.1se])
+
+#plot variable feature coefficients against the shrinkage parameter lambda.
+glmmod <-glmnet(x, y, alpha = 0)
+plot(glmmod, xvar="lambda")
+grid()
+
+# for plot_glmnet with ridge/lasso coefficient path labels
+# install.packages("plotmo")
+library(plotmo) 
+plot_glmnet(glmmod, lwd=4)        #default colors
+# More elaborate plots can be generated using:
+# plot_glmnet(glmmod,label=2,lwd=4) #label the 2 biggest final coefficients
+# specify color of each line
+# g <- "blue" 
+# plot_glmnet(glmmod, lwd=4, col=c(2,g))
+
+
+# report the model coefficient estimates
+coef(glmmod)[, 1]
+
+cv.glmmod <- cv.glmnet(x, y, alpha=0)
+
+mod.ridge <-  cv.glmnet(x, y, alpha = 0, thresh = 1e-12, parallel = T)
+lambda.best <-  mod.ridge$lambda.min
+lambda.best
+ridge.pred <-  predict(mod.ridge, newx = x.test, s = lambda.best)
+ridge.RMS <- mean((y.test - ridge.pred)^2); ridge.RMS
+ridge.test.r2 <-  1 - mean((y.test - ridge.pred)^2)/mean((y.test - mean(y.test))^2)
+
+#plot(cv.glmmod)
+plotCV.glmnet(cv.glmmod, "Ridge")
+
+best_lambda <- cv.glmmod$lambda.min
+best_lambda
+```
+
+In the plots above, different colors represent the vector of features, and the corresponding coefficients, displayed as a function of the regularization parameter, $\lambda$. The top horizontal axis indicates the number of nonzero coefficients at the current value of $\lambda$. For LASSO regularization, this top-axis corresponds to the effective degrees of freedom (df) for the model. 
+
+Notice the usefulness of Ridge regularization for model estimation in highly ill-conditioned problems ($n\ll k$) where slight feature perturbations may cause disproportionate alterations of the corresponding weight calculations. When $\lambda$ is very large, the regularization effect dominates the optimization of the objective function and the coefficients tend to zero. At the other extreme, as $\lambda\longrightarrow 0$, the resulting model solution tends towards the ordinary least squares (OLS) and the coefficients exhibit large oscillations. In practice, we often may need to tune $\lambda$ to balance this tradeoff.
+
+Also note that in the `cv.glmnet` call, the extreme values of the parameter $\alpha = 0$ (ridge) and $\alpha = 1$ (LASSO) correspond to different types of regularization, and intermediate values of $0<\alpha<1$ corresponds to *elastic net* blended regularization.
+
+#### Least Absolute Shrinkage and Selection Operator (LASSO) Regression
+
+Estimating the linear regression coefficients in a linear regression model using LASSO involves minimizing an objective function that includes an $L^1$ regularization term which tends to shrink the number of features. A descriptive representation of the fidelity (left) and regularization (right) terms of the objective function are shown below:
+
+$$\underbrace{\sum_{i=1}^n \left [ y_i - \beta_0 - \sum_{j=1}^k \beta_j x_{ij} \right ]^2}_{\text{fidelity term}} + \underbrace{\lambda\sum_{j=1}^{k}|\beta_j|}_{\text{regularization term}}.$$
+
+LASSO jointly achieves model quality, reliability and variable selection by penalizing the sum of the absolute values of the regression coefficients. This forces the shrinkage of certain coefficients effectively acting as a variable selection process. This is similar to ridge regression's penalty on the sum of the squares of the regression coefficients, although ridge regression only shrinks the magnitude of the coefficients without truncating them to $0$.
+
+Let's show how to select the regularization weight parameter $\lambda$ using `training` data and report the error using `testing` data.
+
+```{r warning=F, message=F, error=F}
+mod.lasso <-  cv.glmnet(x, y, alpha = 1, thresh = 1e-12, parallel = T)
+## alpha =1 for lasso only, alpha = 0 for ridge only, and 0<alpha<1 for elastic net, a blend ridge & lasso penalty !!!!
+lambda.best <- mod.lasso$lambda.min
+lambda.best
+lasso.pred <- predict(mod.lasso, newx = x.test, s = lambda.best)
+LASSO.RMS <- mean((y.test - lasso.pred)^2); LASSO.RMS
+```
+
+Let's retrieve the estimates of the model coefficients.
+
+```{r eval=T, warning=F, message=F, error=F}
+mod.lasso <-  glmnet(x, y, alpha = 1)
+predict(mod.lasso, s = lambda.best, type = "coefficients")
+lasso.test.r2 <-  1 - mean((y.test - lasso.pred)^2)/mean((y.test - mean(y.test))^2)
+```
+
+Perhaps obtain a classical OLS linear model, as well.
+
+```{r eval=T, warning=F, message=F, error=F}
+lm.fit <-  lm(Weight ~ Age + Height, data = data[1:900, ])
+summary(lm.fit)
+```
+
+The OLS linear (unregularized) model has slightly larger coefficients and greater MSE than LASSO, which attests to the shrinkage of LASSO.
+
+```{r eval=T, warning=F, message=F, error=F}
+lm.pred <-  predict(lm.fit, newx = x.test)
+LM.RMS <- mean((y - lm.pred)^2); LM.RMS
+lm.test.r2 <-  1 - mean((y - lm.pred)^2) / mean((y.test - mean(y.test))^2)
+  
+# barplot(c(lm.test.r2, lasso.test.r2, ridge.test.r2), col = "red", names.arg = c("OLS", "LASSO", "Ridge"), main = "Testing Data Derived R-squared")
+
+plot_ly(x = c("OLS", "LASSO", "Ridge"),  y = c(lm.test.r2, lasso.test.r2, ridge.test.r2),  
+        name = paste0("Model ", TeX("R^2") ," Performance"), type = "bar") %>%
+  layout(title=TeX("\\text{Model} \\ R^2\\ \\text{Performance}")) %>%
+  config(mathjax = 'cdn')
+```
+
+Compare the results of the three alternative models (LM, LASSO and Ridge) for these data and contrast the derived RMS results.
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+library(knitr) #  kable function to convert tabular R-results into Rmd tables
+# create table as data frame
+RMS_Table = data.frame(LM=LM.RMS, LASSO=LASSO.RMS, Ridge=ridge.RMS)
+
+# convert to markdown
+kable(RMS_Table, format="pandoc", caption="Test Dataset RMS Results", align=c("c", "c", "c"))
+stopCluster(cl)
+```       
+
+As both the *inputs* (features or predictors) and the *output* (response) are observed for the testing data, we can build a learner examining the relationship between the two types of features (controlled covariates and observable responses). Most often, we are interested in forecasting or predicting responses based on prospective (new, testing, or validation) data.
+
+### Predictor Standardization
+ 
+Prior to fitting regularized linear modeling and estimating the effects, covariates may be standardized. Scaling the features ensures the measuring units of the features do not bias the distance measures or norm estimates. Standardization can be accomplished by using the classic ["z-score" formula](https://wiki.socr.umich.edu/index.php/AP_Statistics_Curriculum_2007_Normal_Prob#General_Normal_Distribution]). This puts each predictor on the same scale (unitless quantities) - the mean is 0 and the variance is 1. We use $\hat{\beta_0} = \bar{y}$, for the mean intercept parameter, and estimate the coefficients of the remaining predictors. To facilitate interpretation of the results, after the model is estimated, in the context of the specific case-study, we can transform the results back to the original scale/units.
+
+### Estimation Goals
+
+The basic problem is this: given a set of predictors ${X}$, find a function, $f({X})$, to model or predict the outcome $Y$.
+
+Let's denote the objective (loss or cost) function by $L(y, f({X}))$. It determines adequacy of the fit and allows us to estimate the squared error loss:
+$$L(y, f({X})) = (y - f({X}))^2 . $$
+
+We are looking to find $f$ that minimizes the expected loss:
+$$  E[(Y - f({X}))^2] \Rightarrow f = E[Y | {X} = {x}].$$
+
+### Linear Regression
+
+For a linear model:
+$$Y_i = \beta_0 + x_{i,1}\beta_1 + x_{i,2}\beta_2 + \dots + x_{i,k}\beta_k + \epsilon, $$
+Let's assume that:
+
+* The model shorthand matrix notation is: $Y = X\beta + \epsilon.$
+* And the expectation of the observed outcome given the data, $E[Y | {X} = {x}]$, is a linear function, which in certain situations can be expressed as:
+$$\arg\min_{{\beta}} \sum_{i=1}^n \left (y_i - \sum_{j=1}^{k} x_{ij} \beta_j \right )^2 = \arg\min_{{\beta}} \sum_{i=1}^{n} (y_i - x_{i}^T \beta)^2.$$
+
+Multiplying  both hand-sides on the left by $X^T=X'$, which is the transpose of the design matrix $X$ (recall that matrix multiplication is not always commutative), yields:
+$$X^T Y = X^T (X\beta) = (X^TX)\beta.$$
+
+To solve for the effect-size coefficients, $\beta$, we can multiply both sides of the equation by the inverse of its (right hand side) multiplier:
+$$(X^TX)^{-1} (X^T Y) = (X^TX)^{-1} (X^TX)\beta = \beta.$$
+
+The *ordinary least squares (OLS)* estimate of ${\beta}$ is given by:
+$$\hat{{\beta}} = 
+  \arg\min_{{\beta}} \sum_{i=1}^n (y_i - \sum_{j=1}^{k} x_{ij} \beta_j)^2 = \arg\min_{{\beta}} \| {y} - {X}{\beta} \|^2_2 \Rightarrow$$
+  $$\hat{{\beta}}^{OLS} = ({X}'{X})^{-1} {X}'{y} \Rightarrow \hat{f}({x}_i) = {x}_i'\hat{{\beta}}.$$
+
+### Drawbacks of Linear Regression
+
+Despite its wide use and elegant theory, linear regression has some shortcomings.
+
+ - Prediction accuracy - Often can be improved upon;
+ - Model interpretability - Linear model does not automatically do variable selection.
+
+#### Assessing Prediction Accuracy
+
+Given a new input, ${x}_0$, how do we assess our prediction $\hat{f}({x}_0)$?
+
+The *Expected Prediction Error (EPE)* is:
+$$\begin{aligned} EPE({x}_0) &= E[(Y_0 - \hat{f}({x}_0))^2] \\
+                   &= \text{Var}(\epsilon) + \text{Var}(\hat{f}({x}_0)) + \text{Bias}(\hat{f}({x}_0))^2 \\
+                   &= \text{Var}(\epsilon) + MSE(\hat{f}({x}_0)) \end{aligned} .$$
+
+where
+
+ - $\text{Var}(\epsilon)$: irreducible error variance
+ - $\text{Var}(\hat{f}({x}_0))$: sample-to-sample variability of $\hat{f}({x}_0)$ , and
+ - $\text{Bias}(\hat{f}({x}_0))$: average difference of  $\hat{f}({x}_0)$ & $f({x}_0)$.
+    
+#### Estimating the Prediction Error 
+
+One common approach to estimating prediction error include:
+
+ - Randomly splitting the data into "training" and "testing" sets, where the testing data has $m$ observations that will be used to independently validate the model quality. We estimate/calculate $\hat{f}$ using training data;
+ - Estimating prediction error using the *testing set MSE*
+$$ \hat{MSE}(\hat{f}) = \frac{1}{m} \sum_{i=1}^{m} (y_i - \hat{f}(x_i))^2.$$
+
+Ideally, we want our model/predictions to perform well with new or prospective data.
+
+#### Improving the Prediction Accuracy
+
+If $f(x) \approx \text{linear}$, $\hat{f}$ will have low bias but possibly high variance, e.g., in high-dimensional setting due to correlated predictors, when $k\ \text{features} \ll n\ \text{cases}$, or under-determination, when $k > n$.  The goal is to minimize total error by trading off bias (centrality) and precision (variability).
+
+$$MSE(\hat{f}(x)) = \text{Var}(\hat{f}(x)) +\text{Bias}(\hat{f}(x))^2.$$
+We can sacrifice bias to reduce variance, which may lead to decrease in $MSE$. So, regularization allows us to tune this tradeoff.
+
+We aim to predict the outcome variable, $Y_{n\times1}$, in terms of other features $X_{n,k}$. Assume a first-order relationship relating $Y$ and $X$ is of the form $Y=f(X)+\epsilon$, where the error term is $\epsilon \sim N(0,\sigma)$. An estimate model $\hat{f}(X)$ can be computed in many different ways (e.g., using least squares calculations for linear regressions, Newton-Raphson, steepest descent, stochastic gradient descent, or other methods). Then, we can decompose the expected squared prediction error at $x$ as:
+
+$$E(x)=E[(Y-\hat{f}(x))^2] = \underbrace{\left ( E[\hat{f}(x)]-f(x) \right )^2}_{Bias^2} + 
+\underbrace{E\left [\left (\hat{f}(x)-E[\hat{f}(x)] \right )^2 \right]}_{\text{precision (variance)}} + \underbrace{\sigma^2}_{\text{irreducible error (noise)}}.$$
+
+When the true $Y$ vs. $X$ relation is not known, infinite data may be necessary to calibrate the model $\hat{f}$ and it may be impractical to jointly reduce both the model *bias* and *variance*. In general, minimizing the *bias* at the same time as minimizing the *variance* may not be possible.
+
+The figure below illustrates diagrammatically the dichotomy between *bias* and *precision* (variance), additional information is available in the [SOCR SMHS EBook](https://wiki.socr.umich.edu/index.php/SMHS_BiasPrecision).
+
+![](https://wiki.socr.umich.edu/images/d/dd/SMHS_BIAS_Precision_Fig_1_cg_07282014.png)
+
+### Variable Selection
+
+Oftentimes, we are only interested in using a subset of the original features as model predictors. Thus, we need to identify the most relevant predictors, which usually capture the big picture of the process. This helps us avoid overly complex models that may be difficult to interpret. Typically, when considering several models that achieve similar results, it's natural to select the simplest of them.
+
+Linear regression does not directly determine the importance of features to predict a specific outcome. The problem of selecting critical predictors is therefore very important.
+
+Automatic feature subset selection methods should directly determine an optimal subset of variables. Forward or backward stepwise variable selection and forward stagewise are examples of classical methods for choosing the best subset by assessing various metrics like [$MSE$, $C_p$, AIC, or BIC](https://doi.org/10.1080/03610918.2012.737491).
+
+### Regularization Framework
+
+As before, we start with a given ${X}$ and look for a (linear) function, $f({X})=\sum_{j=1}^{p} {x_{j} \beta_j}$, to model or predict $y$ subject to certain objective cost function, e.g., squared error loss. Adding a second term to the cost function minimization process yields (model parameter) estimates expressed as:
+
+$$\hat{{\beta}}(\lambda) = \arg\min_{\beta} 
+  \left\{\sum_{i=1}^n (y_i - \sum_{j=1}^{k} {x_{ij} \beta_j})^2 
+  + \lambda J({\beta})\right\}$$
+
+In the above expression, $\lambda \ge 0$ is the regularization (tuning or penalty) parameter, $J({\beta})$ is a `user-defined penalty function` - typically, the intercept is not penalized.
+ 
+#### Role of the *Penalty Term*
+
+Consider $\arg\min J({\beta}) = \sum_{j=1}^k \beta_j^2 =\| {\beta} \|^2_2$ (Ridge Regression, *RR*).
+
+Then, the formulation of the regularization framework is:
+$$\hat{{\beta}}(\lambda)^{RR} = \arg\min_{{\beta}} 
+  \left\{\sum_{i=1}^n \left (y_i - \sum_{j=1}^{k} x_{ij} \beta_j\right )^2 + 
+  \lambda \sum_{j=1}^k \beta_j^2 \right\}.$$
+
+Or, alternatively:
+
+$$\hat{{\beta}}(t)^{RR} = \arg\min_{{\beta}} 
+  \sum_{i=1}^n \left (y_i - \sum_{j=1}^{k} x_{ij} \beta_j\right )^2, $$ 
+subject to
+$$\sum_{j=1}^k \beta_j^2 \le t .$$
+
+#### Role of the *Regularization Parameter*
+
+The regularization parameter $\lambda\geq 0$ directly controls the bias-variance trade-off:
+
+ - $\lambda = 0$ corresponds to OLS, and
+ - $\lambda \rightarrow \infty$ puts more weight on the penalty function and results in more shrinkage of the coefficients, i.e., we introduce bias at the sake of reducing the variance.
+
+The choice of $\lambda$ is crucial and will be discussed below as each $\lambda$ results in a different solution $\hat{{\beta}}(\lambda)$.  
+
+#### LASSO
+
+The LASSO (Least Absolute Shrinkage and Selection Operator) regularization relies on: 
+$$\arg\min J({\beta}) = \sum_{j=1}^k |\beta_j| =  \| {\beta} \|_1,$$
+which leads to the following objective function:
+$$\hat{{\beta}}(\lambda)^{L} = \arg\min_{\beta} 
+  \left\{\sum_{i=1}^n \left (y_i - \sum_{j=1}^{k} x_{ij} \beta_j\right )^2 + 
+  \lambda \sum_{j=1}^k |\beta_j| \right\}.$$
+
+In practice, subtle changes in the penalty terms frequently lead to big differences in the results. Not only does the regularization term shrink coefficients towards zero, but it sets some of them to be exactly zero. Thus, it performs continuous variable selection, hence the name, Least Absolute Shrinkage and Selection Operator (LASSO).
+
+For further details, see the [Tibshirani's LASSO website](https://statweb.stanford.edu/~tibs/lasso.html).
+
+### General Regularization Framework
+
+The general regularization framework involves optimization of a more general objective function:
+
+$$\min_{f \in {\mathcal{H}}} \sum_{i=1}^n \left\{L(y_i, f(x_i)) + \lambda J(f)\right\}, $$
+
+where $\mathcal{H}$ is a space of possible functions, $L$ is the *fidelity term*, e.g., squared error, absolute error, zero-one, negative log-likelihood (GLM), hinge loss (support vector machines), and $J$ is the *regularizer*, e.g., [ridge regression, LASSO, adaptive LASSO, group LASSO, fused LASSO, thresholded LASSO, generalized LASSO, constrained LASSO, elastic-net, Dantzig selector, SCAD, MCP, smoothing splines](https://www.stat.cmu.edu/~ryantibs/papers/genlasso.pdf), etc. 
+
+This represents a very general and flexible framework that allows us to incorporate prior knowledge (sparsity, structure, etc.) into the model estimation.
+
+### Likelihood Ratio Test (LRT), False Discovery Rate (FDR), and Logistic Transform
+
+These concepts will be important in theoretical model development as well as in the applications we show below.
+
+#### Likelihood Ratio Test (LRT)
+
+The Likelihood Ratio Test (LRT) compares the data fit of two models. For instance, removing predictor variables from a model may reduce the model quality (i.e., a model will have a lower log likelihood). To statistically assess whether the observed difference in model fit is significant, the LRT compares the difference of the log likelihoods of the two models. When this difference is statistically significant, the full model (the one with more variables) represents a better fit to the data, compared to the reduced model. LRT is computed using the log likelihoods ($ll$) of the two models:
+
+$$LRT = -2 \ln\left (\frac{L(m_1)}{L(m_2)}\right )  = 2(ll(m_2)-ll(m_1)), $$
+where:
+
+ - $m_1$ and $m_2$ are the reduced and the full models, respectively,
+ - $L(m_1)$ and $L(m_2)$ denote the likelihoods of the 2 models, and
+ - $ll(m_1)$ and $ll(m_2)$ represent the *log likelihood* (natural log of the model likelihood function).
+
+As $n\longrightarrow \infty$, the distribution of the LRT is asymptotically chi-squared with degrees of freedom equal to the number of parameters that are reduced (i.e., the number of variables removed from the model). In our case, $LRT \sim \chi_{df=2}^2$, as we have an intercept and one predictor (SE), and the null model is empty (no parameters).
+
+#### False Discovery Rate (FDR)
+
+The FDR rate measures the performance of a test:
+
+$$\underbrace{FDR}_{\text{False Discovery Rate}} =\underbrace{E}_{\text{expectation}} \underbrace{\left( \frac{\# False Positives}{\text{total number of selected features}}\right )}_{\text{False Discovery Proportion}}.$$
+
+The Benjamini-Hochberg (BH) FDR procedure involves ordering the p-values, specifying a target FDR, calculating and applying the threshold. Below we show how this is accomplished in R.
+
+```{r eval=T, warning=F, message=F, error=F}
+# List the p-values (these are typically computed by some statistical
+# analysis, later these will be ordered from smallest to largest)
+pvals <- c(0.9, 0.35, 0.01, 0.013, 0.014, 0.19, 0.35, 0.5, 0.63, 0.67, 0.75, 0.81, 0.01, 0.051)
+length(pvals)
+#enter the target FDR
+alpha.star <- 0.05
+
+# order the p-values small to large
+pvals <- sort(pvals); pvals
+
+#calculate the threshold for each p-value
+# threshold[i] = alpha*(i/n), where i is the index of the ordered p-value
+threshold<-alpha.star*(1:length(pvals))/length(pvals)
+
+# for each index, compare the p-value against its threshold and display the results
+cbind(pvals, threshold, pvals<=threshold)
+```
+
+Starting with the smallest p-value and moving up, we find that the largest $k$ for which the corresponding p-value is less than its threshold, $\alpha^*$, which yields an index $\hat{k}=4$.
+
+Next, the algorithm rejects the null hypotheses for the tests that correspond to p-values with indices $k\leq \hat{k}=4$, i.e., we determine that $p_{(1)}, p_{(2)}, p_{(3)}, p_{(4)}$ survive FDR correction for multiple testing.
+
+*Note*: Since we controlled FDR at $\alpha^*=0.05$, we expect that on average only 5% of the tests that we rejected are spurious. In other words, of the FDR-corrected p-values, only about $\alpha^*=0.05$ are expected to represent false-positives, e.g., features chosen to be salient, that are in fact not really important.
+
+As a comparison, the *Bonferroni corrected* $\alpha$-value for these data is $\frac{0.05}{14} = 0.0036$. Note that Bonferroni coincides with the 1-st threshold value corresponding to the smallest p-value. If we had used this correction for multiple testing, then we would have concluded that *none* of our $14$ results were significant!
+
+#### Graphical Interpretation of the Benjamini-Hochberg (BH) Method
+
+There's an intuitive graphical interpretation of the BH calculations. 
+
+ - Sort the $p$-values from largest to smallest.
+ - Plot the ordered p-values $p_{(k)}$ on the y-axis versus their indices on the x-axis.
+ - Superimpose on this plot a line that passes through the origin and has slope $\alpha^*$.
+
+Any p-value that falls on or below this line corresponds to a significant result.
+
+```{r eval=T, message=F, error=F, warning=F}
+#generate the "relative-indices" (i/n) that will be plotted on the x-axis
+x.values<-(1:length(pvals))/length(pvals)
+
+#select observations that are less than threshold
+for.test <- cbind(1:length(pvals), pvals)
+pass.test <- for.test[pvals <= 0.05*x.values, ]
+pass.test
+#use largest k to color points that meet Benjamini-Hochberg FDR test
+last<-ifelse(is.vector(pass.test), pass.test[1], pass.test[nrow(pass.test), 1])
+
+#widen right margin to make room for labels
+par(mar=c(4.1, 4.1, 1.1, 4.1))
+
+#plot the points (relative-index vs. probability-values)
+# we can also plot the y-axis on a log-scale to spread out the values
+# plot(x.values, pvals, xlab=expression(i/n), ylab="log(p-value)", log = 'y')
+
+# plot(x.values, pvals, xlab=expression(i/n), ylab="p-value")
+# #add FDR line
+# abline(a=0, b=0.05, col=2, lwd=2)
+# #add naive threshold line
+# abline(h=.05, col=4, lty=2)
+# #add Bonferroni-corrected threshold line
+# abline(h=.05/length(pvals), col=4, lty=2)
+# #label lines
+# mtext(c('naive', 'Bonferroni'), side=4, at=c(.05, .05/length(pvals)), las=1, line=0.2)
+# #use largest k to color points that meet Benjamini-Hochberg FDR test
+# points(x.values[1:last], pvals[1:last], pch=19, cex=1.5)
+
+plot_ly(x=~x.values, y=~pvals, type="scatter", mode="markers", marker=list(size=15), 
+        name="observed p-values", symbols='o') %>%
+  # add bounding horizontal lines
+  # add naive threshold line
+  add_lines(x=~c(0,1), y=~c(0.05, 0.05), mode="lines", line=list(dash='dash'), name="p=0.05") %>%
+  # add conservative Bonferroni line
+  add_lines(x=~c(0,1), y=~c(0.05/length(pvals), 0.05/length(pvals)), mode="lines", 
+            line=list(dash='dash'), name="Bonferroni (p=0.05/n)") %>%
+  # add FDR line
+  add_lines(x=~c(0,1), y=~c(0, 0.05), mode="lines", line=list(dash='dash'), name="FDR Line") %>%
+  # highlight the largest k to color points meeting the Benjamini-Hochberg FDR test
+  add_trace(x=~x.values[1:last], y=~pvals[1:last], mode="markers",symbols='0', name="FDR Test Points") %>%
+  layout (title="Benjamini-Hochberg FDR Test", legend = list(orientation='h'),
+          xaxis=list(title=expression(i/n)), yaxis=list(title="p-value"))
+```
+
+#### FDR adjusting the $p$-values
+
+`R` can automatically perform the Benjamini-Hochberg procedure. The adjusted p-values are obtained by
+
+```{r eval=T, warning=F, message=F, error=F}
+pvals.adjusted <- p.adjust(pvals, "BH")
+pvals.adjusted
+```
+
+The adjusted p-values indicate the corresponding null hypothesis we need to reject to preserve the initial $\alpha^*$ false-positive rate. We can also compute the adjusted p-values as follows:
+
+```{r eval=T, warning=F, message=F, error=F}
+# manually calculate the thresholds for the ordered p-values list
+test.p <- length(pvals)/(1:length(pvals))*pvals   # test.p
+
+# loop through each p-value and carry out the manual FDR adjustment for multiple testing
+adj.p <- numeric(14)
+for(i in 1:14) {
+    adj.p[i]<-min(test.p[i:length(test.p)])
+    ifelse(adj.p[i]>1, 1, adj.p[i])
+}
+adj.p
+```
+
+Note that the manually computed (`adj.p`) and the automatically computed (`pvals.adjusted`) adjusted-p-values are the same.
+
+### Logistic Transformation
+
+For **binary outcome variables**, or **ordinal categorical variables**, we may need to employ the `logistic curve` to transform the polytomous outcomes into real values.
+
+The Logistic curve is $y=f(x)=  \frac{1}{1+e^{-x}}$, 
+where y and x represent probability and quantitative-predictor values, respectively. A slightly more general form is: $y=f(x)=  \frac{K}{1+e^{-x}}$, where the covariate $x \in (-\infty, \infty)$ and the response $y \in [0, K]$. For example, 
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+library("ggplot2")
+k=7
+x <- seq(-10, 10, 0.1)
+# plot(x, k/(1+exp(-x)), xlab="X-axis (Covariate)", ylab="Outcome k/(1+exp(-x)), k=7", type="l")
+
+plot_ly(x=~x, y=~k/(1+exp(-x)), type="scatter", mode="line", name="Logistic model") %>%
+  layout (title="Logistic Model Y=k/(1+exp(-x)), k=7",
+          xaxis=list(title="x"), yaxis=list(title="Y=k/(1+exp(-x))"))
+```
+
+The point of this logistic transformation is that:
+$$y=  \frac{1}{1+e^{-x}} \Longleftrightarrow x=\ln\frac{y}{1-y},$$
+which represents the `log-odds` (when $y$ is the probability of an event of interest)!!!
+
+We use the logistic regression equation model to estimate the probability of specific outcomes:
+
+(Estimate of)$P(Y=1| x_1, x_2, \cdots, x_l)=  \frac{1}{1+e^{-(a_o+\sum_{k=1}^l{a_k x_k })}}$, 
+where the coefficients $a_o$ (intercept) and effects $a_k, k = 1, 2, \cdots, l$, are estimated using GLM according to a maximum likelihood approach. Using this model allows us to estimate the probability of the dependent (clinical outcome) variable $Y=1$ (CO), i.e., surviving surgery, given the observed values of the predictors $X_k, k = 1, 2, \cdots, l$.
+
+#### Example: Heart Transplant Surgery
+
+Let's look at an example of estimating the **probability of surviving a heart transplant based on surgeon's experience**. Suppose a group of 20 patients undergo heart transplantation with different surgeons having experience in the range {0(least), 2, ..., 10(most)}, representing 100's of operating/surgery hours. How does the surgeon's experience affect the probability of the patient surviving?
+
+The data below shows the outcome of the surgery (1=survival) or (0=death) according to the surgeons' experience in 100's of hours of practice.
+
+Surgeon's Experience (SE) | 1 | 1.5 | 2 | 2.5 | 3 | 3.5 | 3.5 | 4 | 4.5 | 5 | 5.5 | 6 | 6.5 | 7 | 8 | 8.5 | 9 | 9.5 | 10 | 10
+----------------------|---|-----|---|-----|---|-----|-----|---|-----|---|-----|---|-----|---|---|-----|---|-----|----|---
+Clinical Outcome (CO) | 0 | 0   | 0 | 0   | 0 | 0   | 1   | 0 | 1   | 0 | 1   | 0 | 1   | 0 | 1 | 1   | 1 | 1   | 1  | 1
+
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+mydata <- read.csv("https://umich.instructure.com/files/405273/download?download_frd=1")  # 01_HeartSurgerySurvivalData.csv
+# estimates a logistic regression model for the clinical outcome (CO), survival, using the glm 
+# (generalized linear model) function. 
+# convert Surgeon's Experience (SE) to a factor to indicate it should be treated as a categorical variable.
+# mydata$rank <- factor(mydata$SE)
+# mylogit <- glm(CO ~ SE, data = mydata, family = "binomial")
+# library(ggplot2)
+# ggplot(mydata, aes(x=SE, y=CO)) + geom_point() + 
+#   	stat_smooth(method="glm", method.args=list(family = "binomial"), se=FALSE)
+
+mylogit <- glm(CO ~ SE, data=mydata, family = "binomial")
+
+plot_ly(data=mydata, x=~SE, y=~CO, type="scatter", mode="markers", name="Data", marker=list(size=15)) %>%
+  add_trace(x=~SE, y=~mylogit$fitted.values, type="scatter", mode="lines", name="Logit Model") %>%
+  layout (title="Logistic Model Clinical Outcome ~ Surgeon's Experience",
+          xaxis=list(title="SE"), yaxis=list(title="CO"), hovermode = "x unified")
+```
+
+Graph of a logistic regression curve showing probability of surviving the surgery versus surgeon's experience.
+
+The graph shows the probability of the clinical outcome, survival, (Y-axis) versus the surgeon's experience (X-axis), with the logistic regression curve fitted to the data.
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+mylogit <- glm(CO ~ SE, data = mydata, family = "binomial")
+summary(mylogit)
+```
+
+The output indicates that a surgeon's experience (SE) is significantly associated with the probability of surviving the surgery (0.0157, Wald test). The output also provides the coefficients for:
+
+* Intercept = -4.1030 and  SE = 0.7583.
+
+These coefficients can then be used in the logistic regression equation model to estimate the probability of surviving the heart surgery:
+
+Probability of surviving heart surgery $CO =1/(1+exp(-(-4.1030+0.7583\times SE)))$
+
+For example, for a patient who is operated by a surgeon with 200 hours of operating experience (SE=2), we plug in the value 2 in the equation to get an estimated probability of survival, $p=0.07$:
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+SE=2
+CO =1/(1+exp(-(-4.1030+0.7583*SE)))
+CO
+```
+
+[1] 0.07001884
+
+Similarly, a patient undergoing heart surgery with a doctor that has 400 operating hours experience (SE=4), the estimated probability of survival is p=0.26:
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+SE=4; CO =1/(1+exp(-(-4.1030+0.7583*SE))); CO
+CO
+
+for (SE in c(1:5)) {
+  CO <- 1/(1+exp(-(-4.1030+0.7583*SE))); 
+  print(c(SE, CO))
+}
+```
+
+[1] 0.2554411
+
+The table below shows the probability of surviving surgery for several values of surgeons' experience.
+
+Surgeon's Experience (SE) | Probability of patient survival (Clinical Outcome)
+----------------------|---------------------------------------------------
+1                     | 0.034
+2                     | 0.07
+3                     | 0.14
+4                     | 0.26
+5                     | 0.423
+
+The output from the logistic regression analysis yields an SE effect of $\beta=0.0157$, which is based on the Wald z-score. In addition to the Wald method, we can calculate the p-value for logistic regression using the Likelihood Ratio Test (LRT), which for these data yields $0.0006476922$.
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+mylogit <- glm(CO ~ SE, data = mydata, family = "binomial")
+summary(mylogit)
+```
+
+.  | Estimate  | Std. Error  | z value | $Pr(\gt|z|)$ Wald 
+---|-----------|-------------|---------|--------------
+SE | 0.7583    | 0.3139      | 2.416   | 0.0157 *
+
+The *logit* of a number $0\leq p\leq 1$ is given by the formula: $logit(p)=log\frac{p}{1-p}$, and represents the log-odds ratio (of survival in this case).
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+confint(mylogit) 
+```
+
+So, why `exponentiating the coefficients`? Because, 
+
+$$logit(p)=\log\frac{p}{1-p} \longrightarrow e^{logit(p)} =e^{\log\frac{p}{1-p}}\longrightarrow RHS=\frac{p}{1-p}, \ 
+\text{(odds-ratio, OR)}.$$
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+exp(coef(mylogit)) 	  # exponentiated logit model coefficients
+```
+
+  + exp(coef(mylogit))
+  
+(Intercept) | SE 
+------------|----
+0.01652254  | 2.13474149 == exp(0.7583456)
+
+  +  coef(mylogit)    	# raw logit model coefficients 
+
+(Intercept) | 	SE 
+------------|------
+-4.1030298 |	0.7583456
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+exp(cbind(OR = coef(mylogit), confint(mylogit)))
+```
+
+  .         | OR          | 2.5%          | 97.5%      
+------------|-------------|---------------|---------
+(Intercept) | 0.01652254  | 0.0001825743  | 0.277290
+SE          | 2.13474149  | 1.3083794719  | 4.839986
+
+We can compute the LRT and report its p-value by using the `with()` function:
+
+`with(mylogit, df.null - df.residual)`
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+with(mylogit, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+# mylogit$null.deviance - mylogit$deviance  # 11.63365
+# mylogit$df.null - mylogit$df.residual   # 1
+# [1] 0.0006476922
+
+# CONFIRM THE RESULT
+# qchisq(1-with(mylogit, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)), 1)
+# qchisq(1-0.0006476922, 1)
+```
+
+LRT p-value < 0.001 tells us that our model as a whole fits significantly better than an empty model. The deviance residual `mylogit$deviance` is `-2*log likelihood`, and we can report the model's log likelihood by:
+
+```{r eval=TRUE, warning=F, message=F, error=F}
+mylogit$deviance   # model residual deviance
+
+-2*logLik(mylogit) # -2 * model_ll
+```
+
+
+### Implementation of Regularization
+
+Before we dive into the theoretical formulation of model regularization, let's start with a specific application that will ground the subsequent analytics.
+
+#### Example: Neuroimaging-genetics study of Parkinson's Disease Dataset
+
+More information about this specific study and the included derived [neuroimaging biomarkers is available here](https://wiki.socr.umich.edu/index.php/SOCR_Data_PD_BiomedBigMetadata). A link to the data and a brief summary of the features are included below:
+
+ - [05_PPMI_top_UPDRS_Integrated_LongFormat1.csv](https://umich.instructure.com/files/330397/download?download_frd=1)
+ - Data elements include: FID_IID, L_insular_cortex_ComputeArea, L_insular_cortex_Volume, R_insular_cortex_ComputeArea, R_insular_cortex_Volume, L_cingulate_gyrus_ComputeArea, L_cingulate_gyrus_Volume, R_cingulate_gyrus_ComputeArea, R_cingulate_gyrus_Volume, L_caudate_ComputeArea, L_caudate_Volume, R_caudate_ComputeArea, R_caudate_Volume, L_putamen_ComputeArea, L_putamen_Volume, R_putamen_ComputeArea, R_putamen_Volume, Sex, Weight, ResearchGroup, Age, chr12_rs34637584_GT, chr17_rs11868035_GT, chr17_rs11012_GT, chr17_rs393152_GT, chr17_rs12185268_GT, chr17_rs199533_GT, UPDRS_part_I, UPDRS_part_II, UPDRS_part_III, time_visit
+
+Note that the dataset includes missing values and repeated measures.
+
+The *goal* of this demonstration is to use `OLS`, `ridge regression`, and `LASSO` to **find the best predictive model for the clinical outcomes** -- UPDRS score (vector) and Research Group (factor variable), in terms of demographic, genetics, and neuroimaging biomarkers.
+
+We can utilize the `glmnet` package in R for most calculations.
+
+```{r setup, eval=TRUE, warning=F, message=F, error=F}
+#### Initial Stuff ####
+# clean up
+rm(list=ls())
+# load required packages
+# install.packages("arm")
+library(glmnet)
+library(arm)
+library(knitr) #  kable function to convert tabular R-results into Rmd tables
+# pick a random seed, but set.seed(seed) only affects the next block of code!
+seed = 1234
+
+#### Organize Data ####
+# load dataset
+# Data: https://umich.instructure.com/courses/38100/files/folder/data  
+# (05_PPMI_top_UPDRS_Integrated_LongFormat1.csv)
+data1 <- read.table('https://umich.instructure.com/files/330397/download?download_frd=1', sep=",", header=T)    
+# we will deal with missing values using multiple imputation later. For now, let's just ignore incomplete cases
+data1.completeRowIndexes <- complete.cases(data1); table(data1.completeRowIndexes)
+prop.table(table(data1.completeRowIndexes))
+attach(data1)
+# View(data1[data1.completeRowIndexes, ])
+
+# define response and predictors
+y <- data1$UPDRS_part_I + data1$UPDRS_part_II + data1$UPDRS_part_III
+table(y)   # Show Clinically relevant classification
+y <- y[data1.completeRowIndexes]
+
+# X = scale(data1[,])  # Explicit Scaling is not needed, as glmnet auto standardizes predictors
+# X = as.matrix(data1[, c("R_caudate_Volume", "R_putamen_Volume", "Weight", "Age", "chr17_rs12185268_GT")])  # X needs to be a matrix, not a data frame
+drop_features <- c("FID_IID", "ResearchGroup", "UPDRS_part_I", "UPDRS_part_II", 
+                   "UPDRS_part_III", "time_visit")
+X <- data1[ , !(names(data1) %in% drop_features)]
+X = as.matrix(X)   # remove columns: index, ResearchGroup, and y=(PDRS_part_I + UPDRS_part_II + UPDRS_part_III)
+X <- X[data1.completeRowIndexes, ]
+summary(X)
+
+# randomly split data into training (80%) and test (20%) sets
+set.seed(seed)
+train = sample(1 : nrow(X), round((4/5) * nrow(X)))
+test = -train
+
+# subset training data
+yTrain = y[train]
+XTrain = X[train, ]
+XTrainOLS = cbind(rep(1, nrow(XTrain)), XTrain)
+  
+# subset test data
+yTest = y[test]
+XTest = X[test, ]
+
+#### Model Estimation & Selection ####
+# Estimate models
+fitOLS = lm(yTrain ~ XTrain)  # Ordinary Least Squares
+# glmnet automatically standardizes the predictors
+fitRidge = glmnet(XTrain, yTrain, alpha = 0)  # Ridge Regression
+fitLASSO = glmnet(XTrain, yTrain, alpha = 1)  # The LASSO
+```
+
+Readers are encouraged to compare and contrast the resulting *ridge* and *LASSO* models.
+
+### Computational Complexity
+
+Recall that the regularized regression estimates depend on the regularization parameter $\lambda$. Fortunately, efficient algorithms for choosing optimal $\lambda$ parameters do exist. Examples of solution path algorithms include:
+
+ - [LARS Algorithm for the LASSO](https://projecteuclid.org/euclid.aos/1083178935) (Efron et al., 2004)
+ - [Piecewise linearity](https://www.jstor.org/stable/25463590?seq=1#page_scan_tab_contents) (Rosset & Zhu, 2007)
+ - [Generic path algorithm](https://dx.doi.org/10.1080/01621459.2013.864166) (Zhou & Wu, 2013)
+ - [Pathwise coordinate descent](https://projecteuclid.org/euclid.aoas/1196438020) (Friedman et al., 2007)
+ - [Alternating Direction Method of Multipliers (ADMM)](https://doi.org/10.1561/2200000016) (Boyd et al. 2011)
+
+We will show how to visualize the relations between the regularization parameter ($\ln(\lambda)$) and the number and magnitude of the corresponding coefficients for each specific regularized regression method.
+
+### Ridge and LASSO Algorithms
+
+Below we will demonstrate *hands-on implementations of the Ridge and LASSO regularization algorithms.* These *manual Ridge/LASSO functions*, `ridge()` and
+`lasso()` draw direct parallels between the mathematical foundations of
+regularized linear modeling, the symbolic matrix computational algorithms, 
+and the corresponding empirical validations. In practical linear modeling
+applications, to avoid complexities, improve performance, and ensure
+reproducibility, it's always best to utilize the highly-optimized, 
+extensively validated, and generic `R` function `glmnet()`. Again, 
+in this demonstration we use the `UPDRS` (Parkinson's disease) dataset
+to predict the latent outcome UPDRS
+
+$$y =UPDRS\_part\_I + UPDRS\_part\_II + UPDRS\_part\_III$$
+using the other covariates.
+
+For each regularization scheme (ridge or LASSO) the algorithms will include the following four steps:
+
+ 1. Define the regularized loss-function,
+ 2. Optimize the objective (loss function), see [DSPA Chapter 13 (Optimization) for details](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html),
+ 3. Derive the effect-size estimates $\beta$'s using matrix algebra, see [DSPA Chapter 3 (Linear Algebra and Matrix Computing) for details](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html),
+ 4. Compare and contrast the alternative linear model coefficient estimates.
+
+#### Manual Ridge Linear Modeling
+
+```{r manualRidge, fig.align='center', fig.height=5.8, fig.width=8.5, warning=F, message=F, error=F}
+# 1. Define RIDGE Loss
+# X: model Design matrix (observed covariates data) 
+# y: target (observed outcomes of interest)
+# lambda: regularization parameter (default to 0.1)
+# beta:  effect-size estimates for all covariates in X (incl. intercept)
+ridge <- function(beta, X, y, lambda = 0.1) {
+  crossprod(y - X %*% beta) + lambda * length(y) * crossprod(beta)
+}
+
+X = XTrain
+y = yTrain
+
+# 2. Optimize the Ridge objective (loss function), See DSPA Chap. 13 (Optimization)
+result_ridgeOptimization <-
+  optim(rep(0, ncol(X)), ridge, X=X, y=y, lambda=0.1, method='BFGS')
+
+# 3. Analytic Ridge solution
+result_ridgeAnalytic <-
+  solve(crossprod(X) + diag(length(y)*.1, ncol(X))) %*% crossprod(X, y)
+
+# 4. Official `glmnet()` Ridge solution (alpha=0 corresponds to Ridge)
+library(glmnet)
+glmnet_res <-
+  coef(glmnet(X, y, alpha=0,lambda=c(10, 1, 0.1), 
+              thresh=1e-12, intercept=F), s=0.1)
+
+# 4. Compare and Contrast the 4 alternative Linear Model solutions
+library(DT)
+df <- data.frame(covariates=colnames(X),
+                 lm=coef(lm(y ~ . -1, data.frame(X))),
+                 ridgeOptim  = result_ridgeOptimization$par,
+                 ridgeAnalyt = result_ridgeAnalytic,
+                 glmnet = glmnet_res[-1, 1])
+datatable(df[, -1], caption="Compare & Contrast Ridge and Alternative Linear Model Estimates")
+df_long <- df %>%
+  pivot_longer(!covariates, names_to = "Method", values_to = "betaEstimates")
+plot_ly(data=df_long, x=~covariates, y=~betaEstimates, 
+        color=~Method, symbol=~Method, type="scatter", mode="markers") %>%
+  layout(title="UPDRS: Comparing Automated and Manual Ridge Linear Model Estimation")
+```
+
+#### Manual LASSO Linear Modeling
+
+[This blog post outlines the details of the derivation of coordinate descent for LASSO regularized linear modeling](https://xavierbourretsicotte.github.io/lasso_derivation.html).
+
+##### LASSO algorithmic Solution
+
+The cyclic coordinate descent LASSO optimization leading to the effect-size estimates
+requires iteratively going over all features, one at a time, and minimizing the loss
+function with respect to each effect-size, $\beta_i$:
+
+ - Start with an initial guess $\beta^{(0)}=(\beta^{(0)}_1,\cdots,\beta^{(0)}_n)$.
+ - At $k+1$ iteration, define $\beta^{(k+1)}$ in terms of $\beta^{(k)}$ by iteratively solving the single variable optimization problem $\beta_i^{(k+1)} = \arg\min_{\omega} f(\beta_1^{(k+1)}, \cdots, \beta_{i-1}^{(k+1)}, \underbrace{\omega}_{optimiz.}, \beta_{i+1}^{(k)}, \cdots, \beta_n^{(k)})$, corresponding to $\beta_i:=\beta_i - \alpha \frac{\partial f}{\partial \beta_i}(\beta)$.
+ - Repeat for each effect-size $\beta_i,\ \forall 1\leq i\leq n$.
+
+As a single variable optimization problem, the LASSO cost function optimization 
+has a closed form solution in the special case of coordinate descent. 
+For normalized data, the closed form solution is defined in terms of the 
+*soft threshold* function
+
+$$\hat{\beta}_j^{LASSO}=\mathcal{S}(\hat{\beta}_j^{LS}, \lambda)\equiv \begin{aligned}
+     \begin{cases}
+       \hat{\beta}_j^{LS} + \lambda , & \text{for} \ \hat{\beta}_j^{LS} < - \lambda \\
+       0, & \text{for} \ - \lambda \leq \hat{\beta}_j^{LS} \leq \lambda \\
+       \hat{\beta}_j^{LS} - \lambda , & \text{for} \ \hat{\beta}_j^{LS} > \lambda 
+    \end{cases}
+\end{aligned}\ .$$
+
+Iterative coordinate descent updating involves repeating this step either
+until a convergence tolerance is achieved or the max number of iterations is exceeded.
+
+$$\hat{\beta}_j^{LASSO}=\mathcal{S}(\hat{\beta}_j^{LS} := \sum_{i=1}^m { \left ( x_j^{(i)}  \left (y^{(i)}  - 
+\sum_{k \neq j}^n \hat{\beta}_j^{LASSO} x_k^{(i)} \right ) \right )} = \\
+\sum_{i=1}^m x_j^{(i)}  \left ( y^{(i)}  - \hat y^{(i)}_{pred} + \hat{\beta}_j^{LASSO} x_j^{(i)} \right )\ , \\
+\hat{\beta}_j^{LASSO} :=\mathcal{S}(\hat{\beta}_j^{LS} , \lambda)\ .$$
+
+Notice that any constant (intercept) term $\beta_o$ is not regularized, i.e., 
+$\hat{\beta}_o^{LASSO}=\hat{\beta}_o^{LS}$.
+
+The example below shows a rudimentary `lasso()` function definition, which has
+certain level of flexibility in particular to accommodate kernel-based linear regularization
+modeling.
+
+```{r manualLASSO, fig.align='center', fig.height=5.8, fig.width=8.5, warning=F, message=F, error=F}
+# Use the same UPDRS Parkinson's disease dataset
+X = XTrain   
+y = yTrain
+X = apply(X, 2, scales::rescale, to = c(0, 1))  # normalize/scale the features!
+
+lambda = 0.1
+
+inverse <- function(X, eps = 1e-9) { # a generalization of solve() to avoid singularities
+  eig.X = eigen(X, symmetric = TRUE)
+  P = eig.X[[2]] 
+  lambda = eig.X[[1]]
+  # to avoid singularities, identify the indices of all eigenvalues > epsilon
+  ind = lambda > eps
+  lambda[ind]  = 1/lambda[ind] 
+  lambda[!ind] = 0
+  P %*% diag(lambda) %*% t(P)
+}
+
+# Default Linear kernel: k(x,y) = x' * y
+rk <- function(s, t) {
+  init_len = length(s)
+  rk = 0
+  for (i in 1:init_len) { rk = s[i]*t[i] + rk }
+  return(rk)
+} 
+
+# Gram Function - kernelized cross-product
+gram <- function(X, rkfunc = rk) { # compute the `crossprod` using the specified RK
+  apply(X, 1, function(Row) 
+    apply(X, 1, function(tRow) rkfunc(Row, tRow)) # specifies the Reproducing Kernel
+  )  
+}
+
+# When we kernalize the predicting covariate Design matrix X, 
+# we need to kernalize the response outcome Y, as well
+kernelized_y <- function(X,y, rkfunc = rk) { # compute the `crossprod` using the specified RK
+  apply(X, 1, function(Row) 
+     rkfunc(Row, y) # specifies the Reproducing Kernel
+  )  
+}
+
+# An alternative Laplace kernel, as an additional example
+rk_Laplace <- function(s, t, sigma=1) {
+  if (sigma <= 0) sigma=1  # avoid singularities
+  init_len = length(s)
+  rk_Lap = 0
+  for (i in 1:init_len) { rk_Lap = (s[i] - t[i])^2 + rk_Lap }
+  rk_Lap = exp(-(sqrt(rk_Lap))/sigma)
+  return(rk_Lap)
+} 
+
+# Naive LASSO
+lasso <- function(X, y, lambda=0.1, tol=1e-6, iter=100,kernel=rk) { # tolerance & iter-max
+  GramMatrix = gram(t(X),kernel)                            # GramMatrix (nxn) xTX
+
+# n = length(y)                                   
+Q = cbind(1, GramMatrix)                        # Formulate the Design matrix Q
+
+
+M = crossprod(Q)                     # no need for singularity protection as 6*6
+M_inv = inverse(M)                              # (XTXXTX)^(-1)
+
+
+kernel_y  = kernelized_y(t(X),y,kernel)  # kernelized \phi(y) linear case is XTy
+
+gamma_hat = crossprod(M_inv, crossprod(Q, kernel_y)) # Q and M_inv are both symmetric, this is the final (XTXXTX)^(-1)XTXXTy
+
+J = ncol(X)
+for (j in 1:J) { 
+  # The explicit formula for LASSO loss
+  gamma_hat[j] = gamma_hat[j]*max(0,1-length(gamma_hat)*lambda/abs(gamma_hat[j]))
+}
+
+f_hat = Q %*% gamma_hat
+  
+A = Q %*% M_inv %*% t(Q)
+tr_A = sum(diag(A))                             # trace of hat matrix
+
+rss  = crossprod(kernel_y - f_hat)                     # residual sum of squares
+gcv  = J*rss / (J - tr_A)^2                     # compute GCV score
+ return(list(f_hat = f_hat, beta_hat = 
+                gamma_hat, gcv = gcv,rss=rss))
+}
+
+# Test
+las = lasso(X,y)$beta_hat[-1]
+
+# 3. Official `glmnet()` LASSO solution (alpha=1 corresponds to LASSO)
+glmnet_res <-
+  coef(glmnet(X, y, alpha  = 1, lambda = lambda, 
+              thresh=1e-12, intercept=FALSE), s=lambda)
+
+# 5. Compare and Contrast the 4 alternative Linear Model solutions
+# df <- data.frame(covariates=colnames(X), lm=coef(lm(y ~ . -1, data.frame(X))),
+#                  lasso_soft=result_soft, lasso_hard=result_hard,
+#                  glmnet=glmnet_res[-1, 1])
+df <- data.frame(covariates=colnames(X), lm=coef(lm(y ~ . -1, data.frame(X))),
+                 lasso=las, glmnet=glmnet_res[-1, 1])
+
+datatable(df[, -1], caption="Compare & Contrast LASSO and Alternative Linear Model Estimates")
+df_long <- df %>%
+  pivot_longer(!covariates, names_to = "Method", values_to = "betaEstimates")
+plot_ly(data=df_long, x=~covariates, y=~betaEstimates, 
+        color=~Method, symbol=~Method, type="scatter", mode="markers") %>%
+  layout(title="UPDRS: Comparing Automated and Manual LASSO Linear Model Estimation")
+```
+
+```{r manualLASSOBackUp, echo=FALSE, eval=FALSE, fig.align='center', fig.height=5.8, fig.width=8.5, warning=F, message=F, error=F}
+# # Define a soft-thresholding utility function S(a=beta, b=lambda)
+# soft_thresh <- function(a, b) {
+#   out = rep(0, length(a))
+#   # out[a >  b] = a[a > b] - b
+#   # out[a < -b] = a[a < -b] + b
+#   for (i in 1:length(a)) {
+#     if (a[i] < -b) out[i] = a[i] + b
+#     else if (a[i] > b) out[i] = a[i] - b
+#   }
+#   return(out)
+# }
+# 
+# soft_thresh1 <- function(a, b) {
+#   out = 0
+#   if (a < -b) out = a + b
+#   else if (a > b) out = a - b
+#   return(out)
+# }
+# 
+# hard_thresh <- function(a, l) {
+#   out = a
+#   out[a < l & a > -l] = 0
+#   return(out)
+# }
+# 
+# # 1. Define LASSO Loss - Coordinate gradient descent for lasso regression using normalized data
+# # X: model Design matrix (observed covariates data) 
+# # y: target (observed outcomes of interest)
+# # lambda: regularization parameter (default to 0.1)
+# # soft: soft or hard thresholding of LS betas
+# # tol: convergence error tolerance level
+# # iter: maximum number of iterations (to prevent infinite loops)
+# # verbose: Boolean indicator to print out every 10-th iteration index (tracking)
+# lasso <- function(X, y, lambda=0.1,soft=TRUE,tol=1e-6,iter=100,verbose=TRUE) {
+#   # X = scale(X)/norm(X, type="O")
+#   X = scale(X)
+#   # X = X/(sqrt(sum(t(X) %*% X)))
+#   
+#   beta = solve(crossprod(X) + diag(lambda, ncol(X))) %*% crossprod(X,y)
+#   tol_curr = 1
+#   J = ncol(X)
+#   a = rep(0, J)
+#   c_ = rep(0, J)
+#   i = 1
+#   
+#   # while (tol < tol_curr && i < iter) {
+#   #   beta_old = beta
+#   #   a = colSums(t(X) %*% X)       # tcrossproduct( , )
+#   #   l = length(y)*lambda          # for consistency with glmnet approach
+#   #   pred = X %*% beta             # predicted
+#   #   c_ = sapply(1:J, function(j)  sum( t(X[,j]) %*% (y - pred + X[,-j] %*% beta_old[-j])))
+#   #   if (soft) {                   # soft threshold
+#   #     for (j in 1:J) {
+#   #       # beta[j] = soft_thresh(c_[j]/a[j], l/a[j])
+#   #       beta[j] = soft_thresh(c_[j], l)
+#   #     }
+#   #   } else {                      # hard threshold
+#   #       beta = beta_old
+#   #       beta[c_< l & c_ > -l] = 0
+#   #   }
+#   # 
+#   #   tol_curr = crossprod(beta - beta_old)
+#   #   i = i + 1
+#   #   if (verbose && i%%10 == 0) message(i)  # report verbose iteration
+#   # }
+#   
+#   # beta = rep(1, J)  # initialize the (Jeffrey's uniform prior on the effects, beta)
+#   beta_old = beta
+#   #Looping until max number of iterations
+#   while (tol < tol_curr && i < iter) {
+#     a = colSums(t(X) %*% X)       # tcrossproduct( , ) Normalization factor
+#     # Inner Looping through each coordinate index
+#     for (j in 1:J) {
+#         # Vectorized implementation
+#         X_j = X[,j]
+#         # beta_old[j] = beta[j]
+#         #   a = colSums(t(X) %*% X)       # tcrossproduct( , )
+#         l= lambda                   # length(y)*lambda for consistency with glmnet approach
+#         y_pred = X %*% beta            # predicted
+#         beta_old[j] = sum(t(X_j) %*% (y - y_pred  + beta[j]*X_j)) # /J
+# 
+#         if (soft) beta[j] =  soft_thresh(beta_old[j], l)
+#         else beta[j] = hard_thresh(beta_old[j], l)  # hard threshold case
+#     }
+#     tol_curr = crossprod(beta - beta_old)
+#     i = i + 1
+#     if (verbose && i%%10 == 0) message(i)  # report verbose iteration
+#   }
+#   return(beta)
+# }
+# 
+# # 2. Optimize the LASSO objective (loss function), See DSPA Chap. 13 (Optimization)
+# result_soft = lasso(X, y, lambda=lambda, tol=1e-12, soft=TRUE)
+# result_hard = lasso(X, y, lambda=lambda, tol=1e-12, soft=FALSE)
+```
+
+### LASSO and Ridge Solution Paths
+
+The plot for the *LASSO* results can be obtained as followis.
+
+```{r LASSOpath, eval=TRUE, fig.align='center', fig.height=5.8, fig.width=8.5, warning=F, message=F, error=F}
+library(RColorBrewer)
+### Plot Solution Path ###
+# LASSO
+# plot(fitLASSO, xvar="lambda", label="TRUE")
+# # add label to upper x-axis
+# mtext("LASSO regularizer: Number of Nonzero (Active) Coefficients", side=3, line=2.5)
+
+plot.glmnet <- function(glmnet.object, name="") {
+  df <- as.data.frame(t(as.matrix(glmnet.object$beta)))
+  df$loglambda <- log(glmnet.object$lambda)
+  df <- as.data.frame(df)
+  data_long <- gather(df, Variable, coefficient, 1:(dim(df)[2]-1), factor_key=TRUE)
+  
+  plot_ly(data = data_long) %>%
+    # add error bars for each CV-mean at log(lambda)
+    add_trace(x = ~loglambda, y = ~coefficient, color=~Variable, 
+              colors=colorRampPalette(brewer.pal(10,"Spectral"))(dim(df)[2]),  # "Dark2", 
+              type = 'scatter', mode = 'lines',
+              name = ~Variable) %>%
+    layout(title = paste0(name, " Model Coefficient Values"),
+							xaxis = list(title = paste0("log(",TeX("\\lambda"),")"),	side="bottom",  showgrid = TRUE),
+						  hovermode = "x unified", legend = list(orientation='h'),
+							yaxis = list(title = ' Model Coefficient Values',	side="left", showgrid = TRUE))
+}
+
+plot.glmnet(fitLASSO, name="LASSO")
+```
+
+Similarly, the plot for the *Ridge* regularization can be obtained by:
+
+```{r ridgepath, eval=TRUE, fig.align='center', fig.height=5.8, fig.width=8.5, warning=F, message=F, error=F}
+### Plot Solution Path ###
+# Ridge
+# plot(fitRidge, xvar="lambda", label="TRUE")
+# # add label to upper x-axis
+# mtext("Ridge regularizer: Number of Nonzero (Active) Coefficients", side=3, line=2.5)
+
+plot.glmnet(fitRidge, name="Ridge")
+```
+
+### Regression Solution Paths - Ridge vs. LASSO
+
+Let's try to compare the paths of the *LASSO* and *Ridge* regression solutions. Below, you will see that the curves of LASSO are steeper and non-differentiable at some points, which is the result of using the $L_1$ norm. On the other hand, the Ridge path is smoother and asymptotically tends to $0$ as $\lambda$ increases.
+
+Let's start by examining the joint objective function (including LASSO and Ridge terms):
+
+$$\min_\beta \left (\sum_i (y_i-x_i\beta)^2+\frac{1-\alpha}{2}||\beta||_2^2+\alpha||\beta||_1
+\right ),$$
+
+where $||\beta||_1 = \sum_{j=1}^{p}|\beta_j|$ and $||\beta||_2 = \sqrt{\sum_{j=1}^{p}||\beta_j||^2}$ are the norms of $\boldsymbol\beta$ corresponding to the $L_1$ and $L_2$ distance measures, respectively. The parameters $\alpha=0$ and $\alpha=1$ correspond to *Ridge* and *LASSO* regularization. The following two natural questions raise:
+
+ - What if $0 <\alpha<1$?
+ - How does the regularization penalty term affect the optimal solution?
+
+In [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html), we explored the minimal SSE (Sum of Square Error) for the OLS (without penalty) where the feasible parameter ($\beta$) spans the entire real solution space. In penalized optimization problems, the best solution may actually be unachievable. Therefore, we look for solutions that are "closest", within the feasible region, to the enigmatic best solution.
+
+The effect of the penalty term on the objective function is separate from the *fidelity term* (OLS solution). Thus, the effect of $0\leq \alpha \leq 1$ is limited to the **size and shape of the penalty region**. Let's try to visualize the feasible region as:
+
+ - centrosymmetric topology, when $\alpha=0$, and
+ - super diamond topology, when $\alpha=1$.
+
+Below is a hands-on demonstration of that process using the following simple quadratic equation solver.
+
+```{r echo=T, warning=F, message=F, error=F}
+library(needs)
+
+# Constructing Quadratic Formula
+quadraticEquSolver <- function(a,b,c){
+  if(delta(a,b,c) > 0){ # first case D>0
+    x_1 = (-b+sqrt(delta(a,b,c)))/(2*a)
+    x_2 = (-b-sqrt(delta(a,b,c)))/(2*a)
+    result = c(x_1,x_2)
+    # print(result)
+  }
+  else if(delta(a,b,c) == 0){ # second case D=0
+    result = -b/(2*a)
+    # print(result)
+  }
+  else {"There are no real roots."} # third case D<0
+}
+# Constructing delta
+delta<-function(a,b,c){
+  b^2-4*a*c
+}
+```
+
+To make this realistic, we will use the [MLB dataset](https://umich.instructure.com/files/330381/download?download_frd=1) to first fit an OLS model. The dataset contains $1,034$ records of *heights and weights* for some current and recent Major League Baseball (MLB) Players. 
+
+ - *Height*: Player height in inch,
+ - *Weight*: Player weight in pounds,
+ - *Age*: Player age at time of record.
+
+Then, we can obtain the SSE for any $||\boldsymbol\beta||$:
+
+$$SSE = ||Y-\hat Y||^2 = (Y-\hat Y)^{T}(Y-\hat Y)=Y^TY - 2\beta^TX^TY + \beta^TX^TX\beta.$$
+
+Next, we will compute the contours for SSE in several situations.
+
+```{r message=F, warning=F, error=F}
+library("ggplot2")
+# load data
+mlb <- read.table('https://umich.instructure.com/files/330381/download?download_frd=1', 
+                  as.is=T, header=T)
+str(mlb)
+fit <- lm(Height ~ Weight + Age -1, data = as.data.frame(scale(mlb[,4:6])))
+points = data.frame(x=c(0,fit$coefficients[1]),y=c(0,fit$coefficients[2]),z=c("(0,0)","OLS Coef"))
+
+Y=scale(mlb$Height)
+X = scale(mlb[,c(5,6)])
+beta1=seq(-0.556, 1.556, length.out = 100)
+beta2=seq(-0.661, 0.3386, length.out = 100)
+df <- expand.grid(beta1 = beta1, beta2 = beta2)
+b = as.matrix(df)
+df$sse <- rep(t(Y)%*%Y,100*100) - 2*b%*%t(X)%*%Y + diag(b%*%t(X)%*%X%*%t(b))
+```
+
+
+```{r message=F, warning=F, error=F}
+base <- ggplot(df) + 
+  stat_contour(aes(beta1, beta2, z = sse),breaks = round(quantile(df$sse, seq(0, 0.2, 0.03)), 0), 
+               size = 0.5,color="darkorchid2",alpha=0.8)+ 
+  scale_x_continuous(limits = c(-0.4,1))+
+  scale_y_continuous(limits = c(-0.55,0.4))+
+  coord_fixed(ratio=1)+
+  geom_point(data = points,aes(x,y))+
+  geom_text(data = points,aes(x,y,label=z),vjust = 2,size=3.5)+
+  geom_segment(aes(x = -0.4, y = 0, xend = 1, yend = 0),colour = "grey46",
+               arrow = arrow(length=unit(0.30,"cm")),size=0.5,alpha=0.8)+
+  geom_segment(aes(x = 0, y = -0.55, xend = 0, yend = 0.4),colour = "grey46",
+               arrow = arrow(length=unit(0.30,"cm")),size=0.5,alpha=0.8)
+```
+
+
+```{r message=F, warning=F, error=F}
+plot_alpha = function(alpha=0,restrict=0.2,beta1_range=0.2,annot=c(0.15,-0.25,0.205,-0.05)){
+  a=alpha; t=restrict; k=beta1_range; pos=data.frame(V1=annot[1:4])
+  text=paste("(",as.character(annot[3]),",",as.character(annot[4]),")",sep = "")
+  K = seq(0,k,length.out = 50)
+  y = unlist(lapply((1-a)*K^2/2+a*K-t, quadraticEquSolver,
+                    a=(1-a)/2,b=a))[seq(1,99,by=2)]
+  fills = data.frame(x=c(rev(-K),K), y1=c(rev(y),y), y2=c(-rev(y),-y))
+  p<-base+geom_line(data=fills,aes(x = x,y = y1),colour = "salmon1",alpha=0.6,size=0.7)+
+    geom_line(data=fills,aes(x = x,y = y2),colour = "salmon1",alpha=0.6,size=0.7)+
+    geom_polygon(data = fills, aes(x, y1),fill = "red", alpha = 0.2)+
+    geom_polygon(data = fills, aes(x, y2), fill = "red", alpha = 0.2)+
+    geom_segment(data=pos,aes(x = V1[1] , y = V1[2], xend = V1[3], yend = V1[4]),
+                 arrow = arrow(length=unit(0.30,"cm")),alpha=0.8,colour = "magenta")+
+    ggplot2::annotate("text", x = pos$V1[1]-0.01, y = pos$V1[2]-0.11,
+                      label = paste(text,"\n","Point of Contact \n i.e., Coef of", "alpha=",fractions(a)),size=3)+
+    xlab(expression(beta[1]))+
+    ylab(expression(beta[2]))+
+    ggtitle(paste("alpha =",as.character(fractions(a))))+
+    theme(legend.position="none")
+}
+```
+
+
+```{r message=F, warning=F, error=F}
+# $\alpha=0$ - Ridge
+p1 <- plot_alpha(alpha=0,restrict=(0.21^2)/2,beta1_range=0.21,annot=c(0.15,-0.25,0.205,-0.05))
+p1 <- p1 + ggtitle(expression(paste(alpha, "=0 (Ridge)")))
+# $\alpha=1/9$
+p2 <- plot_alpha(alpha=1/9,restrict=0.046,beta1_range=0.22,annot =c(0.15,-0.25,0.212,-0.02))
+p2 <- p2 + ggtitle(expression(paste(alpha, "=1/9")))
+# $\alpha=1/5$
+p3 <- plot_alpha(alpha=1/5,restrict=0.063,beta1_range=0.22,annot=c(0.13,-0.25,0.22,0))
+p3 <- p3 + ggtitle(expression(paste(alpha, "=1/5")))
+# $\alpha=1/2$
+p4 <- plot_alpha(alpha=1/2,restrict=0.123,beta1_range=0.22,annot=c(0.12,-0.25,0.22,0))
+p4 <- p4 + ggtitle(expression(paste(alpha, "=1/2")))
+# $\alpha=3/4$
+p5 <- plot_alpha(alpha=3/4,restrict=0.17,beta1_range=0.22,annot=c(0.12,-0.25,0.22,0))
+p5 <- p5 + ggtitle(expression(paste(alpha, "=3/4")))
+```
+
+
+```{r message=F, warning=F, error=F}
+# $\alpha=1$ - LASSO
+t=0.22
+K = seq(0,t,length.out = 50)
+fills = data.frame(x=c(-rev(K),K),y1=c(rev(t-K),c(t-K)),y2=c(-rev(t-K),-c(t-K)))
+p6 <- base + 
+  geom_segment(aes(x = 0, y = t, xend = t, yend = 0),colour = "salmon1",alpha=0.1,size=0.2)+
+  geom_segment(aes(x = 0, y = t, xend = -t, yend = 0),colour = "salmon1",alpha=0.1,size=0.2)+
+  geom_segment(aes(x = 0, y = -t, xend = t, yend = 0),colour = "salmon1",alpha=0.1,size=0.2)+
+  geom_segment(aes(x = 0, y = -t, xend = -t, yend = 0),colour = "salmon1",alpha=0.1,size=0.2)+
+  geom_polygon(data = fills, aes(x, y1),fill = "red", alpha = 0.2)+
+  geom_polygon(data = fills, aes(x, y2), fill = "red", alpha = 0.2)+
+  geom_segment(aes(x = 0.12 , y = -0.25, xend = 0.22, yend = 0),colour = "magenta",
+               arrow = arrow(length=unit(0.30,"cm")),alpha=0.8)+
+  ggplot2::annotate("text", x = 0.11, y = -0.36,
+                    label = "(0.22,0)\n Point of Contact \n i.e Coef of LASSO",size=3)+
+  xlab( expression(beta[1]))+
+  ylab( expression(beta[2]))+
+  theme(legend.position="none")+  
+  ggtitle(expression(paste(alpha, "=1 (LASSO)")))
+```
+
+Then, let's add the six feasible regions corresponding to $\alpha=0$ (Ridge), $\alpha=\frac{1}{9}$, $\alpha=\frac{1}{5}$, $\alpha=\frac{1}{2}$, $\alpha=\frac{3}{4}$ and $\alpha=1$ (LASSO).
+
+This figure provides some intuition into the continuum from Ridge to LASSO regularization. The feasible regions are drawn as ellipse contours of the SSE in *red*. Curves around the corresponding feasible regions represent the *boundary of the constraint function* $\frac{1-\alpha}{2}||\beta||_2^2+\alpha||\beta||_1\leq t$.
+
+In this example, $\beta_2$ shrinks to $0$ for $\alpha=\frac{1}{5}$, $\alpha=\frac{1}{2}$, $\alpha=\frac{3}{4}$ and $\alpha=1$.
+
+We observe that it is almost impossible for the contours of Ridge regression to touch the circle at any of the coordinate axes. This is also true in higher dimensions ($nD$), where the $L_1$ and $L_2$ metrics are unchanged and the 2D ellipse representations of the feasibility regions become hyper-ellipsoidal shapes.
+
+Generally, as $\alpha$ goes from $0$ to $1$. The coefficients of more features tend to shrink towards $0$. This specific property makes LASSO useful for variable selection.
+
+By Lagrangian duality, any solution of $\min_\beta {||Y-X\beta||^2_2} +\lambda ||\beta||_2$ and $\min_\beta {||Y-X\beta||_1} +\lambda ||\beta||_1$ must also represent a solution to the corresponding Ridge ($\hat{\beta}^{RR}$) or LASSO ($\hat{\beta}^{L}$) optimization problems:
+
+$$\min_\beta {||Y-X\beta||^2_2},\ \ \text{subject to}\ \ ||\beta||_2 \leq||\hat{\beta}^{RR}||_2, $$
+$$\min_\beta {||Y-X\beta||_1},\ \ \text{subject to}\ \ ||\beta||_1 \leq ||\hat{\beta}^{L}||_1, $$
+
+Suppose we actually know the values of $||\hat{\beta}^{RR}||_2$ and $||\hat{\beta}^{L}||_1$, then we can pictorially represent the optimization problem and illustrate the complementary model-fitting, variable selection and shrinkage of the Ridge and LASSO regularization.
+
+The topologies of the solution (*domain*) regions are different for Ridge and LASSO. Ridge regularization corresponds with ball topology and LASSO with diamond topology. This is because the solution regions are defined by $||\hat{\beta}||_2\leq ||\hat{\beta}^{RR}||_2$ and $||\hat{\beta}||_1\leq ||\hat{\beta}^{L}||_1$, respectively.
+
+On the other hand, the topology of the *fidelity term* $||Y-X\beta||^2_2$ is ellipsoidal, centered at the OLS estimate,  $\hat{\beta}^{OLS}$. To solve the optimization problem, 
+we look for the tightest contour around $\hat{\beta}^{OLS}$ that hits the solution domain (ball for Ridge or diamond for LASSO). This intersection point would represent the solution estimate $\hat{\beta}$.  As the LASSO domain space ($l_1$ unit ball) has these corners, the solution estimate $\hat{\beta}$ is likely to be at the corners. Hence LASSO solutions tend to include many zeroes, whereas Ridge regression solutions (constraint set is a round ball) may not.
+
+Let's compare the feasibility regions corresponding to *Ridge* (top, $p1$) and *LASSO* (bottom, $p6$) regularization.
+
+```{r fig.height=7,fig.width=7,fig.cap="SSE Contour and Penalty Region (Ridge).", warning=F, message=F, error=F}
+plot(p1)
+```
+
+```{r fig.height=7,fig.width=7,fig.cap="SSE Contour and Penalty Region (LASSO).", warning=F, message=F, error=F}
+plot(p6)
+```
+
+Then, we can plot the *progression* from Ridge to LASSO.
+(This composite *plot is intense* and may take several minutes to render!)
+
+```{r fig.height=14,fig.width=13,fig.cap="SSE Contour and Penalty Region for 6 values of Alpha.", warning=F, message=F, error=F}
+library("gridExtra")
+grid.arrange(p1,p2,p3,p4,p5,p6,nrow=3)
+```
+
+### Choice of the Regularization Parameter
+
+Efficiently obtaining the entire solution path is nice, but we still have to choose a specific $\lambda$ regularization parameter. This is critical as $\lambda$ `controls the bias-variance tradeoff`.
+
+Traditional model selection methods rely on various metrics like [Mallows' $C_p$](https://en.wikipedia.org/wiki/Mallows%27s_Cp), [AIC](https://en.wikipedia.org/wiki/Akaike_information_criterion), [BIC](https://en.wikipedia.org/wiki/Bayesian_information_criterion), and adjusted $R^2$.
+
+Internal statistical validation (Cross validation) is a popular modern alternative, which offers some of these benefits:
+
+ - Choice is based on predictive performance,
+ - Makes fewer model assumptions,
+ - More widely applicable.
+
+### Cross Validation Motivation
+
+We discussed statistical internal *cross validation* (CV) in [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html). 
+When assessing model performance using a regularized approach, we would like a separate validation set for choosing the parameter $\lambda$ controlling the weight of the regularizer. Reusing training sets may encourage overfitting and using testing data to pick $\lambda$ may underestimate the true error rate. Often, when we do not have enough data for a separate validation set, cross validation provides an alternative strategy.
+
+### $n$-Fold Cross Validation
+
+We have already seen examples of using cross validation, e.g., [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html) provides more details about this internal statistical assessment strategy. 
+
+We can use either automated or manual cross-validation. In either case, the protocol involves the following iterative steps:
+
+ 1. Randomly split the training data into $n$ parts ("folds").
+ 2. Fit a model using data in $n-1$ folds for multiple $\lambda\text{s}$.
+ 3. Calculate some prediction quality metrics (e.g., MSE, accuracy) on the last remaining fold, see [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html).
+ 4. Repeat the process and average the prediction metrics across iterations.
+
+Common choices of $n$ are 5, 10, and $N$ ($n=N$, the sample size, corresponds to `leave-one-out` CV). The *one standard error* rule suggests choosing a $\lambda$ value corresponding to a model with the smallest number of parameters, which has MSE within one standard error of the minimum MSE.
+
+### LASSO 10-Fold Cross Validation
+
+Now, let's apply an internal statistical cross-validation to assess the quality of the LASSO and Ridge models, based on our Parkinson's disease case-study. Recall our split of the PD data into training (yTrain, XTrain) and testing (yTest, XTest) sets.
+
+```{r LASSOcv, eval=TRUE, fig.align='center', fig.height=5.8, fig.width=8.5, warning=F, message=F, error=F}
+plotCV.glmnet <- function(cv.glmnet.object, name="") {
+  df <- as.data.frame(cbind(x=log(cv.glmnet.object$lambda), y=cv.glmnet.object$cvm, 
+                           errorBar=cv.glmnet.object$cvsd), nzero=cv.glmnet.object$nzero)
+
+  featureNum <- cv.glmnet.object$nzero
+  xFeature <- log(cv.glmnet.object$lambda)
+  yFeature <- max(cv.glmnet.object$cvm)+max(cv.glmnet.object$cvsd)
+  dataFeature <- data.frame(featureNum, xFeature, yFeature)
+
+  plot_ly(data = df) %>%
+    # add error bars for each CV-mean at log(lambda)
+    add_trace(x = ~x, y = ~y, type = 'scatter', mode = 'markers',
+        name = 'CV MSE', error_y = ~list(array = errorBar)) %>% 
+    # add the lambda-min and lambda 1SD vertical dash lines
+    add_lines(data=df, x=c(log(cv.glmnet.object$lambda.min), log(cv.glmnet.object$lambda.min)), 
+              y=c(min(cv.glmnet.object$cvm)-max(df$errorBar), max(cv.glmnet.object$cvm)+max(df$errorBar)),
+              showlegend=F, line=list(dash="dash"), name="lambda.min", mode = 'lines+markers') %>%
+    add_lines(data=df, x=c(log(cv.glmnet.object$lambda.1se), log(cv.glmnet.object$lambda.1se)), 
+              y=c(min(cv.glmnet.object$cvm)-max(df$errorBar), max(cv.glmnet.object$cvm)+max(df$errorBar)), 
+              showlegend=F, line=list(dash="dash"), name="lambda.1se") %>%
+    # Add Number of Features Annotations on Top
+    add_trace(dataFeature, x = ~xFeature, y = ~yFeature, type = 'scatter', name="Number of Features",
+        mode = 'text', text = ~featureNum, textposition = 'middle right',
+        textfont = list(color = '#000000', size = 9)) %>%
+    # Add top x-axis (non-zero features)
+    # add_trace(data=df, x=~c(min(cv.glmnet.object$nzero),max(cv.glmnet.object$nzero)),
+    #           y=~c(max(y)+max(errorBar),max(y)+max(errorBar)), showlegend=F, 
+    #           name = "Non-Zero Features", yaxis = "ax", mode = "lines+markers", type = "scatter") %>%
+    layout(title = paste0("Cross-Validation MSE (", name, ")"),
+							xaxis = list(title=paste0("log(",TeX("\\lambda"),")"),	side="bottom", showgrid=TRUE), # type="log"
+							hovermode = "x unified", legend = list(orientation='h'),  # xaxis2 = ax,  
+							yaxis = list(title = cv.glmnet.object$name,	side="left", showgrid = TRUE))
+}
+
+#### 10-fold cross validation ####
+# LASSO
+library("glmnet")
+library(doParallel)
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+set.seed(seed)  # set seed 
+# (10-fold) cross validation for the LASSO
+cvLASSO = cv.glmnet(XTrain, yTrain, alpha = 1, parallel=TRUE)
+
+# plot(cvLASSO)
+# mtext("CV LASSO: Number of Nonzero (Active) Coefficients", side=3, line=2.5)
+
+plotCV.glmnet(cvLASSO, "LASSO")
+
+# Report MSE LASSO
+predLASSO <-  predict(cvLASSO, s = cvLASSO$lambda.1se, newx = XTest)
+testMSE_LASSO <- mean((predLASSO - yTest)^2); testMSE_LASSO
+```
+
+```{r ridgecv, eval=TRUE, fig.align='center', fig.show='show', warning=F, message=F, error=F}
+plotCV.glmnet <- function(cv.glmnet.object, name="") {
+  df <- as.data.frame(cbind(x=log(cv.glmnet.object$lambda), y=cv.glmnet.object$cvm, 
+                           errorBar=cv.glmnet.object$cvsd), nzero=cv.glmnet.object$nzero)
+
+  featureNum <- cv.glmnet.object$nzero
+  xFeature <- log(cv.glmnet.object$lambda)
+  yFeature <- max(cv.glmnet.object$cvm)+max(cv.glmnet.object$cvsd)
+  dataFeature <- data.frame(featureNum, xFeature, yFeature)
+
+  plot_ly(data = df) %>%
+    # add error bars for each CV-mean at log(lambda)
+    add_trace(x = ~x, y = ~y, type = 'scatter', mode = 'markers',
+        name = 'CV MSE', error_y = ~list(array = errorBar)) %>% 
+    # add the lambda-min and lambda 1SD vertical dash lines
+    add_lines(data=df, x=c(log(cv.glmnet.object$lambda.min), log(cv.glmnet.object$lambda.min)), 
+              y=c(min(cv.glmnet.object$cvm)-max(df$errorBar), max(cv.glmnet.object$cvm)+max(df$errorBar)),
+              showlegend=F, line=list(dash="dash"), name="lambda.min", mode = 'lines+markers') %>%
+    add_lines(data=df, x=c(log(cv.glmnet.object$lambda.1se), log(cv.glmnet.object$lambda.1se)), 
+              y=c(min(cv.glmnet.object$cvm)-max(df$errorBar), max(cv.glmnet.object$cvm)+max(df$errorBar)), 
+              showlegend=F, line=list(dash="dash"), name="lambda.1se") %>%
+    # Add Number of Features Annotations on Top
+    add_trace(dataFeature, x = ~xFeature, y = ~yFeature, type = 'scatter', name="Number of Features",
+        mode = 'text', text = ~featureNum, textposition = 'middle right',
+        textfont = list(color = '#000000', size = 9)) %>%
+    # Add top x-axis (non-zero features)
+    # add_trace(data=df, x=~c(min(cv.glmnet.object$nzero),max(cv.glmnet.object$nzero)),
+    #           y=~c(max(y)+max(errorBar),max(y)+max(errorBar)), showlegend=F, 
+    #           name = "Non-Zero Features", yaxis = "ax", mode = "lines+markers", type = "scatter") %>%
+    layout(title = paste0("Cross-Validation MSE (", name, ")"),
+							xaxis = list(title=paste0("log(",TeX("\\lambda"),")"),	side="bottom", showgrid=TRUE), # type="log"
+							hovermode = "x unified", legend = list(orientation='h'),  # xaxis2 = ax,  
+							yaxis = list(title = cv.glmnet.object$name,	side="left", showgrid = TRUE))
+}
+
+#### 10-fold cross validation ####
+# Ridge Regression
+set.seed(seed)  # set seed 
+# (10-fold) cross validation for Ridge Regression
+cvRidge = cv.glmnet(XTrain, yTrain, alpha = 0, parallel=TRUE)
+
+# plot(cvRidge)
+# mtext("CV Ridge: Number of Nonzero (Active) Coefficients", side=3, line=2.5)
+
+plotCV.glmnet(cvRidge, "Ridge")
+
+# Report MSE Ridge
+predRidge <-  predict(cvRidge, s = cvRidge$lambda.1se, newx = XTest)
+testMSE_Ridge <- mean((predRidge - yTest)^2); testMSE_Ridge
+stopCluster(cl)
+```
+
+Note that the `predict()` method applied to `cv.gmlnet` or `glmnet` forecasting models is effectively a function wrapper to `predict.gmlnet()`. According to what you would like to get as a **prediction output**, you can use `type="..."` to specify one of the following types of prediction outputs:
+
+ - `type="link"`, reports the linear predictors for "binomial", "multinomial", "poisson" or "cox" models; for "gaussian" models it gives the fitted values. 
+ - `type="response"`, reports the fitted probabilities for "binomial" or "multinomial", fitted mean for "poisson" and the fitted relative-risk for "cox"; for "gaussian" type "response" is equivalent to type "link". 
+ - `type="coefficients"`, reports the coefficients at the requested values for `s`. Note that for "binomial" models, results are returned only for the class corresponding to the second level of the factor response. 
+ - `type="class"`, applies only to "binomial" or "multinomial" models, and produces the class label corresponding to the maximum probability. 
+ - `type="nonzero"`, returns a list of the indices of the nonzero coefficients for each value of `s`.
+
+### Stepwise OLS (ordinary least squares)
+
+For a fair comparison, let's also obtain an OLS stepwise model selection, which we presented earlier.
+
+```{r message=F, warning=F, error=F}
+dt = as.data.frame(cbind(yTrain,XTrain))
+ols_step <- lm(yTrain ~., data = dt)
+ols_step <- step(ols_step, direction = 'both', k=2, trace = F)
+summary(ols_step)
+```
+
+We use `direction=both` for both *forward* and *backward* selection and choose the optimal one. `k=2` specifies AIC and BIC criteria, and you can choose $k\sim \log(n)$.
+
+Then, we use the `ols_step` model to predict the outcome $Y$ for some new test data.
+
+```{r message=F, warning=F, error=F}
+betaHatOLS_step = ols_step$coefficients
+var_step <- colnames(ols_step$model)[-1]
+XTestOLS_step = cbind(rep(1, nrow(XTest)), XTest[,var_step])
+predOLS_step = XTestOLS_step%*%betaHatOLS_step 
+testMSEOLS_step = mean((predOLS_step - yTest)^2)
+# Report MSE OLS Stepwise feature selection
+testMSEOLS_step
+```
+
+Alternatively, we can predict the outcomes directly using the `predict()` function, and the results should be identical:
+
+```{r message=F, warning=F, error=F}
+pred2 <- predict(ols_step,as.data.frame(XTest))
+any(pred2 == predOLS_step)
+```
+
+### Final Models
+
+Let's identify the most important (predictive) features, which can then be interpreted in the context of the specific data.
+
+```{r testerror, eval=TRUE, warning=F, message=F, error=F}
+# Determine final models
+
+# Extract Coefficients
+# OLS coefficient estimates
+betaHatOLS = fitOLS$coefficients
+# LASSO coefficient estimates 
+betaHatLASSO = as.double(coef(fitLASSO, s = cvLASSO$lambda.1se))  # s is lambda
+# Ridge  coefficient estimates 
+betaHatRidge = as.double(coef(fitRidge, s = cvRidge$lambda.1se))
+
+# Test Set MSE
+# calculate predicted values
+
+XTestOLS = cbind(rep(1, nrow(XTest)), XTest) # add intercept to test data
+predOLS = XTestOLS%*%betaHatOLS 
+predLASSO = predict(fitLASSO, s = cvLASSO$lambda.1se, newx = XTest)
+predRidge = predict(fitRidge, s = cvRidge$lambda.1se, newx = XTest)
+
+# calculate test set MSE
+testMSEOLS = mean((predOLS - yTest)^2)
+testMSELASSO = mean((predLASSO - yTest)^2)
+testMSERidge = mean((predRidge - yTest)^2)
+```
+
+This plot shows a rank-ordered list of the key predictors of the clinical outcome variable (total UPDRS, `y <- data1$UPDRS_part_I + data1$UPDRS_part_II + data1$UPDRS_part_III`).
+
+```{r regplot, eval=TRUE, fig.align='center', fig.height=5.3, fig.width=8.5, warning=F, message=F, error=F}
+# Plot Regression Coefficients
+# create variable names for plotting 
+library("arm")
+par(mar=c(2, 13, 1, 1))   # extra large left margin
+varNames <- colnames(data1[ , !(names(data1) %in% drop_features)]); varNames; length(varNames)
+  
+# # Graph 27 regression coefficients (exclude intercept [1], betaHat indices 2:27)
+# coefplot(betaHatOLS[2:27], sd = rep(0, 26), pch=0, cex.pts = 3, main = "Regression Coefficient Estimates", varnames = varNames)
+# coefplot(betaHatLASSO[2:27], sd = rep(0, 26), pch=1, add = TRUE, col.pts = "red", cex.pts = 3)
+# coefplot(betaHatRidge[2:27], sd = rep(0, 26), pch=2, add = TRUE, col.pts = "blue", cex.pts = 3)
+# legend("bottomright", c("OLS", "LASSO", "Ridge"), col = c("black", "red", "blue"), pch = c(0, 1 , 2), bty = "o", cex = 2)
+
+df <- as.data.frame(cbind(Feature=attributes(betaHatOLS)$names[2:26], OLS=betaHatOLS[2:26],
+                          LASSO=betaHatLASSO[2:26], Ridge=betaHatRidge[2:26]))
+
+data_long <- gather(df, Method, value, OLS:Ridge, factor_key=TRUE)
+data_long$value <- as.numeric(data_long$value)
+
+# Note that Plotly will automatically order your axes by the order that is present in the data
+# When using character vectors - order is alphabetic; in case of factors the order is by levels. 
+# To override this behavior, specify categoryorder and categoryarray for the appropriate axis in the layout
+formY <- list(categoryorder = "array", categoryarray = df$Feature)
+
+plot_ly(data_long, x=~value, y=~Feature, type="scatter", mode="markers", 
+        marker=list(size=20), color=~Method, symbol=~Method, symbols=c('circle-open','x-open','hexagon-open')) %>%
+  layout(yaxis = formY)
+
+# par()
+```
+
+### Model Performance
+
+We next quantify the performance of the models.
+
+```{r msetab, eval=TRUE, results='asis', warning=F, message=F, error=F}
+# Test Set MSE Table 
+# create table as data frame
+MSETable = data.frame(OLS=testMSEOLS, OLS_step=testMSEOLS_step, LASSO=testMSELASSO, Ridge=testMSERidge)
+
+# convert to markdown
+kable(MSETable, format="pandoc", caption="Test Set MSE", align=c("c", "c", "c", "c"))
+```
+
+### Compare the selected variables 
+
+```{r message=F, warning=F, error=F}
+var_step = names(ols_step$coefficients)[-1]
+var_lasso = colnames(XTrain)[which(coef(fitLASSO, s = cvLASSO$lambda.min)!=0)-1]
+intersect(var_step,var_lasso)
+coef(fitLASSO, s = cvLASSO$lambda.min)
+```
+
+Stepwise variable selection for OLS selects 12 variables, whereas LASSO selects 9 variables with the best $\lambda$. There are 6 common variables common for both OLS and LASSO.
+
+### Summary
+Traditional linear models are useful but also have their shortcomings:
+
+ - Prediction accuracy may be sub-optimal.
+ - Model interpretability may be challenging (especially when a large number of features are used as regressors).
+ - Stepwise model selection may improve the model performance and add some interpretations, but still may not be optimal.
+
+Regularization adds a penalty term to the estimation:
+
+ -  Enables exploitation of the *bias-variance* tradeoff.
+ -  Provides flexibility on specifying penalties to allow for continuous variable selection.
+ -  Allows incorporation of prior knowledge.
+ 
+## Knockoff Filtering (FDR-Controlled Feature Selection)
+
+### Simulated Knockoff Example
+
+Variable selection that controls the false discovery rate (FDR) of *salient features* can be accomplished in different ways. The [knockoff filtering](https://web.stanford.edu/~candes/Knockoffs/) represents one strategy for controlled variable selection.
+To show the usage of `knockoff.filter` we start with a synthetic dataset constructed so that the true coefficient vector $\beta$ has only a few nonzero entries.
+
+The essence of the knockoff filtering is based on the following three-step process:
+
+ - Construct the decoy features (knockoff variables), one for each real observed feature. These act as controls for assessing the importance of the real variables.
+ - For each feature, $X_j$, compute the knockoff statistic, $W_j$, which measures the importance of the variable, relative to its decoy counterpart, $\tilde{X}_j$. This *importance* is measured by comparing the corresponding parameter estimates, $\hat{\beta}_{X_j}$ and $\hat{\beta}_{\tilde{X}_j}$, obtained via regularized linear modeling (e.g., LASSO).
+ - Determine the overall knockoff threshold. This is computed by rank-ordering the $W_j$ statistics (from large to small), walking down the list of $W_j$'s, selecting variables $X_j$ corresponding to positive $W_j$'s, and terminating this search the last time the ratio of negative to positive $W_j$'s is below the default FDR $q$ value, e.g., $q=0.10$.
+
+Mathematically, we consider $X_j$ to be *unimportant* (i.e., peripheral or extraneous) if the conditional distribution of $Y$ given $X_1,\cdots,X_p$ does not depend on $X_j$. Formally, $X_j$ is unimportant if it is conditionally independent of $Y$ given all other features, $X_{-j}$:
+
+$$Y \perp X_j | X_{-j}.$$
+We want to generate a Markov Blanket of $Y$, such that the smallest set of features $J$ satisfies this condition. Further, to make sure we do not make too many mistakes, we search for a set $\hat{S}$ controlling the false discovery rate (FDR):
+
+$$FDR(\hat{S}) = \mathrm{E} \left (\frac{\#j\in \hat{S}:\ x_j\ unimportant}{\#j\in \hat{S}} \right) \leq q\ (e.g.\ 10\%).$$
+
+Let's look at one simulation example.
+
+```{r eval=T, warning=F, message=F, error=F}
+# Problem parameters
+n = 1000          # number of observations
+p = 300           # number of variables
+k = 30            # number of variables with nonzero coefficients
+amplitude = 3.5   # signal amplitude (for noise level = 1)
+
+# Problem data
+X = matrix(rnorm(n*p), nrow=n, ncol=p)
+nonzero = sample(p, k)
+beta = amplitude * (1:p %in% nonzero)
+y.sample <- function() X %*% beta + rnorm(n)
+```
+
+To begin with, we will invoke the `knockoff.filter` using the default settings.
+
+```{r eval=T, warning=F, message=F, error=F}
+# install.packages("knockoff")
+library(knockoff)
+y = y.sample()
+result = knockoff.filter(X, y)
+print(result)
+```
+
+The false discovery proportion (fdp) is:
+
+```{r eval=T, warning=F, message=F, error=F}
+fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+fdp(result$selected)
+```
+
+This yields an approximate FDR of $0.10$.
+
+The default settings of the knockoff filter uses a test statistic based on LASSO -- `knockoff.stat.lasso_signed_max`, which computes the $W_j$ statistics that quantify the discrepancy between a real ($X_j$) and a decoy, knockoff ($\tilde{X}_j$), feature coefficient estimates:
+
+$$W_j=\max(X_j, \tilde{X}_j) \times sign(X_j - \tilde{X}_j). $$
+Effectively, the $W_j$ statistics measures how much more important the variable $X_j$ is relative to its decoy counterpart $\tilde{X}_j$. The strength of the importance of $X_j$ relative to $\tilde{X}_j$ is measured by the magnitude of $W_j$.
+
+The `knockoff` package includes several other test statistics, with appropriate names prefixed by *knockoff.stat*. For instance, we can use a statistic based on forward selection ($fs$) and a lower target FDR of $0.10$.
+
+```{r eval=T, warning=F, message=F, error=F}
+result = knockoff.filter(X, y, fdr = 0.10, statistic = stat.glmnet_coefdiff)         # Old: statistic=knockoff.stat.fs)
+#knockoff::stat.forward_selection		Importance statistics based on forward selection
+#knockoff::stat.glmnet_coefdiff		Importance statistics based on a GLM with cross-validation
+#knockoff::stat.glmnet_lambdadiff		Importance statistics based on a GLM
+#knockoff::stat.glmnet_lambdasmax		GLM statistics for knockoff
+#knockoff::stat.lasso_coefdiff		Importance statistics based the lasso with cross-validation
+#knockoff::stat.lasso_coefdiff_bin		Importance statistics based on regularized logistic regression with cross-validation
+#knockoff::stat.lasso_lambdadiff		Importance statistics based on the lasso
+#knockoff::stat.lasso_lambdadiff_bin		Importance statistics based on regularized logistic regression
+#knockoff::stat.lasso_lambdasmax		Penalized linear regression statistics for knockoff
+#knockoff::stat.lasso_lambdasmax_bin		Penalized logistic regression statistics for knockoff
+#knockoff::stat.random_forest		Importance statistics based on random forests
+# knockoff::stat.sqrt_lasso		Importance statistics based on the square-root lasso
+#knockoff::stat.stability_selection		Importance statistics based on stability selection
+#knockoff::verify_stat_depends		Verify dependencies for chosen statistics)
+fdp(result$selected)
+```
+
+One can also define additional test statistics, complementing the ones included in the package already. For instance, if we want to implement the following test-statistics:
+
+$$W_j= || X^t . y|| - ||\tilde{X^t} . y||.$$
+
+We can code it as:
+
+```{r eval=T, warning=F, message=F, error=F}
+new_knockoff_stat <- function(X, X_ko, y) {
+  abs(t(X) %*% y) - abs(t(X_ko) %*% y)
+}
+result = knockoff.filter(X, y, statistic = new_knockoff_stat)
+# print indices of selected features
+print(sprintf("Number of KO-selected features: %d", length(result$selected)))
+cat("Indices of KO-selected features: ", result$selected)
+fdp(result$selected)
+```
+
+### Knockoff invocation
+
+The `knockoff.filter` function is a wrapper around several simpler functions that (1) construct knockoff variables (*knockoff.create*); (2) compute the test statistic $W$ (various functions with prefix *knockoff.stat*); and (3) compute the threshold for variable selection (*knockoff.threshold*).
+
+The high-level function *knockoff.filter* will automatically `normalize the columns` of the input matrix (unless this behavior is explicitly disabled). However, all other functions in this *package assume that the columns of the input matrix have unitary Euclidean norm*.
+
+### PD Neuroimaging-genetics Case-Study
+
+Let's illustrate controlled variable selection via knockoff filtering using the real PD dataset.
+
+The goal is to determine which imaging, genetics and phenotypic covariates are associated with the clinical diagnosis of PD. The [dataset is available at the DSPA case-study archive site](https://umich.instructure.com/files/330397/download?download_frd=1).
+
+*Preparing the data*
+
+The data set consists of clinical, genetics, and demographic measurements. To evaluate our results, we will compare diagnostic predictions created by the model for the *UPDRS scores* and the *ResearchGroup* factor variable. 
+
+*Fetching and cleaning the data*
+
+First, we download the data and read it into data frames.
+
+```{r eval=T, warning=F, message=F, error=F}
+data1 <- read.table('https://umich.instructure.com/files/330397/download?download_frd=1', sep=",", header=T)    
+# we will deal with missing values using multiple imputation later. For now, let's just ignore incomplete cases
+data1.completeRowIndexes <- complete.cases(data1) # table(data1.completeRowIndexes)
+prop.table(table(data1.completeRowIndexes))
+
+# attach(data1)
+# View(data1[data1.completeRowIndexes, ])
+data2 <- data1[data1.completeRowIndexes, ]
+Dx_label  <- data2$ResearchGroup; table(Dx_label)
+```
+
+*Preparing the design matrix*
+
+We now construct the design matrix $X$ and the response vector $Y$. The features (columns of $X$) represent covariates that will be used to explain the response $Y$.
+
+```{r eval=T, warning=F, message=F, error=F}
+# Construct preliminary design matrix.
+# define response and predictors
+Y <- data1$UPDRS_part_I + data1$UPDRS_part_II + data1$UPDRS_part_III
+table(Y)   # Show Clinically relevant classification
+Y <- Y[data1.completeRowIndexes]
+
+# X = scale(ncaaData[, -20])  # Explicit Scaling is not needed, as glmnet auto standardizes predictors
+# X = as.matrix(data1[, c("R_caudate_Volume", "R_putamen_Volume", "Weight", "Age", "chr17_rs12185268_GT")])  # X needs to be a matrix, not a data frame
+drop_features <- c("FID_IID", "ResearchGroup", "UPDRS_part_I", "UPDRS_part_II", "UPDRS_part_III")
+X <- data1[ , !(names(data1) %in% drop_features)]
+X = as.matrix(X)   # remove columns: index, ResearchGroup, and y=(PDRS_part_I + UPDRS_part_II + UPDRS_part_III)
+X <- X[data1.completeRowIndexes, ]; dim(X)
+summary(X)
+mode(X) <- 'numeric'
+
+Dx_label <- Dx_label[data1.completeRowIndexes]; length(Dx_label)
+```
+
+*Preparing the response vector*
+
+The knockoff filter is designed to control the FDR under Gaussian noise. A quick inspection of the response vector shows that it is highly non-Gaussian.
+
+```{r eval=T, warning=F, message=F, error=F}
+h <- hist(Y, breaks='FD', plot = F)
+plot_ly(x = h$mids, y = h$density, type = "bar") %>%
+   layout(bargap=0.1, title="Histogram of Computed Variable Y = (UPDRS) part_I + part_II + part_III")
+```
+
+A `log-transform` may help to stabilize the clinical response measurements:
+
+```{r eval=T, warning=F, message=F, error=F}
+# hist(log(Y), breaks='FD')
+h <- hist(log(Y), breaks='FD', plot = F)
+plot_ly(x = h$mids, y = h$density, type = "bar") %>%
+   layout(bargap=0.1, title="Histogram of log(Y)")
+```
+
+For **binary outcome variables**, or **ordinal categorical variables**, we can employ the `logistic curve` to transform the polytomous outcomes into real values.
+
+The Logistic curve is $y=f(x)=  \frac{1}{1+e^{-x}}$, 
+where y and x represent probability and quantitative-predictor values, respectively. A slightly more general form is: $y=f(x)=  \frac{K}{1+e^{-x}}$, where the covariate $x \in (-\infty, \infty)$ and the response $y \in [0, K]$.
+
+*Running the knockoff filter*
+
+We now run the knockoff filter along with the Benjamini-Hochberg (BH) procedure for controlling the false-positive rate of feature selection. More [details about the Knock-off filtering methods are available here](https://www.stat.uchicago.edu/~rina/knockoff/knockoff_slides.pdf).
+
+Before running either selection procedure, remove rows with missing values, reduce the design matrix by removing predictor columns that do not appear frequently (e.g., at least three times in the sample), and remove any columns that are duplicates.
+
+```{r eval=T, warning=F, message=F, error=F}
+library(knockoff)
+
+Y <- data1$UPDRS_part_I + data1$UPDRS_part_II + data1$UPDRS_part_III
+table(Y)   # Show Clinically relevant classification
+Y <- as.matrix(Y[data1.completeRowIndexes]); colnames(Y) <- "y"
+mode(Y)
+
+# X = scale(ncaaData[,-20])  # Explicit Scaling is not needed, as glmnet auto standardizes predictors
+# X = as.matrix(data1[,c("R_caudate_Volume", "R_putamen_Volume","Weight", "Age", "chr17_rs12185268_GT")])  # X needs to be a matrix, not a data frame
+drop_features <- c("FID_IID", "ResearchGroup", "UPDRS_part_I", "UPDRS_part_II", "UPDRS_part_III")
+X <- data1[ , !(names(data1) %in% drop_features)]
+X = as.matrix(X)   # remove columns: index, ResearchGroup, and y=(PDRS_part_I + UPDRS_part_II + UPDRS_part_III)
+X <- X[data1.completeRowIndexes,]; dim(X); mode(X)
+
+View(cbind(X,Y))
+
+# Direct call to knockoff filtering looks like this:
+fdr <- 0.4
+set.seed(1234)
+result = knockoff.filter(X, Y, fdr=fdr, knockoffs=create.second_order); print(result$selected) # Old: knockoffs='equicorrelated')
+# knockoff::create.fixed		Fixed-X knockoffs
+#knockoff::create.gaussian		Model-X Gaussian knockoffs
+#knockoff::create.second_order		Second-order Gaussian knockoffs
+#knockoff::create.solve_asdp		Relaxed optimization for fixed-X and Gaussian knockoffs
+#knockoff::create.solve_equi		Optimization for equi-correlated fixed-X and Gaussian knockoffs
+#knockoff::create.solve_sdp		Optimization for fixed-X and Gaussian knockoffs
+#knockoff::create_equicorrelated		Create equicorrelated fixed-X knockoffs.
+#knockoff::create_sdp		Create SDP fixed-X knockoffs.
+#knockoff::create.vectorize_matrix		Vectorize a matrix into the SCS format
+
+names(result$selected)
+knockoff_selected <- names(result$selected)
+  
+# Run BH (Benjamini-Hochberg)
+k = ncol(X)
+lm.fit = lm(Y ~ X - 1) # no intercept
+p.values = coef(summary(lm.fit))[,4]
+cutoff = max(c(0, which(sort(p.values) <= fdr * (1:k) / k)))
+BH_selected = names(which(p.values <= fdr * cutoff / k))
+
+knockoff_selected; BH_selected
+
+list(Knockoff = knockoff_selected, BHq = BH_selected)
+
+# Alternatively, for more flexible Knockoff invocation
+set.seed(1234)
+knockoffs = function(X) create.gaussian(X, 0, Sigma=diag(dim(X)[2])) # identify var-covar matrix Sigma of rank equal to the number of features
+stats = function(X, Xk, y) stat.glmnet_coefdiff(X, Xk, y, nfolds=10) # The Output X_k is an n-by-p matrix of knockoff features
+result = knockoff.filter(X, Y, fdr=fdr, knockoffs=knockoffs, statistic=stats); print(result$selected)
+
+# Housekeeping: remove the "X" prefixes in the BH_selected list of features
+for(i in 1:length(BH_selected)){
+  BH_selected[i] <- substring(BH_selected[i], 2)
+}
+
+intersect(BH_selected,knockoff_selected)
+```
+
+We see that there are some features that are selected by both methods suggesting they may be indeed salient.
+
+<!---
+# See an HIV Example: https://cran.r-project.org/web/packages/knockoff/vignettes/hiv.html
+# Indirect call to knockoff looks like this:
+# knockoff_and_BH <- function (X, y, fdr) {
+#   # Log-transform the drug resistance measurements.
+#   y = log(y)
+#   dim(X)
+#   length(y)
+#   
+#   # Remove patients with missing measurements.
+#   #missing = is.na(y)
+#   #y = y[!missing]
+#   #X = X[!missing, ]
+#     
+#   # Remove predictors that appear less than 3 times.
+#   #X = X[, colSums(X) >= 3]
+#   
+#   # Remove duplicate predictors.
+#   #X = X[, colSums(abs(cor(X)-1) < 1e-4) == 1]
+#   
+#   # Run the knockoff filter.
+#   result = knockoff.filter(X, y, fdr = fdr, knockoffs = 'equicorrelated')
+#   knockoff_selected = names(result$selected)
+#   
+#   # Run BH.
+#   #k = ncol(X)
+#   #lm.fit = lm(y ~ X - 1) # no intercept
+#   #p.values = coef(summary(lm.fit))[, 4]
+#   #cutoff = max(c(0, which(sort(p.values) <= fdr * (1:k) / k)))
+#   #bhq_selected = names(which(p.values <= fdr * cutoff / k))
+#   
+#   #list(Knockoff = knockoff_selected, BHq = bhq_selected)
+# }
+# 
+# fdr <- 0.20
+# results = lapply(Y, function(y) knockoff_and_BH(X, y, fdr))
+
+## One more example.
+
+See an [HIV Example](https://cran.r-project.org/web/packages/knockoff/vignettes/hiv.html), including knockoff filter, BH method, evaluation and visualization.
+
+### Bootstrap knockoff and LASSO
+Further, we can apply Bootstrap to select variables. The major advantage of Bootstrap is to get a variable importance table and various statistics. Notice that when we use Bootstrap, we assume that the data follows the same structure.
+
+First, let's try to use Bootstrap LASSO. In each iteration, we randomly select half of the data as a sample and tune on these data to get the best $\lambda$. Then, record those non-zero variables. Finally, we output the top 10 important variables and their frequency. 
+
+```{r eval=F, warning=F, message=F, error=F}
+set.seed(15)
+mat = matrix(0,ncol = 27)
+N = 400
+sca.x = as.matrix(X)
+for (i in 1:N){
+  #if (i%%50==0){
+  #print(i)
+  #}
+  tp = sample(1:nrow(X),0.5*nrow(X))
+  x.tp = sca.x[tp,]
+  y.tp = Y[tp]
+  cvtp = cv.glmnet(x.tp, y.tp, alpha = 1, parallel = T)
+  tt <- as.matrix(coef(cvtp, s = "lambda.min"))
+  mat[which(tt!=0)]=mat[which(tt!=0)]+1
+}
+
+df <- as.data.frame(t(mat))
+df$id <- 1:27
+varname = colnames(X)[1:26]
+df$names <- c("intercept",varname)
+ddf <- df[order(df$V1,decreasing = T),]
+ddf$fre = ddf$V1/N
+ddf[2:11,c(3,4)] # 1 for intercept
+```
+
+Similarly, we can compare these results to the performance of the *knockoff* model, where we need more iterations as we use a somewhat stricter `fdr` control.
+
+```{r eval=F}
+set.seed(15)
+N=1000
+num = matrix(0,ncol = 27)
+for (i in 1:N){
+  #if (i%%50==0){
+  # print(i)
+  #}
+  tp = sample(1:nrow(X),0.5*nrow(X))
+  x.tp = sca.x[tp,]
+  y.tp = Y[tp]
+  tt <- knockoff.filter(X = x.tp,fdr=0.2,y = y.tp) # OLD: randomize = FALSE)
+  tt <- as.matrix(tt$selected)
+  num[tt]=num[tt]+1
+}
+df2 <- as.data.frame(t(num))
+df2$id <- 1:27
+df2$names <- c("intercept",varname)
+ddf2 <- df2[order(df2$V1,decreasing = T),]
+ddf2$fre = ddf2$V1/N
+ddf2[1:10,c(3,4)]
+```
+
+Now, we can calculate any statistics based on the sampling result.
+
+Finally, you can compare the sampling result of LASSO and knockoff, and compare the result on sampling and on whole data. Do these results make sense?
+--->
+
+## Practice Problems
+
+We can practice variable selection with the [SOCR_Data_AD_BiomedBigMetadata](https://wiki.socr.umich.edu/index.php/SOCR_Data_AD_BiomedBigMetadata) on SOCR website. This is a smaller dataset that has 744 observations and 63 variables. Here we utilize `DXCURREN` or current diagnostics as the class variable.
+
+Let's import the dataset first.
+
+```{r  warning=F, message=F, error=F}
+library(rvest)
+wiki_url <- read_html("https://wiki.socr.umich.edu/index.php/SOCR_Data_AD_BiomedBigMetadata")
+html_nodes(wiki_url, "#content")
+alzh <- html_table(html_nodes(wiki_url, "table")[[1]])
+summary(alzh)
+```
+
+The data summary shows that we have several factor variables. After converting their type to numeric we find some missing data. We can manage this issue by selecting only the complete observation of the original dataset or by using multivariate imputation, see [Chapter 2](https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/02_ManagingData.html). 
+
+```{r  warning=F, message=F, error=F}
+chrtofactor<-c(3, 5, 8, 10, 21:22, 51:54)
+alzh[alzh=="."] <- NA  # replace all missing "." values with "NA"
+alzh[chrtofactor]<-data.frame(apply(alzh[chrtofactor], 2, as.numeric))
+alzh<-alzh[complete.cases(alzh), ]
+```
+
+For simplicity, here we eliminated the missing data and are left with 408 complete observations. Now, we can apply the `Boruta` method for feature selection.
+
+```{r echo=T, warning=F, message=F, error=F}
+set.seed(123)
+train<-Boruta(DXCURREN~.-SID, data=alzh, doTrace=0)
+print(train)
+```
+
+You might get a result that is a little bit different. We can plot the variable importance graph using some previous knowledge.
+
+```{r echo=F, fig.width=10, fig.height=7, warning=F, message=F, error=F}
+plot(train, xlab = "", xaxt="n")
+lz<-lapply(1:ncol(train$ImpHistory), function(i)
+train$ImpHistory[is.finite(train$ImpHistory[, i]), i])
+names(lz)<-colnames(train$ImpHistory)
+lb<-sort(sapply(lz, median))
+axis(side=1, las=2, labels=names(lb), at=1:ncol(train$ImpHistory), cex.axis=0.7)
+```
+
+The final step is to get rid of the tentative features.
+
+```{r echo=F, warning=F, message=F, error=F}
+final.train<-TentativeRoughFix(train)
+print(final.train)
+getSelectedAttributes(final.train, withTentative = F)
+```
+
+
+These techniques can be applied to many [other datasets available in the Case-Studies archive](https://umich.instructure.com/courses/38100/files/).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

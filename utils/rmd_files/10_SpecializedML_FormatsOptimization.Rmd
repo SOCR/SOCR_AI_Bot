@@ -1,0 +1,1664 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Specialized Machine Learning Topics</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Specialized Machine Learning Topics
+
+Depending on the specific hardware, operating system, and versions of `R` and
+`Python` installed on the computer, some of the following settings may be useful 
+to support the subsequent integration of `R`, `Python`, and `C/C++`.
+
+```{r warning=F, message=F}
+# install.packages("reticulate")
+library(reticulate)
+library(plotly)
+# specify the path of the Python version that you want to use
+#py_path = "C:/Users/Dinov/Anaconda3/"  # manual
+py_path = Sys.which("python3")       # automated
+# use_python(py_path, required = T)
+# Sys.setenv(RETICULATE_PYTHON = "C:/Users/Dinov/Anaconda3/")
+sys <- import("sys", convert = TRUE)
+```
+
+In this chapter, we will discuss some technical details about data formats, streaming, optimization of computation, and distributed deployment of optimized learning algorithms. [Chapter 13](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html) includes a deep dive into the mathematical and computational aspects of function optimization.
+
+The Internet of Things (IoT) leads to a paradigm shift of scientific inference - from static data interrogated in a batch or distributed environment to an on-demand service-based Cloud computing. Here, we will demonstrate how to work with specialized datasets, data-streams, and SQL databases, as well as develop and assess on-the-fly data modeling, classification, prediction and forecasting methods. Important examples to keep in mind throughout this chapter include high-frequency data delivered real time in hospital ICU's (e.g., [microsecond Electroencephalography signals, EEGs](https://physionet.org/physiobank/database/)), dynamically changing stock market data (e.g., [Dow Jones Industrial Average Index, DJI](https://www.marketwatch.com/investing/index/djia)), and [weather patterns](https://weather.rap.ucar.edu/surface/).
+
+We will present (1) format conversion and working with XML, SQL, JSON, CSV, SAS, SQL, noSQL, Google BigQuery service, and other data objects, (2) visualization of bioinformatics and network data, (3) protocols for managing, classifying and predicting outcomes from data streams, (4) strategies for optimization, improvement of computational performance, parallel (MPI) and graphics (GPU) computing, (5) processing of very large datasets, and (6) electronic `R`-markdown notebook facilitating `R` integration with Python, C/C++, Java, and other languages.
+
+
+```{r "setup", include=FALSE}
+library("knitr")
+opts_knit$set(root.dir = "C:/Users/IvoD/Desktop")
+```
+
+## Working with specialized data and databases
+
+Unlike the case-studies we saw in the previous chapters, some real world data may not always be nicely formatted, e.g., as CSV files. We must collect, arrange, wrangle, and harmonize scattered information to generate computable data objects that can be further processed by various techniques. Data wrangling and preprocessing may take over 80% of the time researchers spend interrogating complex multi-source data archives. The following procedures will enhance your skills collecting and handling heterogeneous real world data.  Multiple examples of handling long-and-wide data, messy and tidy data, and data cleaning strategies can be found in this [JSS `Tidy Data` article by Hadley Wickham](https://www.jstatsoft.org/article/view/v059i10).
+
+### Data format conversion
+
+The R package `rio` imports and exports various types of file formats, e.g., tab-separated (`.tsv`), comma-separated (`.csv`), JSON (`.json`), Stata (`.dta`), SPSS (`.sav` and `.por`), Microsoft Excel (`.xls` and `.xlsx`), Weka (`.arff`), and SAS (`.sas7bdat` and `.xpt`) file types.
+
+There are three core functions in the `rio` package: `import()`, `convert()`, and `export()`. They are intuitive, easy to understand, and efficient to execute. Take Stata (.dta) files as an example. Let's first download a dataset, [02_Nof1_Data.dta](https://umich.instructure.com/files/1760330/download?download_frd=1), from our [data archive folder](https://umich.instructure.com/courses/38100/files/folder/data).
+
+```{r}
+# install.packages("rio")
+# install_formats()
+library(rio)
+# Download the SAS .DTA file first locally
+# https://umich.instructure.com/files/1760330/download?download_frd=1
+# Local data can be loaded by
+# nof1<-import("02_Nof1_Data.dta")
+# the data can also be loaded from the server remotely as well:
+# nof1<-import("https://umich.instructure.com/files/1760330/download?download_frd=1a") # .dta format
+# nof1<-read.csv("https://umich.instructure.com/files/330385/download?download_frd=1")
+nof1<-import("https://umich.instructure.com/files/1760330/download?download_frd=1")
+str(nof1)
+```
+
+The data is automatically stored as a data frame. Note that by default, the package `rio` uses `stingAsFactors=FALSE`.
+
+`rio` can help us export files into any other format we choose. To do this we have to use the `export()` function.
+
+```{r eval=F, message=F, echo=F}
+# Sys.getenv("R_ZIPCMD", "zip")   # Get the C Zip application
+# Sys.setenv(R_ZIPCMD="E:/Ivo.dir/Ivo_Tools/ZIP/bin/zip.exe")
+# Sys.getenv("R_ZIPCMD", "zip")
+```
+
+```{r}
+export(nof1, "C:/Users/IvoD/Desktop/02_Nof1.xlsx")
+```
+
+This line of code exports the *Nof1* data in `xlsx` format located in the `R` working directory or in a user-provided directory. Mac users may have a problem exporting `*.xlsx` files using `rio` because of a lack of a zip tool, but still can output other formats such as ".csv". An alternative strategy to save an `xlsx` file is to use package `xlsx` with default `row.name=TRUE`.
+
+`rio` also provides a one-step process to convert-and-save data into alternative formats. The following simple code allows us to convert and save the `02_Nof1_Data.dta` file we just downloaded into a CSV file.
+
+```{r}
+# convert("02_Nof1_Data.dta", "02_Nof1_Data.csv")
+convert("C:/Users/IvoD/Desktop/02_Nof1.xlsx", "C:/Users/IvoD/Desktop/02_Nof1_Data.csv")
+```
+
+You can see a new CSV file pop-up in the working directory. Similar transformations are available for other data formats and types.
+
+### Querying data in SQL databases
+
+Look at the [CDC](https://www.cdc.gov) [Behavioral Risk Factor Surveillance System (BRFSS) Data, 2013-2015](https://www.cdc.gov/brfss/annual_data/annual_2015.html).
+This file ([BRFSS_2013_2014_2015.zip](https://www.socr.umich.edu/data/DSPA/BRFSS_2013_2014_2015.zip)) includes the combined landline and cell phone dataset  exported from SAS V9.3 using the [XPT transport format](https://www.loc.gov/preservation/digital/formats/fdd/fdd000464.shtml). This dataset contains $330$ variables. The data can be imported into SPSS or STATA, however, some of the variable labels may get truncated in the process of converting to the XPT format.
+
+**Caution**: The size of this compressed (ZIP) file is over $315MB$! Let's start by ingesting the data for a couple of years and explore some of the information.
+
+```{r message=F, warning=F}
+# install.packages("Hmisc")
+library(Hmisc)
+
+memory.size(max=T)
+
+pathToZip <- tempfile()
+getOption('timeout')  # Check default timeout: [1] 60
+options(timeout=600)  # extend the timeout from 1 to 10-minutes, to allow lower speed connections.
+download.file("https://www.socr.umich.edu/data/DSPA/BRFSS_2013_2014_2015.zip", pathToZip)
+# let's just pull two of the 3 years of data (2013 and 2015)
+brfss_2013 <- sasxport.get(unzip(pathToZip)[1])
+brfss_2015 <- sasxport.get(unzip(pathToZip)[3])
+
+dim(brfss_2013); object.size(brfss_2013)
+# summary(brfss_2013[1:1000, 1:10])  # subsample the data
+
+# report the summaries for
+summary(brfss_2013$has_plan)
+brfss_2013$x.race <- as.factor(brfss_2013$x.race)
+summary(brfss_2013$x.race)
+
+# clean up
+unlink(pathToZip)
+```
+
+Next, we can try to use logistic regression to find out if self-reported race/ethnicity predicts the binary outcome of having a health care plan.
+
+```{r}
+brfss_2013$has_plan <- brfss_2013$hlthpln1 == 1
+
+system.time(
+  gml1 <- glm(has_plan ~ as.factor(x.race), data=brfss_2013,
+              family=binomial)
+)   # report execution time
+summary(gml1)
+```
+
+We can also examine the [odds](https://wiki.socr.umich.edu/index.php/SMHS_OR_RR) (rather the log odds ratio, LOR) of having a health care plan (HCP) by race (R). The LORs are calculated for two-dimensional arrays, separately for each *race* level (presence of *health care plan* (HCP) is binary, whereas *race* (R) has $9$ levels, $R_1, R_2, ..., R_9$). For example, the odds ratio of having a HCP for $R_1:R_2$ is:
+
+$$ OR(R_1:R_2) =  \frac{\frac{P \left( HCP \mid R_1 \right)}{1 - P \left( HCP \mid R_1 \right)}}{\frac{P \left( HCP \mid R_2 \right)}{1 - P \left( HCP \mid R_2 \right)}} .$$
+```{r message=F}
+# install.packages("vcd")
+# load the vcd package to compute the LOR
+library("vcd")
+
+# Note that by default *loddsratio* computes the Log odds ratio (OR). The raw OR = exp(loddsratio)
+lor_HCP_by_R <- loddsratio(has_plan ~ as.factor(x.race), data = brfss_2013)
+lor_HCP_by_R
+```
+
+Now, let's see an example of querying a database containing structured relational records. A *query* is a machine instruction (typically represented as text) sent by a user to a remote database requesting a specific database operation (e.g., search or summary). One database communication protocol relies on SQL (Structured query language). MySQL is an instance of a database management system that supports SQL communication that many web applications utilize, e.g., *YouTube*, *Flickr*, *Wikipedia*, biological databases like *GO*, *ensembl*, etc. Below is an example of an SQL query using the package `RMySQL`. An alternative way to interface an SQL database is by using the package `RODBC`. Let's look at a couple of DB query examples. The first one uses the [UCSC Genomics SQL server (genome-mysql.cse.ucsc.edu)](https://genome.ucsc.edu/goldenpath/help/mysql.html) and the second one uses a local client-side database service.
+
+```{r eval=T, include=T, warning=F, message=F}
+# install.packages("DBI", "RMySQL")
+# install.packages("RODBC"); library(RODBC)
+library(DBI); library(RMySQL)
+library("stringr"); library("dplyr"); library("readr")
+library(magrittr)
+
+ucscGenomeConn <- dbConnect(MySQL(),
+                user='genome',
+                dbname='hg19',
+                host='genome-mysql.cse.ucsc.edu')
+# dbGetInfo(ucscGenomeConn); dbListResults(ucscGenomeConn)
+
+result <- dbGetQuery(ucscGenomeConn,"show databases;");
+
+# List the DB tables
+allTables <- dbListTables(ucscGenomeConn); length(allTables)
+
+# Get dimensions of a table, read and report the head
+dbListFields(ucscGenomeConn, "affyU133Plus2")
+affyData <- dbReadTable(ucscGenomeConn, "affyU133Plus2"); head(affyData)
+
+# Select a subset, fetch the data, and report the quantiles
+subsetQuery <- dbSendQuery(ucscGenomeConn, "select * from affyU133Plus2 where misMatches between 1 and 3")
+affySmall <- fetch(subsetQuery); dim(affySmall)
+quantile(affySmall$misMatches)
+dbClearResult(subsetQuery)
+
+# Another query
+# install.packages("magrittr")
+bedFile <- "C:/Users/IvoD/Desktop/repUCSC.bed"
+subsetQuery1 <- dbSendQuery(ucscGenomeConn,'select genoName,genoStart,genoEnd,repName,swScore, strand,
+                  repClass, repFamily from rmsk')
+subsetQuery1_df <- dbFetch(subsetQuery1 , n=100) %>%
+        dplyr::mutate(genoName =
+                        stringr::str_replace(genoName,'chr','')) %>%
+        readr::write_tsv(bedFile, col_names=T)
+message('saved: ', bedFile)
+dbClearResult(subsetQuery1)
+
+# Another DB query: Select a specific DB subset
+subsetQuery2 <- dbSendQuery(ucscGenomeConn,
+            "select * from affyU133Plus2 where misMatches between 1 and 4")
+affyU133Plus2MisMatch <- fetch(subsetQuery2)
+quantile(affyU133Plus2MisMatch$misMatches)
+affyU133Plus2MisMatchTiny_100x22 <- fetch(subsetQuery2, n=100)
+dbClearResult(subsetQuery2)
+dim(affyU133Plus2MisMatchTiny_100x22)
+summary(affyU133Plus2MisMatchTiny_100x22)
+
+# Once done, clear and close the connections
+# dbClearResult(dbListResults(ucscGenomeConn)[[1]])
+dbDisconnect(ucscGenomeConn)
+```
+
+Depending upon the DB server, to complete the above database SQL commands, it may require access and/or specific user credentials. The example below can be done by all users, as it relies only on local DB services.
+
+```{r}
+# install.packages("RSQLite")
+library("RSQLite")
+
+# generate an empty DB stored in RAM
+myConnection <- dbConnect(RSQLite::SQLite(), ":memory:")
+myConnection
+dbListTables(myConnection)
+
+# Add tables to the local SQL DB
+data(USArrests); dbWriteTable(myConnection, "USArrests", USArrests)
+dbWriteTable(myConnection, "brfss_2013", brfss_2013)
+dbWriteTable(myConnection, "brfss_2015", brfss_2015)
+
+# Check again the DB content
+# allTables <- dbListTables(myConnection); length(allTables); allTables
+head(dbListFields(myConnection, "brfss_2013"))
+tail(dbListFields(myConnection, "brfss_2013"))
+dbListTables(myConnection);
+
+# Retrieve the entire DB table (for the smaller USArrests table)
+head(dbGetQuery(myConnection, "SELECT * FROM USArrests"))
+
+# Retrieve just the average of one feature
+myQuery <- dbGetQuery(myConnection, "SELECT avg(Assault) FROM USArrests")
+head(myQuery)
+
+myQuery <- dbGetQuery(myConnection, "SELECT avg(Assault) FROM USArrests GROUP BY UrbanPop"); myQuery
+
+# Or do it in batches (for the much larger brfss_2013 and brfss_2015 tables)
+myQuery <- dbGetQuery(myConnection, "SELECT * FROM brfss_2013")
+
+# extract data in chunks of 2 rows, note: dbGetQuery vs. dbSendQuery
+# myQuery <- dbSendQuery(myConnection, "SELECT * FROM brfss_2013")
+# fetch2 <- dbFetch(myQuery, n = 2); fetch2
+# do we have other cases in the DB remaining?
+# extract all remaining data
+# fetchRemaining <- dbFetch(myQuery, n = -1);fetchRemaining
+# We should have all data in DB now
+# dbHasCompleted(myQuery)
+
+# compute the average (poorhlth) grouping by Insurance (hlthpln1)
+# Try some alternatives: numadult nummen numwomen genhlth physhlth menthlth poorhlth hlthpln1
+myQuery1_13 <- dbGetQuery(myConnection, "SELECT avg(poorhlth) FROM brfss_2013 GROUP BY hlthpln1"); myQuery1_13
+
+# Compare 2013 vs. 2015: Health grouping by Insurance
+myQuery1_15 <- dbGetQuery(myConnection, "SELECT avg(poorhlth) FROM brfss_2015 GROUP BY hlthpln1"); myQuery1_15
+
+myQuery1_13 - myQuery1_15
+
+# reset the DB query
+# dbClearResult(myQuery)
+
+# clean up
+dbDisconnect(myConnection)
+```
+
+### SparQL Queries
+
+The *SparQL Protocol and RDF Query Language* ([SparQL](https://en.wikipedia.org/wiki/SPARQL)) is a semantic database query language for RDF (Resource Description Framework) data objects. SparQL queries consist of (1) triple patterns, (2) conjunctions, and (3) disjunctions.
+
+The following example uses SparQL to query the [prevalence of tuberculosis](https://www.wikidata.org/wiki/Q12204) from [the WikiData SparQL server](https://www.wikidata.org) and plot it on a World geographic map.
+
+```{r message=F, warning=F}
+# install.packages("SPARQL"); install.packages("rworldmap"); install.packages("spam")
+library(SPARQL)
+library(ggplot2)
+library(rworldmap)
+library(plotly)
+
+# SparQL Format
+# https://www.w3.org/2009/Talks/0615-qbe/
+
+# W3C Turtle - Terse RDF Triple Language:
+# https://www.w3.org/TeamSubmission/turtle/#sec-examples
+
+# RDF (Resource Description Framework) is a graphical data model of (subject, predicate, object) triples representing:
+# "subject-node to predicate arc to object arc"
+# Resources are represented with URIs, which can be abbreviated as prefixed names
+# Objects are literals: strings, integers, booleans, etc.
+# Syntax
+#    URIs: <http://example.com/resource> or prefix:name
+#    Literals:
+#             "plain string" "13.4""
+#             xsd:float, or
+#             "string with language" @en
+#    Triple: pref:subject other:predicate "object".
+
+wdqs <- "https://query.wikidata.org/bigdata/namespace/wdq/sparql"
+query = "PREFIX wd: <http://www.wikidata.org/entity/>
+    # prefix declarations
+    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX p: <http://www.wikidata.org/prop/>
+    PREFIX v: <http://www.wikidata.org/prop/statement/>
+    PREFIX qualifier: <http://www.wikidata.org/prop/qualifier/>
+    PREFIX statement: <http://www.wikidata.org/prop/statement/>
+
+    # result clause
+    SELECT DISTINCT ?countryLabel ?ISO3Code ?latlon ?prevalence ?doid ?year
+
+    # query pattern against RDF data
+    # Q36956 Hansen's disease, Leprosy https://www.wikidata.org/wiki/Q36956
+    # Q15750965 - Alzheimer's disease: https://www.wikidata.org/wiki/Q15750965
+    # Influenza - Q2840: https://www.wikidata.org/wiki/Q2840
+    # Q12204 - tuberculosis  https://www.wikidata.org/wiki/Q12204
+    # P699 Alzheimer's Disease ontology ID
+    # P1193 prevalence: https://www.wikidata.org/wiki/Property:P1193
+    # P17 country: https://www.wikidata.org/wiki/Property:P17
+    # Country ISO-3 code: https://www.wikidata.org/wiki/Property:P298
+    # Location: https://www.wikidata.org/wiki/Property:P625
+
+    # Wikidata docs: https://www.mediawiki.org/wiki/Wikidata_query_service/User_Manual
+
+    WHERE {
+      wd:Q12204 wdt:P699 ?doid ; # tuberculosis P699 Disease ontology ID
+      p:P1193 ?prevalencewithProvenance .
+      ?prevalencewithProvenance qualifier:P17 ?country ;
+      qualifier:P585 ?year ;
+      statement:P1193 ?prevalence .
+      ?country wdt:P625 ?latlon ;
+      rdfs:label ?countryLabel ;
+      wdt:P298 ?ISO3Code ;
+      wdt:P297 ?ISOCode .
+    FILTER (lang(?countryLabel) = \"en\")
+    # FILTER constraints use boolean conditions to filter out unwanted query results.
+    #    Shortcut: a semicolon (;) can be used to separate two triple patterns that share the same disease (?country is the shared subject above.)
+    #     rdfs:label is a common predicate for giving a human-friendly label to a resource.
+
+    }
+    # query modifiers
+    ORDER BY DESC(?population)
+"
+
+# install.packages("WikidataQueryServiceR")
+library(WikidataQueryServiceR)
+library(mapproj)
+
+results <- query_wikidata(sparql_query=query); head(results)
+# OLD: results <- SPARQL(url=wdqs, query=query); head(results)
+# resultMatrix <- as.matrix(results$results)
+# View(resultMatrix)
+# sPDF <- joinCountryData2Map(results$results, joinCode = "ISO3", nameJoinColumn = "ISO3Code")
+
+# join the data to the geo map
+sPDF <- joinCountryData2Map(results, joinCode = "ISO3", nameJoinColumn = "ISO3Code")
+
+#map the data with no legend
+mapParams <- mapCountryData( sPDF
+              , nameColumnToPlot="prevalence"
+              # Alternatively , nameColumnToPlot="doid"
+              , addLegend='FALSE',
+              mapTitle="Prevalence of Tuberculosis Worldwide"
+              )
+
+#add a modified legend using the same initial parameters as mapCountryData
+do.call( addMapLegend, c( mapParams
+                        , legendLabels="all"
+                        , legendWidth=0.5
+                        ))
+text(1, -120, "Partial view of Tuberculosis Prevalence in the World", cex=1)
+
+#do.call( addMapLegendBoxes
+#        , c(mapParams
+#        , list(
+#          legendText=c('Chile', 'US','Brazil','Argentina'),
+#          x='bottom',title="AD Prevalence",horiz=TRUE)))
+
+# Alternatively: mapCountryData(sPDF, nameColumnToPlot="prevalence",  oceanCol="darkblue", missingCountryCol="white")
+
+View(getMap())
+# write.csv(file = "C:/Users/Map.csv", getMap())
+
+# Alternative Plot_ly Geo-map
+df_cities <- results
+df_cities$popm <- paste(df_cities$countryLabel, df_cities$ISO3Code, "prevalence=", df_cities$prevalence)
+df_cities$quart <- with(df_cities, cut(prevalence, quantile(prevalence), include.lowest = T))
+levels(df_cities$quart) <- paste(c("1st", "2nd", "3rd", "4th"), "Quantile")
+df_cities$quart <- as.ordered(df_cities$quart)
+
+df_cities <- tidyr::separate(df_cities, latlon, into = c("long", "lat"), sep = " ")
+df_cities$long <- gsub("Point\\(", "", df_cities$long)
+df_cities$lat <- gsub("\\)", "", df_cities$lat)
+head(df_cities)
+
+ge <- list(scope = 'world', showland = TRUE, landcolor = toRGB("lightgray"),
+           subunitwidth = 1, countrywidth = 1, subunitcolor = toRGB("white"), countrycolor = toRGB("white"))
+
+plot_geo(df_cities, lon = ~long, lat = ~lat, text = ~popm, mode="markers",
+         marker = ~list(size = 20, line = list(width = 0.1)),
+         color = ~quart, locationmode = 'country names') %>%
+    layout(geo = ge, title = 'Prevalence of Tuberculosis Worldwide')
+```
+
+Similar geographic maps may be displayed fo other processes, e.g., malaria. Note that such data are sparse as they are pulled dynamically from `wikidata`.
+
+```{r echo=F, eval=F, message=F}
+# Try the same Geo Map for Malaria:
+wdqs <- "https://query.wikidata.org/bigdata/namespace/wdq/sparql"
+malariaQuery <- "PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX p: <http://www.wikidata.org/prop/>
+PREFIX v: <http://www.wikidata.org/prop/statement/>
+PREFIX qualifier: <http://www.wikidata.org/prop/qualifier/>
+PREFIX statement: <http://www.wikidata.org/prop/statement/>
+SELECT DISTINCT ?countryLabel ?ISO3Code ?latlon ?prevalence ?year WHERE {
+wd:Q12156 wdt:P699 ?doid ; # P699 Disease ontology ID
+p:P1603 ?noc . # P1193 prevalence
+?noc qualifier:P17 ?country ;
+qualifier:P585 ?year ;
+statement:P1603 ?prevalence . # P17 country
+?country wdt:P625 ?latlon ;
+rdfs:label ?countryLabel ;
+wdt:P298 ?ISO3Code ;
+wdt:P297 ?ISOCode .
+FILTER (lang(?countryLabel) = \"en\")
+}"
+
+resultsMalaria <- query_wikidata(sparql_query=malariaQuery); head(resultsMalaria)
+# OLD malariaResults <- SPARQL(wdqs, malariaQuery)
+# malariaResultsMatrix <- as.matrix(malariaResults$results)
+# View(malariaResultsMatrix)
+malariaMap <- joinCountryData2Map(resultsMalaria, joinCode = "ISO3", nameJoinColumn = "ISO3Code")
+mapCountryData(malariaMap, nameColumnToPlot="prevalence",  oceanCol="darkblue", missingCountryCol="white", mapTitle="Prevalence of Malaria Worldwide")
+```
+
+Below is an example of a geo-map showing the global locations and population-size of various cities in millions.
+
+```{r message=F, warning=F, error=F}
+library(plotly)
+
+df_cities <- world.cities
+df_cities$popm <- paste(df_cities$country.etc, df_cities$name, "Pop", round(df_cities$pop/1e6,2), " million")
+df_cities$quart <- with(df_cities, cut(pop, quantile(pop), include.lowest = T))
+levels(df_cities$quart) <- paste(c("1st", "2nd", "3rd", "4th"), "Quantile")
+df_cities$quart <- as.ordered(df_cities$quart)
+
+ge <- list(scope = 'world', showland = TRUE, landcolor = toRGB("lightgray"),
+           subunitwidth = 1, countrywidth = 1, subunitcolor = toRGB("white"), countrycolor = toRGB("white"))
+
+plot_geo(df_cities, lon = ~long, lat = ~lat, text = ~popm, mode="markers",
+         marker = ~list(size = sqrt(pop/10000) + 1, line = list(width = 0.1)),
+         color = ~quart, locationmode = 'country names') %>%
+    layout(geo = ge, title = 'City Populations (Worldwide)')
+```
+
+### Real Random Number Generation
+
+We are already familiar with (pseudo) random number generation (e.g., `rnorm(100, 10, 4)` or `runif(100, 10,20)`), which *algorithmically* generate random values subject to specified distributions. There are also web-services, e.g., [random.org](https://random.org), that can provide *true random* numbers based on atmospheric noise, rather than using a pseudo random number generation protocol. Below is one [example of generating a total of 300 numbers arranged in 3 columns, each of 100 rows of random integers](https://www.random.org/integers/?num=300&min=100&max=200&col=3&base=10&format=plain&rnd=new) (in decimal format in the range $[100, 200]$.
+
+```{r}
+siteURL <- "https://random.org/integers/"  #   base URL
+shortQuery<-"num=300&min=100&max=200&col=3&base=10&format=plain&rnd=new"
+completeQuery <- paste(siteURL, shortQuery, sep="?")  # concat url and submit query string
+rngNumbers <- read.table(file=completeQuery)        # and read the data
+head(rngNumbers); tail(rngNumbers)
+```
+
+### Downloading the complete text of web pages
+
+The package `RCurl` provides an amazing tool for extracting and scraping information from websites. Let’s use it to demonstrate extracting information from a SOCR website.
+
+```{r warning=F, error=F, message=F}
+# install.packages("RCurl")
+library(RCurl)
+web <- getURL("https://wiki.socr.umich.edu/index.php/SOCR_Data", followlocation = TRUE)
+str(web, nchar.max = 200)
+```
+
+The `web` object looks incomprehensible. This is because most websites are wrapped in XML/HTML hypertext or include JSON formatted meta-data. `RCurl` deals with special HTML tags and website meta-data.
+
+To deal with the web pages only, `httr` package would be a better choice than `RCurl`. It returns a list that makes much more sense.
+
+```{r  warning=F, error=F, message=F}
+# install.packages("httr")
+library(httr)
+web<-GET("https://wiki.socr.umich.edu/index.php/SOCR_Data")
+str(web[1:3])
+```
+
+### Reading and writing XML with the `XML` package
+
+A combination of the `RCurl` and the `XML` packages could help us extract only the plain text in our desired webpages. This would be very helpful to get information from heavy text based websites.
+
+```{r  warning=F, error=F, message=F}
+web<-getURL("https://wiki.socr.umich.edu/index.php/SOCR_Data", followlocation = TRUE)
+#install.packages("XML")
+library(XML)
+web.parsed<-htmlParse(web, asText = T, encoding="UTF-8")
+plain.text<-xpathSApply(web.parsed, "//p", xmlValue)
+substr(paste(plain.text, collapse = "\n"), start=1, stop=256)
+```
+
+Here we extracted all plain text between the starting and ending *paragraph* HTML tags, `<p>` and `</p>`.
+
+More information about [extracting text from XML/HTML to text via XPath is available here](https://www.r-bloggers.com/htmltotext-extracting-text-from-html-via-xpath).
+
+### Web-page Data Scraping
+
+The process of extracting data from complete web pages and storing it in structured data format is called `scraping`. However, before starting a data scrape from a website, we need to understand the underlying HTML structure for that specific website. Also, we have to check the terms of that website to make sure that scraping from this site is allowed.
+
+The R package `rvest` is a very good place to start "harvesting" data from websites.
+
+To start with, we use `read_html()` to ingest the SOCR website hypertext metadata into a `xmlnode` object.
+
+```{r message=F}
+library(rvest)
+# SOCR<-read_html("http://wiki.stat.ucla.edu/socr/index.php/SOCR_Data")
+SOCR<-read_html("https://wiki.socr.umich.edu/index.php/SOCR_Data")
+SOCR
+```
+
+From the summary structure of `SOCR`, we can discover that there are two important hypertext section markups `<head>` and `<body>`. Also, notice that the SOCR data website uses `<title>` and `</title>` tags to extract the title in the `<head>` section. Let's use `html_node()` to extract title information based on this knowledge.
+
+```{r}
+SOCR %>% html_node("head title") %>% html_text()
+```
+
+Here we used `%>%` operator, or pipe, to connect two functions, see [magrittr package](https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html). The above line of code creates a chain of functions to operate on the `SOCR` object. The first function in the chain `html_node()` extracts the `title` from the `head` section. Then, `html_text()` translates HTML formatted hypertext into English. [More on `R` piping can be found in the `magrittr` package](https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html).
+
+Another function, `rvest::html_nodes()` can be very helpful in scraping. Similar to `html_node()`, `html_nodes()` can help us extract multiple nodes in an `xmlnode` object. Assume that we want to obtain the meta elements (usually page description, keywords, author of the document, last modified, and other metadata) from the SOCR data website. We apply `html_nodes()` to the `SOCR` object for lines starting with `<meta` in the `<head>` section. It is optional to use `html_attrs()`(extracts attributes, text and tag name from html) to make texts prettier.
+
+```{r}
+meta <- SOCR %>% html_nodes("head meta") %>% html_attrs()
+meta
+```
+
+### Parsing JSON from web APIs
+
+Application Programming Interfaces (APIs) allow web-accessible functions to communicate with each other. Today most API is stored in JSON (JavaScript Object Notation) format.
+
+JSON represents a plain text format used for web applications, data structures or objects. Online JSON objects could be retrieved by packages like `RCurl` and `httr`. Let's see a JSON formatted dataset first. We can use [02_Nof1_Data.json](https://umich.instructure.com/files/1760327/download?download_frd=1) in the class file as an example.
+
+```{r}
+library(httr)
+nof1 <- GET("https://umich.instructure.com/files/1760327/download?download_frd=1")
+nof1
+```
+
+We can see that JSON objects are very simple. The data structure is organized using hierarchies marked by square brackets. Each piece of information is formatted as a `{key:value}` pair.
+
+The package `jsonlite` is a very useful tool to import online JSON formatted datasets into data frames directly. Its syntax is very straight forward.
+
+```{r}
+# install.packages("jsonlite")
+library(jsonlite)
+nof1_lite <- fromJSON("https://umich.instructure.com/files/1760327/download?download_frd=1")
+class(nof1_lite)
+```
+
+### Reading and writing Microsoft Excel spreadsheets using XLSX
+
+We can transfer a *xlsx* dataset into CSV and use `read.csv()` to load this kind of dataset. However, R provides an alternative `read.xlsx()` function in package `xlsx` to simplify this process. Take our `02_Nof1_Data.xls` data in the class file as an example. We need to download the file first.
+
+```{r message=F, warning=F}
+# install.packages("xlsx")
+library(xlsx)
+nof1 <- read.xlsx("C:/Users/IvoD/Desktop/02_Nof1.xlsx", 1)
+str(nof1)
+```
+
+The last argument, `1`, stands for the first excel sheet, as any excel file may include a large number of tables in it. Also, we can download the `xls` or `xlsx` file into our R working directory so that it is easier to find file paths.
+
+Sometimes more complex protocols may be necessary to ingest data from XLSX documents. For instance, if the XLSX doc is large, includes many tables and is only accessible via HTTP protocol from a web-server. Below is an example downloading the second table, `ABIDE_Aggregated_Data`, from the [multi-table Autism/ABIDE XLSX dataset](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/17_ABIDE_Autism_CaseStudy):
+
+```{r  message=F, warning=F}
+# install.packages("openxlsx"); library(openxlsx)
+tmp = tempfile(fileext = ".xlsx")
+download.file(url = "https://umich.instructure.com/files/3225493/download?download_frd=1", destfile = tmp, mode="wb")
+df_Autism <- openxlsx::read.xlsx(xlsxFile = tmp, sheet = "ABIDE_Aggregated_Data", skipEmptyRows = TRUE)
+dim(df_Autism)
+```
+
+## Working with domain-specific data
+
+Many powerful Machine Learning methods are applicable in a broad range of disciplines. However, each domain has specific requirements and specialized data formats that often demand customized interfaces to employ existing tools to research-specific data-driven challenges. The important field of [biomedical informatics and data science (BIDS)](https://bids-tp.umich.edu/) represents one such example.
+
+### Working with bioinformatics data
+
+Genetic data are stored in widely varying formats and usually have more feature variables than observations. They could have 1,000 columns and only 200 rows. One of the commonly used pre-processing steps for such datasets is *variable selection*. We will talk about this in [Chapter 11](https://socr.umich.edu/DSPA2/DSPA2_notes/11_FeatureSelection.html).
+
+The Bioconductor project created powerful R functionality (packages and tools) for analyzing genomic data, see [Bioconductor for more detailed information](https://www.bioconductor.org).
+
+### Visualizing network data
+
+Social network data and graph datasets describe the relations between nodes (vertices) using connections (links or edges) joining the node objects. Assume we have *N* objects, we can have $N\times (N-1)$ directed links establishing paired associations between the nodes. Let's use an example with *N=4* to demonstrate a simple graph potentially modeling the following linkage table.
+
+objects| 1  | 2  | 3  | 4
+-------|----|----|----|---
+1|.....| $1\rightarrow 2$|$1\rightarrow 3$|$1\rightarrow 4$
+2|$2\rightarrow 1$|.....|$2\rightarrow 3$|$2\rightarrow 4$
+3|$3\rightarrow 1$|$3\rightarrow 2$|.....|$3\rightarrow 4$
+4|$4\rightarrow 1$|$4\rightarrow 2$|$4\rightarrow 3$|.....
+
+If we change the $a\rightarrow b$ to an indicator variable (0 or 1) capturing whether we have an edge connecting a pair of nodes, then we get the graph *adjacency matrix*.
+
+Edge lists provide an alternative way to represent network connections. Every line in the list contains a connection between two nodes (objects).
+
+Vertex|Vertex
+------|------
+1 |2
+1 |3
+2 |3
+
+The above edge list is listing three network connections: object 1 is linked to object 2; object 1 is linked to object 3; and object 2 is linked to object 3. Note that edge lists can represent both *directed* as well as *undirected* networks or graphs.
+
+We can imagine that if *N* is very large, e.g., social networks, the data representation and analysis may be resource intense (memory or computation). In R, we have multiple packages that can deal with social network data. One user-friendly example is provided using the `igraph` package. First, let's build a toy example and visualize it using this package.
+
+```{r  message=F, warning=F}
+#install.packages("igraph")
+library(igraph)
+g<-graph(c(1, 2, 1, 3, 2, 3, 3, 4), n=10)
+plot(g)
+```
+
+Here `c(1, 2, 1, 3, 2, 3, 3, 4)` is an edge list with 4 pairs of node connections and `n=10` means we have 10 nodes (objects) in total. The small arrows in the graph show us directed network connections. We might notice that 5-10 nodes are scattered out in the graph. This is because they are not included in the edge list, so there are no network connections between them and the rest of the network.
+
+Now let's examine the [co-appearance network of Facebook circles](https://snap.stanford.edu/data/egonets-Facebook.html). The data contains anonymized `circles` (friends lists) from Facebook collected from survey participants using [a Facebook app](https://www.facebook.com/apps/application.php?id=201704403232744). The dataset only includes edges (circles, 88,234) connecting pairs of nodes (users 4,039) in the ego networks.
+
+The values on the connections represent the number of links/edges within a circle. We have a huge edge-list made of scrambled Facebook user IDs. Let's load this dataset into R first. The data is stored in a text file. Unlike CSV files, text files in table format need to be imported using `read.table()`. We are using the `header=F` option to let R know that we don't have a header in the text file that contains only tab-separated node pairs (indicating the social connections, edges, between Facebook users).
+
+```{r eval=T, echo=T}
+soc.net.data<-read.table("https://umich.instructure.com/files/2854431/download?download_frd=1", sep=" ", header=F)
+head(soc.net.data)
+```
+
+Now the data is stored in a data frame. To make this dataset ready for `igraph` processing and visualization, we need to convert `soc.net.data` into a matrix object.
+
+```{r}
+soc.net.data.mat <- as.matrix(soc.net.data, ncol=2)
+```
+
+By using `ncol=2`, we made a matrix with two columns. The data is now ready and we can apply `graph.edgelist()`.
+
+```{r}
+# remove the first 347 edges (to wipe out the degenerate "0" node)
+graph_m <- graph.edgelist(soc.net.data.mat[-c(0:347), ], directed = F)
+```
+
+Before we display the social network graph we may want to examine our model first.
+
+```{r}
+summary(graph_m)
+```
+
+This is an extremely brief yet informative summary. The first line `U--- 4038 87887` includes potentially four letters and two numbers. The first letter could be `U` or `D` indicating *undirected* or *directed* edges. The second letter `N` would mean that the object set has a "name" attribute. And the third letter is for the weighted (`W`) graph. Since we didn't add weight in our analysis the third letter is empty ("`-`"). A fourth character is an indicator for bipartite graphs (whose vertices can be divided into `two disjoint sets` and (that is, represent independent sets where each vertex from one set connects to one vertex in the other set). The two numbers following the 4 letters represent the `number of nodes` and the `number of edges`, respectively. Now let's render the graph.
+
+```{r fig.width=10, fig.height=10}
+# Choose an algorithm to find network communities.
+# FastGreedy algorithm is great for large undirected networks
+comm_graph_m <- fastgreedy.community(graph_m)
+# sizes(comm_graph_m); membership(comm_graph_m)
+
+# Collapse the graph by communities
+reduced_comm_graph_m <- simplify(contract(graph_m, membership(comm_graph_m)))
+
+# Plot simplified graph
+# plot(reduced_comm_graph_m, vertex.color = adjustcolor("SkyBlue2", alpha.f = .5), vertex.label.color = adjustcolor("black", 0.9), margin=-0.2)
+# plot(graph_m, vertex.color = adjustcolor("SkyBlue2", alpha.f = .5), vertex.label.color = adjustcolor("black", 0.9), margin=-0.2)
+# plot(graph_m, margin=-0.2, vertex.shape="none", vertex.size=0.01)
+plot(graph_m, vertex.size=3, vertex.color=adjustcolor("SkyBlue2", alpha.f = 0.7), vertex.label=NA, margin=-0.2, layout=layout.reingold.tilford)
+
+# simplify graph
+# simple_graph_m <- simplify(graph_m, remove.loops=T, remove.multiple=T)
+# simple_graph_m <- delete.vertices(simple_graph_m, which(degree(simple_graph_m)<100))
+# plot(simple_graph_m, vertex.size=3, vertex.color=adjustcolor("SkyBlue2", alpha.f = .7), vertex.label=NA, margin=-0.6, layout=layout.reingold.tilford(simple_graph_m, circular=T))
+
+# Louvain Clustering of the graph nodes
+community <- cluster_louvain(graph_m)
+plot(community, graph_m, vertex.label.cex = .5, main = "Community Structure")
+```
+
+We can also use `D3` to display a dynamic graph.
+
+```{r fig.width=10, fig.height=10, warning=F, error=F, message=F}
+# install.packages('networkD3')
+library(networkD3)
+df <- as_data_frame(graph_m, what = "edges")
+# Javascript note indexing starts at zero, not 1, make an artificial index zero root
+df1 <- rbind(c(0,1), df)
+
+# Use D3 to display graph
+simpleNetwork(df1[1:1000,],fontSize = 12, zoom = T)
+```
+
+This graph is very complicated, yet we can still see that some nodes (influencers) are surrounded by more nodes than other network members. To obtain such information we can use the `degree()` function which lists the number of edges for each node.
+
+```{r eval=T, echo=T, warning=F, message=FALSE}
+degree(graph_m)[100:110]
+```
+
+Skimming the table we can find that `the 107-th` user has as many as $1,044$ connections, which makes the user a *highly-connected hub*. Likely, this node may have higher social relevance.
+
+Similarly, some edges might be more important than other edges because they serve as a bridge between different cloud or clusters of nodes. To compare their importance, we can use the betweenness centrality measurement. *Betweenness centrality* measures centrality in a network. High centrality for a specific node indicates influence. `betweenness()` can help us to calculate the betweenness centrality of a given fixed network node $v_o$
+
+$$g(v_0)=\sum_{s\neq v_o\neq t}{\frac{\sigma_{st}(v_o)}{\sigma_{st}}},$$
+
+where ${\sigma_{st}}$ is the total number of shortest paths from node $s$ to node $t$ and $\sigma_{st}(v_o)$ is the number of those paths that pass through the fixed network node $v_o$, which is not a leaf node on the graph.
+
+
+```{r eval=F, echo=T, warning=F, message=FALSE}
+betweenness(graph_m)[100:110]
+```
+
+Again, `the 107-th` node has the highest betweenness centrality ($3.556221e+06$).
+
+We can try another example using [SOCR hierarchical data, which is also available for dynamic exploration as a tree graph](https://socr.umich.edu/html/Navigators.html). Let's read its JSON data source using the `jsonlite` package.
+
+```{r}
+tree.json <- fromJSON("http://socr.ucla.edu/SOCR_HyperTree.json", simplifyDataFrame = FALSE)
+# tree.json<-fromJSON("https://socr.umich.edu/html/navigators/D3/xml/SOCR_HyperTree.json", simplifyDataFrame = FALSE)
+# tree.json<-fromJSON("https://raw.githubusercontent.com/SOCR/Navigator/master/data/SOCR_HyperTree.json", simplifyDataFrame = FALSE)
+```
+
+This generates a `list` object representing the hierarchical structure of the network. Note that this is quite different from edge list. There is one root node, its sub nodes are called *children nodes*, and the terminal notes are call *leaf nodes*. Instead of presenting the relationship between nodes in pairs, this hierarchical structure captures the level for each node. To draw the social network graph, we need to convert it as a `Node` object. We can utilize the `as.Node()` function in the `data.tree` package to do so.
+
+```{r}
+# install.packages("data.tree")
+library(data.tree)
+tree.graph<-as.Node(tree.json, mode = "explicit")
+```
+
+Here we use the `mode="explicit"` option to allow "children" nodes to have their own "children" nodes. Now, the `tree.json` object has been separated into four different node structures - `"About SOCR", "SOCR Resources", "Get Started", ` and `"SOCR Wiki"`. Let's plot the first one using the `igraph` package.
+
+In the example below, we are demonstrating a slightly complicated scenario where the graphs source data (in this case JSON file) includes nodes with the same *name*. In principle, this causes a problem with the graph traversal that may lead to infinite loops of node traversal. Thus, we will search for nodes with duplicated names and modify their names to make the algorithm more robust.
+
+```{r fig.width=10, fig.height=10}
+AreNamesUnique <- function(node) {
+  mynames <- node$Get("name")
+  all(duplicated(mynames) == FALSE)
+}
+
+# AreNamesUnique(tree.graph$`About SOCR`)
+
+# Find Duplicate Node names: duplicated(tree.graph$`About SOCR`$Get("name"))
+# duplicated(tree.graph$Get("name"))
+
+# One branch of the SOCR Tree: About SOCR
+# getUniqueNodes(tree.graph$`About SOCR`)
+# AreNamesUnique(tree.graph$`About SOCR`)
+
+## extract Graph Nodes with Unique Names (remove duplicate nodes)
+getUniqueNodes <- function(node) {
+  AreNamesUnique(node)
+  mynames <- node$Get("name")
+  (names_unique <- ifelse (duplicated(mynames),
+                           sprintf("%s_%d", mynames, sample(1:1000,1)), mynames))
+  node$Set(name = names_unique)
+  AreNamesUnique(node)
+  return(node)
+}
+
+# Do this duplicate node renaming until there are no duplicated names
+while (length(tree.graph$Get("name")) != length(unique(tree.graph$Get("name")))) {
+  getUniqueNodes(tree.graph)
+  AreNamesUnique(tree.graph)
+}
+
+length(tree.graph$Get("name"))
+length(unique(tree.graph$Get("name")))
+
+plot(as.igraph(tree.graph$`About SOCR`), edge.arrow.size=5, edge.label.font=0.05)
+
+## D3 plot
+df <- as_data_frame(as.igraph(tree.graph$`About SOCR`), what = "edges")
+# Javascript note indexing starts at zero, not 1, make an artificial index zero root
+df1 <- rbind(c("SOCR", "About SOCR"), df)
+
+# Use D3 to display graph
+simpleNetwork(df1, fontSize = 12, zoom = T)
+
+# Louvain Clustering of the graph nodes
+graph_m <- as.igraph(tree.graph$`About SOCR`)
+community <- cluster_louvain(graph_m)
+plot(community, graph_m, vertex.label.cex = .5, main = "SOCR Resource HTML Structure")
+```
+
+In this graph, the node `"About SOCR"`, located at the center of the graph, represents the root of the tree network. Of course, we can repeat this process starting with the root of the complete hierarchical structure, `SOCR`.
+
+## Data Streaming
+
+The proliferation of Cloud services and the emergence of modern technology in all aspects of human experiences leads to a tsunami of data, much of which is steamed real-time. The interrogation of such voluminous data is an increasingly important area of research. *Data streams* are ordered, often unbounded, sequences of data points created continuously by a data generator. All the data mining, interrogation and forecasting methods we discussed for traditional datasets are also applicable to data streams.
+
+### Definition
+
+Mathematically, a *data stream* in an ordered sequence of data points:
+$$Y = \{y_1, y_2, y_3, \cdots, y_t, \cdots \},$$
+where the (time) index, $t$, reflects the order of the observation/record, which may be single numbers, simple vectors in multidimensional space, or objects, e.g., [structured Ann Arbor Weather (JSON)](https://weather.rap.ucar.edu/surface/index.php?metarIds=KARB) and [its corresponding structured form](https://weather.rap.ucar.edu/surface/index.php?metarIds=KARB&std_trans=translated). Some streaming data is *streamed* because it's too large to be downloaded shotgun style and some is *streamed* because it's continually generated and serviced. This presents the potential problem of dealing with data streams that may be unlimited.
+
+**Notes**:
+
+ - *Data sources*: Real or synthetic stream data can be used. Random simulation streams may be created by `rstream`. Real stream data may be piped from financial data providers, the WHO, World Bank, NCAR and other sources.
+ - *Inference Techniques*: Many of the data interrogation techniques we  have seen can be employed for dynamic stream data, e.g., `factas`, for PCA, `rEMM` and `birch` for clustering, etc. Clustering and classification methods capable of processing data streams have been developed, e.g., *Very Fast Decision Trees* (VFDT), *time window-based Online Information Network* (OLIN), *On-demand Classification*, and the *APRIORI* streaming algorithm.
+ - *Cloud distributed computing*: Hadoop2/HadoopStreaming, SPARK, Storm3/RStorm and other services provide environments to expand batch/script-based `R` tools to the Cloud.
+
+
+### The `stream` package
+
+The `R` *stream* package provides data stream mining algorithms using `fpc`, `clue`, `cluster`, `clusterGeneration`, `MASS`, and `proxy` packages. In addition, the package `streamMOA` provides an `rJava` interface to the Java-based data stream clustering algorithms available in the *Massive Online Analysis* (MOA) framework for stream classification, regression and clustering.
+
+If you need a deeper exposure to data streaming in R, we recommend you go over the [stream vignettes](https://cran.r-project.org/web/packages/stream/vignettes/stream.pdf).
+
+### Synthetic example - random Gaussian stream
+
+This example shows the creation and loading of a *mixture of 5 random 2D Gaussians*, centers at (*x_coords*, *y_coords*) with paired correlations *rho_corr*, representing a simulated data stream.
+
+### Generate the stream
+
+```{r message=F, error=F}
+# install.packages("stream")
+library("stream")
+x_coords <- c(0.2,0.3, 0.5, 0.8, 0.9)
+y_coords <- c(0.8,0.3, 0.7, 0.1, 0.5)
+p_weight <- c(0.1, 0.9, 0.5, 0.4, 0.3) # A vector of probabilities that determines the likelihood of generated a data point from a particular cluster
+set.seed(12345)
+stream_5G <- DSD_Gaussians(k = 5, d = 2, mu=cbind(x_coords, y_coords), p=p_weight)
+```
+
+#### K-Means clustering
+
+We will now try [k-means (Chapter 8)](https://socr.umich.edu/DSPA2/DSPA2_notes/08_Unsupervised_Clustering.html) and a [density-based data stream clustering algorithm, D-Stream](https://doi.org/10.1007/s11390-014-1416-y), where micro-clusters are formed by grid cells of size *gridsize* with the density of a grid cell (Cm) being at least 1.2 times the average cell density. The model is updated with the next $500$ data points from the stream.
+
+```{r message=F, error=F}
+dstream <- DSC_DStream(gridsize = 0.1, Cm = 1.2)
+update(dstream,  stream_5G,  n=500)
+```
+
+First, let's run the [k-means clustering](https://socr.umich.edu/DSPA2/DSPA2_notes/08_Unsupervised_Clustering.html) with $k=5$ clusters and plot the resulting micro and macro clusters.
+
+```{r}
+kmc <- DSC_Kmeans(k = 5)
+recluster(kmc,   dstream)
+plot(kmc, stream_5G, type = "both", xlab="X-axis", ylab="Y-axis")
+```
+
+In this clustering plot, *micro-clusters are shown as circles* and *macro-clusters are shown as crosses* and their sizes represent the corresponding cluster weight estimates.
+
+Prior to updating the model with the next 1,000 data points from the stream, we specify the grid cells as micro-clusters, grid cell size (gridsize=0.1), and a micro-cluster (Cm=1.2) that specifies the density of a grid cell as a multiple of the average cell density.
+
+```{r}
+dstream <- DSC_DStream(gridsize = 0.1, Cm = 1.2)
+update(dstream,  stream_5G,  n=1000)
+```
+
+We can re-cluster the data using k-means with 5 clusters and plot the resulting *micro* and *macro* clusters.
+
+```{r}
+km_G5 <- DSC_Kmeans(k = 5)
+recluster(km_G5,   dstream)
+plot(km_G5, stream_5G, type = "both")
+```
+
+Note the subtle changes in the clustering results after updating with the new batch of data.
+
+### Sources of Data Streams
+
+#### Static structure streams
+
+ -	*DSD_BarsAndGaussians* generates two uniformly filled rectangles and two Gaussian clusters with different density.
+ -	*DSD_Gaussians* generates randomly placed static clusters with random multivariate Gaussian distributions.
+ -	*DSD_mlbenchData* provides streaming access to machine learning benchmark datasets found in the `mlbench` package.
+ -	*DSD_mlbenchGenerator* interfaces the generators for artificial data sets defined in the mlbench package.
+ -	*DSD_Target* generates a ball in a circle data set.
+ -	*DSD_UniformNoise* generates uniform noise in a d-dimensional (hyper) cube.
+
+#### Concept drift streams
+
+ -	*DSD_Benchmark* provides a collection of simple benchmark problems including splitting and joining clusters, and changes in density or size, which can be used as a comprehensive  benchmark  set for algorithm comparison.
+ -	*DSD_MG* is a generator to specify complex data streams with concept drift. The shape as well as the behavior of each cluster over time can be specified using keyframes.
+ -	*DSD_RandomRBFGeneratorEvents* generates streams using radial base functions with noise. Clusters move, merge and split.
+
+#### Real data streams
+
+ -	*DSD_Memory* provides a streaming interface to static, matrix-like data (e.g., a data frame, a matrix) in memory which represents a fixed portion of a data stream. Matrix-like objects also include large objects potentially stored on disk like `ff::ffdf`.
+ -	*DSD_ReadCSV* reads data line by line in text format from a file or an open connection and makes it available in a streaming fashion. This way data that is larger than the available main memory can be processed.
+ -	*DSD_ReadDB* provides an interface to an open result set from a SQL query to a relational database.
+
+### Printing, plotting and saving streams
+
+For `DSD` objects, some basic stream functions include `print()`, `plot()` and `write_stream()`. These can save part of a data stream to disk. `DSD_Memory` and `DSD_ReadCSV` objects also include member functions like `reset_stream()` to reset the position in the stream to its beginning.
+
+To request a new batch of data points from the stream we use `get_points()`.  This chooses a *random cluster* (based on the probability weights in `p_weight`) and a point is drawn from the multivariate Gaussian distribution ($mean=mu, covariance\ matrix=\Sigma$) of that cluster. Below, we pull $n = 10$ new data points from the stream.
+
+```{r}
+new_p  <- get_points(stream_5G,  n  =  10)
+new_p
+
+new_p  <- get_points(stream_5G,  n  =  100,  class  =  TRUE)
+head(new_p, n = 20)
+
+plot(stream_5G,  n  =  700,  method  =  "pc")
+```
+
+Note that if you add *noise* to your stream, e.g., `stream_Noise <- DSD_Gaussians(k = 5, d = 4, noise = .1, p = c(0.1, 0.5, 0.3, 0.9, 0.1))`, then the noise points won't be part of any clusters and may have an `NA` class label.
+
+### Stream animation
+
+Clusters can be animated over time by `animate_data()`. Use `reset_stream()` to start the animation at the beginning of the stream and note that this method is **not implemented** for streams of class `DSD_Gaussians`, `DSD_R`, `DSD_data.frame`, and `DSD`. We'll create a new `DSD_Benchmark` data stream.
+
+```{r}
+set.seed(12345)
+stream_Bench <- DSD_Benchmark(1)
+stream_Bench
+```
+
+```{r}
+library("animation")
+reset_stream(stream_Bench)
+animate_data(stream_Bench, n=10000, horizon=100, xlim = c(0, 1), ylim = c(0, 1))
+
+# Generate a random LIST of images
+# img.list <- as.list(NULL)
+# for (i in 1:100)  img.list[[i]] <- imager::imnoise(x = 200, y = 200, z = 1)
+# image(img.list[[1]][,,1,1])
+```
+
+This benchmark generator creates two 2D clusters moving in the plane. One moves from *top-left* to *bottom-right*, the other from *bottom-left* to *top-right*.  When the pair of clusters meet at the center of the domain, they briefly overlap and then split again.
+
+Concept drift in the stream can be depicted by requesting ($10$) times $300$ data points from the stream and animating the plot. Fast-forwarding the stream can be accomplished by requesting, but ignoring, ($2000$) points in between the ($10$) plots.
+
+```{r}
+for(i in 1:10) {
+   plot(stream_Bench, 300, xlim = c(0, 1), ylim = c(0, 1))
+   tmp <- get_points(stream_Bench, n = 2000)
+}
+
+reset_stream(stream_Bench)
+
+# Uncomment this to see the animation
+# animate_data(stream_Bench, n=8000, horizon = 120,	xlim=c(0, 1), ylim=c(0, 1))
+
+# Animations can be saved as HTML or GIF
+#saveHTML(ani.replay(), htmlfile = "stream_Bench_Animation.html")
+#saveGIF(ani.replay())
+```
+
+Streams can also be saved locally by `write_stream(stream_Bench,  "dataStreamSaved.csv",  n =  100,  sep=",")` and loaded back in `R` by `DSD_ReadCSV()`.
+
+### Case-Study: SOCR Knee Pain Data
+
+These data represent the $X$ and $Y$ spatial knee-pain locations for over $8,000$ patients, along with *labels* about the knee $F$ront, $B$ack, $L$eft and $R$ight. Let's try to read the [SOCR Knee Pain Datasest](https://wiki.socr.umich.edu/index.php/SOCR_Data_KneePainData_041409) as a stream.
+
+```{r message=F, warning=F}
+library("XML"); library("xml2"); library("rvest")
+
+wiki_url <- read_html("https://wiki.socr.umich.edu/index.php/SOCR_Data_KneePainData_041409")
+html_nodes(wiki_url, "#content")
+
+kneeRawData <- html_table(html_nodes(wiki_url, "table")[[2]])
+normalize<-function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+kneeRawData_df <- as.data.frame(cbind(normalize(kneeRawData$x), normalize(kneeRawData$Y), as.factor(kneeRawData$View)))
+colnames(kneeRawData_df) <- c("X", "Y", "Label")
+# randomize the rows of the DF as RF, RB, LF and LB labels of classes are sequential
+set.seed(1234)
+kneeRawData_df <- kneeRawData_df[sample(nrow(kneeRawData_df)), ]
+summary(kneeRawData_df)
+# View(kneeRawData_df)
+```
+
+We can use the `DSD::DSD_Memory` class to get a stream interface for matrix or data frame objects, like the Knee pain location dataset. The number of true clusters $k=4$ in this dataset.
+
+```{r}
+# use data.frame to create a stream (3rd column contains the label assignment)
+kneeDF <- data.frame(x=kneeRawData_df[,1], y=kneeRawData_df[,2],
+  .class=as.factor(kneeRawData_df[,3]))
+head(kneeDF)
+
+# streamKnee <- DSD_Memory(kneeDF[,c("x", "y")], class=kneeDF[,"class"], loop=T)
+streamKnee <- DSD_Memory(kneeDF[,c("x", "y", ".class")], loop=T)
+streamKnee
+
+# define the stream classifier.
+cl <- DSClassifier_SlidingWindow(class ~ x + y, window=50, rebuild=10)
+cl
+
+# Each time we get a point from *streamKnee*, the stream pointer moves to the next position (row) in the data.
+get_points(streamKnee, n=10)
+streamKnee
+
+# Stream pointer is in position 11 now
+
+# We can redirect the current position of the stream pointer by:
+reset_stream(streamKnee,  pos  =  200)
+get_points(streamKnee, n=10)
+streamKnee
+```
+
+### Data Stream clustering and classification (DSC)
+
+Let's demonstrate clustering using `DSC_DStream`, which assigns points to cells in a grid. First, initialize the clustering, as an empty cluster and then use the `update()` function to implicitly alter the mutable `DSC` object.
+
+```{r}
+dsc_streamKnee <- DSC_DStream(gridsize = 0.1, Cm = 0.4, attraction=T)
+dsc_streamKnee
+# stream::update
+reset_stream(streamKnee,  pos  =  1)
+
+# update the classifier with 100 points from the stream
+update(dsc_streamKnee, streamKnee,  n  =  500)
+# update(cl, streamKnee,  n  =  500)
+
+head(get_centers(dsc_streamKnee))
+
+plot(dsc_streamKnee,  streamKnee, xlim=c(0,1), ylim=c(0,1))
+# plot(dsc_streamKnee,  streamKnee, grid = TRUE)
+# Micro-clusters are plotted in red on top of gray stream data points
+# The size of the micro-clusters indicates their weight - it's proportional to the number of data points represented by each micro-cluster.
+# Micro-clusters are shown as dense grid cells (density is coded with gray values).
+```
+
+The purity metric represent an external evaluation criterion of cluster quality, which is the proportion of the total number of points that were correctly classified:
+$0\leq Purity =  \frac{1}{N} \sum_{i=1}^k { \max_j a|c_i \cap t_j |} \leq 1$,
+where $N$=number of observed data points, $k$ = number of clusters, $c_i$ is the $i$th cluster, and $t_j$ is the classification that has the maximum number of points with $c_i$ class labels. High purity suggests that we correctly label points.
+
+Next, we can use K-means clustering.
+
+```{r message=F, warning=F}
+kMeans_Knee <- DSC_Kmeans(k = 5) # choose 4-5 clusters as we have 4 knee labels
+recluster(kMeans_Knee, dsc_streamKnee)
+plot(kMeans_Knee, streamKnee, type = "both")
+
+animate_data(streamKnee, n=1000, horizon=100, xlim = c(0, 1), ylim = c(0, 1))
+
+# purity <- animate_cluster(kMeans_Knee, streamKnee, n=2500, type="both", xlim=c(0,1), ylim=c(-,1), evaluationMeasure="purity", horizon=10)
+
+animate_cluster(kMeans_Knee, streamKnee,  horizon = 100,  n = 5000, measure = "purity", plot.args = list(xlim = c(0, 1), ylim = c(0, 1)))
+```
+
+###	Evaluation of data stream clustering
+
+```{r warning=F, message=F}
+# Synthetic Gaussian example
+# stream <- DSD_Gaussians(k = 3, d = 2, noise = 0.05)
+# dstream <- DSC_DStream(gridsize = 0.1)
+# update(dstream,  stream,  n  =  2000)
+# evaluate(dstream,  stream,  n  =  100)
+
+evaluate_static(dsc_streamKnee, streamKnee,
+         measure = c("crand", "SSQ", "silhouette"), n = 100,
+         type = c("auto", "micro", "macro"), assign = "micro",
+         assignmentMethod=c("auto", "model", "nn")) # , noise=c("class", "exclude"))
+
+clusterEval <- evaluate_stream(dsc_streamKnee, streamKnee, measure = c("numMicroClusters", "purity"), n=5000, horizon=100)
+head(clusterEval)
+
+# plot(clusterEval[ , "points"], clusterEval[ , "purity"], type = "l", ylab  =  "Avg Purity",  xlab  =  "Points")
+library(plotly)
+
+plot_ly(x=~clusterEval[ , "points"], y=~clusterEval[ , "purity"], type="scatter", mode="markers+lines") %>%
+  layout(title="Streaming Data Classification (Knee Data): Average Cluster Purity",
+         xaxis=list(title="Streaming Points"), yaxis=list(title="Average Purity"))
+
+animate_cluster(dsc_streamKnee, streamKnee,  horizon  =  100,  n  =  5000, measure = "purity", plot.args = list(xlim = c(0, 1), ylim = c(0, 1)))
+```
+
+The `dsc_streamKnee` includes the clustering results, where $n$ represents the data points taken from `streamKnee`. The evaluation `measure` can be specified as a vector of character strings. Points are assigned to clusters in `dsc_streamKnee` using `get_assignment()` and can be used to assess the quality of the classification. By default, points are assigned to *micro-clusters*, or can be assigned to *macro-cluster* centers by `assign = "macro"`. Also, new points can be assigned to clusters by the rule used in the clustering algorithm by `assignmentMethod = "model"` or using nearest-neighbor assignment (`nn`).
+
+## Optimization and improving the computational performance
+
+Just like we noticed in previous chapters, e.g., [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html), streaming classification in `R` may be slow and memory-inefficient. These problems may become severe, especially for datasets with millions of records or when using complex functions. There are [packages for processing large datasets and memory optimization](https://rstudio-pubs-static.s3.amazonaws.com/72295_692737b667614d369bd87cb0f51c9a4b.html) -- `bigmemory`, `biganalytics`, `bigtabulate`, etc.
+
+### Generalizing tabular data structures with `dplyr`
+
+We have also seen long execution times when running processes that ingest, store or manipulate huge `data.frame` objects. The `dplyr` package, created by Hadley Wickham and Romain Francoi, provides a faster route to manage such large datasets in R. It creates an object called `tbl`, similar to `data.frame`, which has an in-memory column-like structure. R reads these objects a lot faster than data frames.
+
+To make a `tbl` object we can either convert an existing data frame to `tbl` or connect to an external database. Converting from data frame to `tbl` is quite easy. All we need to do is call the function `as.tbl()`.
+
+```{r message=F, warning=F}
+#install.packages("dplyr")
+library(dplyr)
+nof1_tbl<-as.tbl(nof1)
+nof1_tbl
+```
+
+This looks like a normal data frame. If you are using R Studio by viewing the `nof1_tbl` you can see the same output as `nof1`.
+
+### Making data frames faster with data.table
+
+Similar to `tbl`, the `data.table` package provides another alternative to data frame object representation. `data.table` objects are processed in R much faster compared to standard data frames. Also, all of the functions that can accept data frames could be applied to `data.table` objects as well. The function `fread()` is able to read a local CSV file directly into a `data.table`.
+
+```{r message=F, warning=F}
+# install.packages("data.table")
+library(data.table)
+nof1 <- fread("C:/Users/IvoD/Desktop/02_Nof1_Data.csv")
+```
+
+Another amazing property of `data.table` is that we can use subscripts to access a specific location in the dataset just like `dataset[row, column]`. It also allows the selection of rows with Boolean expression and direct application of functions to those selected rows. Note that column names can be used to call the specific column in `data.table`, whereas with data frames, we have to use the `dataset$columnName` syntax).
+
+```{r}
+nof1[id==1, mean(qhyact)]
+```
+
+This useful functionality can also help us run complex operations with only a few lines of code. One of the drawbacks of using `data.table` objects is that they are still limited by the available system memory.
+
+### Creating disk-based data frames with `ff`
+
+The `ff` (fast-files) package allows us to overcome the RAM limitations of finite system memory. For example, it helps with operating datasets with billion rows. `ff` creates objects in `ffdf` formats, which is like a map that points to a location of the data on a disk. However, this makes `ffdf` objects inapplicable for most R functions. The only way to address this problem is to break the huge dataset into small chunks. After processing a batch of these small chunks, we have to combine the results to reconstruct the complete output. This strategy is relevant in parallel computing, which will be discussed in detail in the next section. First, let's download one of the [large datasets in our datasets archive, UQ_VitalSignsData_Case04.csv](https://umich.instructure.com/files/366335/download?download_frd=1).
+
+```{r message=F, warning=F}
+# install.packages("ff")
+library(ff)
+# vitalsigns<-read.csv.ffdf(file="UQ_VitalSignsData_Case04.csv", header=T)
+vitalsigns <- read.csv.ffdf(file="https://umich.instructure.com/files/366335/download?download_frd=1", header=T)
+```
+
+As mentioned earlier, we cannot apply functions directly on this `ff` object, e.g.,
+
+```{r}
+mean(vitalsigns$Pulse)
+```
+
+For basic data calculations, we can download another package `ffbase`. This allows operations on `ffdf` objects using simple tasks like: mathematical operations, query functions, summary statistics and bigger regression models using packages like `biglm`, which will be mentioned later in this chapter.
+
+```{r eval=FALSE, message=F, warning=F}
+# Install RTools: https://cran.r-project.org/bin/windows/Rtools/
+# install.packages("ffbase")
+## ff vs. ffbase package incompatibility:
+# https://forums.ohdsi.org/t/solving-error-object-is-factor-ff-is-not-exported-by-namespace-ff/11745
+# Downgrade ff package to 2.2.14
+# install.packages("C:/Users/IvoD/Desktop/ff_2.2-14.tar.gz", repos = NULL, type="source")
+library(ffbase)
+mean(vitalsigns$Pulse)
+```
+
+### Using massive matrices with `bigmemory`
+
+The previously introduced packages include alternatives to `data.frames`. For instance, the `bigmemory` package creates alternative objects to 2D matrices (second-order tensors). It can store huge datasets and can be divided into small chunks that can be converted to data frames. However, we cannot directly apply machine learning methods on these types of objects. More [detailed information about the `bigmemory` package is available online](https://www.bigmemory.org).
+
+
+## Parallel computing
+
+In previous chapters, we saw various machine learning techniques applied as serial computing tasks. The traditional protocol involves the following steps. First, applying *function 1* to our raw data. Then, using the output from *function 1* as an input to *function 2*. This process is iterated for a series of functions. Finally, we have the terminal output generated by the last function. This serial or linear computing method is straightforward but time consuming and perhaps sub-optimal.
+
+Now we introduce a more efficient way of computing - *parallel computing*, which provides a mechanism to deal with different tasks at the same time and combine the outputs for all of the processes to get the final answer faster. However, parallel algorithms may require special conditions and cannot be applied to all problems. If two tasks have to be run in a specific order, this problem cannot be parallelized.
+
+### Measuring execution time
+
+To measure how much time can be saved for different methods, we can use the function `system.time()`.
+
+```{r}
+system.time(mean(vitalsigns$Pulse))
+```
+
+This means calculating the mean of the `Pulse` column in the `vitalsigns` dataset takes 0.001 seconds. These values will vary between computers, operating systems, and states of operations.
+
+### Parallel processing with multiple cores
+
+We will introduce two packages for parallel computing `multicore` and `snow` (their core components are included in the package `parallel`). They both have a different way of multitasking. However, to run these packages, you need to have a relatively modern multicore computer. Let's check how many cores your computer has. This function `parallel::detectCores()` provides this functionality. `parallel` is a base package, so there is no need to install it prior to using it.
+
+```{r}
+library(parallel)
+detectCores()
+```
+
+This reports that there are eight (8) cores on the computer used to compile and knit the Rmarkdown source of the DSPA book content. In this case, we can run up to 6–7 parallel jobs on this computer, never use all cores for computing as this will overwhelm the core state of the machine.
+
+The `multicore` package simply uses the multitasking capabilities of the *kernel*, the computer's operating system, to "fork" additional R sessions that share the same memory. Imagine that we open several R sessions in parallel and let each of them do part of the work. Now, let's examine how this can save time when running complex protocols or dealing with large datasets. To start with, we can use the `mclapply()` function, which is similar to `lapply()`, which applies functions to a vector and returns a vector of lists. Instead of applying functions to vectors `mcapply()` divides the complete computational task and delegates portions of it to each available core. We will apply a simple, yet time consuming, task - generating random numbers - for demonstrating this procedure. Also, we can use the `system.time()` to track the time differences.
+
+```{r}
+set.seed(123)
+system.time(c1<-rnorm(10000000))
+
+# Note the multi core calls may not work on Windows, but will work on Linux/Mac.
+#This shows a 2-core and 4-vore invocations
+# system.time(c2<-unlist(mclapply(1:2, function(x){rnorm(5000000)}, mc.cores = 2)))
+# system.time(c4<-unlist(mclapply(1:4, function(x){rnorm(2500000)}, mc.cores = 4)))
+
+# And here is a Windows (single core invocation)
+library(parallel)
+numWorkers <- 4
+cl <-makeCluster(numWorkers, type="PSOCK")
+system.time(c2 <- unlist(parLapply(cl,1:10, function(x) {rnorm(10000000)})))
+stopCluster(cl)
+```
+
+The `unlist()` is used at the end to combine results from different cores into a single vector. Each line of code creates $10,000,000$ random numbers. The generation of the `c1` output uses the default `R` single core invocation, which uses the most CPU time. The `c2` output used two cores to complete the task (each core handles $5,000,000$ (half) of the random number generations, and uses less time than the first one. The final output, `c4`, uses four cores for the task and reduces the computing time even further. Clearly, using additional cores significantly shrinks the overall execution time.
+
+The `snow` package allows parallel computing on multicore multiprocessor machines or a network of multiple machines. It might be more difficult to use but it's also certainly more flexible. First we can set how many cores we want to use via the `makeCluster()` function.
+
+```{r message=F, warning=F}
+# install.packages("snow")
+library(snow)
+cl<-makeCluster(2)
+```
+
+This call might cause a pop-up message warning about access through the firewall. To do the same task we can use the `parLapply()` function in the `snow` package. Note that we have to call the object we created with the previous `makeCluster()` function.
+
+```{r}
+system.time(c2<-unlist(parLapply(cl, c(5000000, 5000000), function(x) {rnorm(x)})))
+```
+
+While using `parLapply()`, we have to specify the matrix and the function that will be applied to this matrix. Remember to stop the cluster we made after completing the task, to release back the system resources.
+
+```{r}
+stopCluster(cl)
+```
+
+### Parallelization using `foreach` and `doParallel`
+
+The `foreach` package provides another option of parallel computing. It relies on a loop-like process basically applying a specified function for each item in the set, which again is somewhat similar to `apply()`, `lapply()` and other regular functions. The interesting thing is that these loops can be computed in parallel saving substantial amounts of time. The `foreach` package alone cannot provide parallel computing. We have to combine it with other packages like `doParallel`. Let's reexamine the task of creating a vector of 10,000,000 random numbers. First, register the 4 compute cores using `registerDoParallel()`.
+
+```{r message=F, warning=F}
+# install.packages("doParallel")
+library(doParallel)
+cl<-makeCluster(4)
+registerDoParallel(cl)
+```
+
+Then we can examine the time saving `foreach` command.
+
+```{r message=F, warning=F}
+#install.packages("foreach")
+library(foreach)
+system.time(c4 <- foreach(i=1:4, .combine = 'c') %dopar% rnorm(2500000) )
+```
+
+Here we used four items (each item runs on a separate core), `.combine=c` allows `foreach` to combine the results with the parameter `c()` generating the aggregate result vector.
+
+Also, don't forget to close the `doParallel` by registering the sequential backend.
+
+```{r}
+unregister <- registerDoSEQ()
+```
+
+### GPU computing
+
+Modern computers have graphics cards, GPU (Graphics Processing Unit), that consist of thousands of cores, however they are very specialized, unlike the standard CPU chip. If we can use this feature for parallel computing, we may reach amazing performance improvements, at the cost of complicating the processing algorithms and increasing the constraints on the data format. Specific disadvantages of GPU computing include relying on a proprietary manufacturer (e.g., NVidia) frameworks and Complete Unified Device Architecture (CUDA) programming language. CUDA allows programming of GPU instructions into a common computing language. This [paper provides one example of using GPU computation to significantly improve the performance of advanced neuroimaging and brain mapping processing of multidimensional data](https://dx.doi.org/10.1016/j.cmpb.2010.10.013).
+
+The R package `gputools` is created for parallel computing using NVidia CUDA. Detailed [GPU computing in R information is available online](https://cran.r-project.org/web/packages/gputools/gputools.pdf).
+
+
+## Deploying optimized learning algorithms
+
+As we mentioned earlier, some tasks can be parallelized easier than others. In real world situations, we can pick the algorithms that lend themselves well to parallelization. Some of the R packages that allow parallel computing using ML algorithms are listed below.
+
+### Building bigger regression models with `biglm`
+
+The R [biglm](https://cran.r-project.org/web/packages/biglm/biglm.pdf) package allows training regression models with data from SQL databases or large data chunks obtained from the `ff` package. The output is similar to the standard `lm()` function that builds linear models. However, `biglm` operates efficiently on massive datasets.
+
+### Growing bigger and faster random forests with `bigrf`
+
+The [bigrf](https://github.com/aloysius-lim/bigrf) package can be used to train random forests combining the `foreach` and `doParallel` packages. In [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html), we presented random forests as machine learners ensembling multiple tree learners. With parallel computing, we can split the task of creating thousands of trees into smaller tasks that can be outsourced to each available compute core. We only need to combine the results at the end. Then, we will obtain the exact same output in a relatively shorter amount of time.
+
+### Training and evaluation models in parallel with `caret`
+
+Combining the `caret` package with `foreach` and we can obtain a powerful method to deal with time-consuming tasks like building a random forest learner. Utilizing the same example we presented in [Chapter 9](https://socr.umich.edu/DSPA2/DSPA2_notes/09_ModelEvalImprovement.html), we can see the time difference of utilizing the `foreach` package.
+
+```{r include=F}
+qol <- read.csv("https://umich.instructure.com/files/481332/download?download_frd=1")
+qol <- qol[!qol$CHARLSONSCORE==-9 , -c(1, 2)]
+qol$CHARLSONSCORE <- as.factor(qol$CHARLSONSCORE)
+library(caret)
+ctrl <- trainControl(method="cv", number=10)
+grid_rf <- expand.grid(mtry=c(2, 4, 8, 16))
+```
+
+```{r}
+#library(caret)
+system.time(m_rf <- train(CHARLSONSCORE ~ ., data=qol, method="rf", metric="Kappa", trControl=ctrl, tuneGrid=grid_rf))
+```
+
+It took a couple of minutes to finish this task in the standard (single core) execution model, relying purely on the regular `caret` function. Below, this same model training completes much faster using parallelization; about 1/4 of the time compared to the standard call above.
+
+```{r}
+set.seed(123)
+cl<-makeCluster(4)
+registerDoParallel(cl)
+getDoParWorkers()
+system.time(m_rf <- train(CHARLSONSCORE ~ ., data = qol, method = "rf", metric = "Kappa", trControl = ctrl, tuneGrid = grid_rf))
+unregister<-registerDoSEQ()
+stopCluster(cl)
+```
+
+Note that the call to `train` remains the same, no need to specify parallelization in the call. It automatically utilizes all available resources, in this case 4 cores. The execution time is reduced from about 120 seconds (in the standard single core environment) down to 40 seconds (in the cluster setting).
+
+
+## R Notebook support for other programming languages
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(kableExtra)
+library(gridExtra)
+library(viridis)
+```
+
+The [R markdown notebook](https://rmarkdown.rstudio.com/lesson-10.html) allows the user to execute jobs in a number of different kinds of software platforms. In addition to `R`, one can define `Python`, `C/C++`, and many other languages.
+The complete list of `knitr` package supported scripting and compiled languages include:
+
+```{r  warning=F, message=F}
+names(knitr::knit_engines$get())
+```
+
+In this section, we will demonstrate the use of `Python` within `R` and the seamless integration between `R`, `Python`, and `C/C++` libraries. This functionality substantially enriches the already comprehensive collection of thousands of existent R libraries, as well as, provides a mechanism to [improve significantly the performance of any `R` protocol](https://socr.umich.edu/DSPA2/DSPA2_notes/01_Introduction.html) by outsourcing some of the heavy-duty calculations to external (compiled) `C/C++` executables.
+
+### R-Python integration
+
+[RStudio has a quick demo of the *reticulate* package](https://rstudio.github.io/reticulate/), which provides access to tools and enables the interoperability between `Python` and `R`.
+
+We will demonstrate this interoperability by fitting some models using Python's [*scikit-learn* library](https://scikit-learn.org).
+
+### Installing Python
+
+Users need to first install `Python` on their local machines by downloading the software for the appropriate operating system:
+
+ - [Windows](https://www.python.org/downloads/windows/): For *Windows OS*, depending on the system's processor (CPU chipset), it's recommended to download the appropriate *Windows x86-64 executable installer*, for 64-bit systems, or *Windows x86 executable installer*, for 32-bit systems. In general, installing the more powerful 64-bit version is recommended to improve performance.
+ - [Mac OS](https://www.python.org/downloads/mac-osx/): For *OS system*, please make sure to download the proper version of the *macOS 64-bit/32-bit installer*.
+
+Under the download heading "*Stable Releases*", select any `Python 3` version. Note that certain configurations may require downloading and installing an earlier Python version $\leq 3.8$.
+
+**NOTE**: There may be a temporary incompatibility issue between the `reticulate` package and the latest Python version (e.g., $\geq 3.9$). It may be safer to download and install a slightly older Python 3 version. If downloading the `LATEST Python 3 release` fails the testing below, try to reinstall an earlier Python version and try the tests below again.
+
+Once downloaded, run the installer following the prompts.
+
+### Install the `reticulate` package
+
+We need to load the (pre-installed) *reticulate* package and point to the specific directory of the local Python installation on your local machine. You can either manually type in the `PATH` to Python or use `Sys.which("python3")` to find it automatically, which may not work well if you don’t have the system environmental variables correctly set.
+
+```{r eval=F, echo=F, warning=F, message=F}
+# install.packages("reticulate")
+library(reticulate)
+library(plotly)
+# specify the path of the Python version that you want to use
+#py_path = "C:/Users/Dinov/Anaconda3/"  # manual
+py_path = Sys.which("python3")       # automated
+# use_python(py_path, required = T)
+Sys.setenv(RETICULATE_PYTHON = "C:/Users/Dinov/Anaconda3/")
+sys <- import("sys", convert = TRUE)
+```
+
+
+### Installing and importing `Python` Modules
+
+Additional Python modules can be installed either using a *shell/terminal* window for Mac OS system or *cmd* window for Windows OS. In the command shell window, type in `pip install` and append it by the names of the modules you want to install (e.g., `pip install pandas`) and press *Enter*. The module should be automatically downloaded and installed on the local machine. Please make sure to install all of the required modules (e.g., `pandas`, `sklearn`) before you move onto the next stage. Some of these additional packages may be automatically installed by a [conda python installation](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html).
+
+Following a successful installation of the add-on packages, we can import python and any additional modules into the R environment. Note the new notebook specification `{python}`, instead of `{r}`, in the chunk of executable code.
+
+**NOTE**: RStudio version must be $2023\ +$ to allow passing objects between `R`, `Python`, and any other of the languages that can be invoked in the `R` markdown notebook. See [this RStudio Reticulate video](https://docs.rstudio.com/tutorials/user/using-python-with-rstudio-and-reticulate/).
+
+Let's demonstrate the integration or `R` with *external* `Python` functions as well as directly within
+the same Rmarkdown electronic notebook using *```{python ... }'''* blocks of code.
+
+We can call external `Python` functions directly in `R` via the [reticulate::source_python('*.py')](https://rstudio.github.io/reticulate/reference/source_python.html). In this example, we are using this [Python function, getEvenNumbers()](https://socr.umich.edu/DSPA2/DSPA2_notes/evenNumbersPythonFunction.py), which *takes a vector or numbers* and 
+*returns a sub-vector only containing the even numbers* from the input. Mind that 
+this `R-Python` integration is done within an `R` block of code, not as we showed earlier
+in a separate `Python` code block. The input is an `R` object, the calculations 
+are done purely by an external `Python` function, and the *Python result* 
+is automatically converted to an *R object*, which at the end is printed out.
+
+```{r eval=F}
+writeLines(strsplit(Sys.getenv("PATH"), ";")[[1]])
+```
+
+```{r message=F, warning=F, error=F}
+### <Start_Python_Code>
+# # Pretest this function on colab before integrating within R/RStudio:
+# # https://colab.research.google.com/
+# # Mind Python strict code formatting principles: https://peps.python.org/pep-0008/
+# 
+# # Define an external Python function that takes a numerical object 
+# # and returns an object including only the even numbers from the input
+# def getEvenNumbers(numbers):
+# 	even_nums = [num for num in numbers if not num % 2]
+# 	return even_nums
+# 
+# # Uncomment next line to Test the getEvenNumbers() function
+# # getEvenNumbers([1, 2, 3, 4, 5, 6, 7, 9, 2.2, 1000000000000000])
+# # Result should be: [2, 4, 6, 1000000000000000]
+### <End_Python_Code>
+```
+
+```{r message=F, warning=F, error=F}
+# detach("package:reticulate", unload=TRUE)
+
+### R code
+# First source the Python code: for local Python files: reticulate::source_python("/path/meanCPP.cpp")
+library(devtools)
+library(reticulate)
+
+# Local test: 
+# reticulate::source_python('C:/Users/user/Desktop/evenNumbersPythonFunction.py')
+sourceURL <- "https://socr.umich.edu/DSPA2/DSPA2_notes/evenNumbersPythonFunction.py"
+localSource <- "evenNumbersPythonFunction.py"
+download.file(url=sourceURL, destfile=localSource)
+source_python('evenNumbersPythonFunction.py')
+
+# R data object (a numerical vector)
+rInputVector <- c(1, 2, 3, 4, 5, 6, 7, 9, 2.2, 1000000000000000)
+# Call the python function and retrieve the python result auto-converted as R object!
+rOutputResults <- getEvenNumbers(rInputVector)
+
+cat("R-data object ")
+cat(rInputVector)
+cat("is sent to external Python function, evenNumbersPythonFunction.py,")
+cat("which is executed via reticulate package and the result object ")
+cat(rOutputResults)
+cat(" is accessible/printed in R!")
+
+# paste0("Output result of call to Python function: ", rOutputResults)
+```
+
+Next, we'll showcase `R-Python` integration directly into *RStudio/Rmarkdown notebook.*
+
+```{python}
+# import the necessary python packages (pandas) and sub-packages (sklearn.tree.DecisionTreeClassifier)
+
+# Use the Anaconda shell to install the scikit-learn Python Package
+#  %> conda install anaconda::scikit-learn
+
+import pandas
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+```
+
+### Python-based data modeling
+
+Let's load the `iris` data in `R`, pass it onto `Python`, and split it into training and testing sets using the `sklearn.tree.train_test_split()` method.
+
+```{r}
+# Define the data in R but make it available in the Python env context (py$)
+iris[1:6,]
+# repl_python()
+py$iris_data <- iris
+```
+
+Note that some of the *code in this section* of the Rmarkdown notebook delimited between 
+$$\begin{align*} 
+&{\text{```{python ...} }}\\ 
+&{\text{... <python code block> ... }}\\ 
+&{\text{```}}\end{align*}$$
+is `python`, not `R`, e.g., `train_test_split()`, `DecisionTreeClassifier()`.
+
+```{python}
+# This is a ```{python ...}``` code block!
+# report the first 5 cases of the data within Python
+print(r.iris[1:6])
+# Split the data in Python (use random seed for reproducibility)
+train, test = train_test_split(r.iris, test_size = 0.4, random_state = 4321)
+
+X = train.drop('Species', axis = 1)
+y = train.loc[:, 'Species'].values
+X_test = test.drop('Species', axis = 1)
+y_test = test.loc[:, 'Species'].values
+```
+
+Let's pull back into `R` the first 5 training observations ($X$) from the `Python` object. Note that $X$ is a *Python object* generated in the `Python` chunk that we are now processing within the `R` chunk. Mind the use of the `py$` prefix to the object (`py$X`). As the `train_test_split()` method does random selection of rows (cases) into the training and testing sets, the top 5 cases reported in the initial ordering of the cases by `R` may be different from the top 5 cases reported after the `Python` block processing.
+
+```{r}
+# R
+py$X %>% head(6)
+```
+
+Next, we will fit a *simple decision tree* model within `Python` using `sklearn` on the training data and evaluate its performance on the independent testing set and visualize the results in `R`.
+
+```{python}
+# Model fitting in Python
+tree = DecisionTreeClassifier(random_state=4321)
+clf = tree.fit(X, y)
+pred = clf.predict(X_test)
+pred[1:6]
+```
+
+### Visualization of the results in `R`
+
+To begin with, we will pull the `Python` pandas dataset into an `R` object.
+
+```{r}
+# Store python pandas object as R tibble and identify correct and incorrect predicted labels
+library(kableExtra)
+library(tibble)
+foo <- py$test %>%
+  as_tibble() %>%
+  rename(truth = Species) %>%
+  mutate(predicted = as.factor(py$pred),
+         correct = (truth == predicted))
+
+foo %>%
+  head(5) %>%
+  select(-Petal.Length, -Petal.Width) %>%
+  kable() %>%
+  kable_styling()
+```
+
+Finally, we can plot in `R` the testing-data results and compare the *real* iris flower taxa labels (colors) and their *predicted-label* counterparts (shapes).
+
+```{r visualization}
+# R
+# p1 <- py$test %>%
+#   ggplot(aes(py$test$Petal.Length, py$test$Petal.Width, color = py$test$Species)) + # Species == py$y
+#   geom_point(size = 4) +
+#   labs(x = "Petal Length", y = "Petal Width") +
+#   theme_bw() +
+#   theme(legend.position = "none") +
+#   ggtitle("Raw Testing Data Iris Differences",
+#           subtitle = str_c("Petal Length and Width vary",
+#                            "\n", "significantly between species"))
+#
+# p2 <- py$test %>%
+#   ggplot(aes(py$test$Petal.Length, py$test$Petal.Width,
+#              color = py$test$Species), shape=as.factor(py$pred)) +
+#   geom_point(size = 4, aes(shape=as.factor(py$pred), color = py$test$Species)) +
+#   labs(x = "Petal Length", y = "Petal Width") +
+#   #theme_bw() +
+#   theme(legend.position = "right") +
+#   #scale_shape_manual(name="Species",
+#   #                     values=as.factor(py$pred), labels=as.factor(py$pred)) +
+#   ggtitle("Raw (Colors) vs. Predicted (Shape)\n Iris Differences",
+#           subtitle = str_c("Petal Length and Width between species"))
+#
+# grid.arrange(p1, p2, layout_matrix = rbind(c(1,3)))
+
+library(plotly)
+
+plot_ly(py$test, x=~py$test$Petal.Length, y=~py$test$Petal.Width, color = ~py$test$Species,
+        symbol = ~as.factor(py$pred), type="scatter", marker = list(size = 20), mode="markers") %>%
+  layout(title="Python Iris Taxa Prediction: Raw (Colors) vs. Predicted (Shape) Species",
+         xaxis=list(title="Petal Length"), xaxis=list(title="Petal Width"),
+         legend = list(orientation='h'))
+
+```
+
+
+### R integration with C/C++
+
+There are many alternative ways to blend `R` and `C/C++/Cpp` code. The simplest approach may be to use inline `C++` functional directly in `R` via the [cppFunction()](https://adv-r.hadley.nz/rcpp.html#rcpp-intro). Alternatively, we can keep `C++` source files completely independent and `sourceCpp()` them into `R` for indirect use. Here is an example of a stand-alone `C++` program `meanCPP()`computing the mean and standard deviation of a vector input. To try this, save the `C++` code below in a text file: `meanCPP.cpp` and invoke it within `R`. Note that the `C++` code can also include `R` method calls, e.g., *sdR()*!
+
+*Note*: This `R/C++` integration requires [Rtools package and the *make* function](https://cran.r-project.org/bin/windows/Rtools/), as well as proper `PATH` environment variable setting, which can be checked and set by:
+
+```{r eval=F}
+writeLines(strsplit(Sys.getenv("PATH"), ";")[[1]])
+```
+
+
+```{r message=F, warning=F, error=F}
+### <Start_CPP_Code>
+# #include <Rcpp.h>
+# using namespace Rcpp;  // this is a required name-space declaration in the C++ code
+# 
+# /*** functions that will be used within R are prefixed with: `// [[Rcpp::export]]`.
+#   We can compile the C++ code within R by *sourceCpp("/path_to/meanCPP.cpp")*. 
+#   These compiled functions can be used in R, but can't be saved in a `.Rdata` files
+#   and need to always be reloaded prior to reuse after `R` restart. 
+# */
+# 
+# // [[Rcpp::export]]
+# double meanCPP(NumericVector vec) {
+#   int n = vec.size();
+#   double total = 0;
+# 
+#   for(int i = 0; i < n; ++i) { // mind the C++ indexing starts at zero, not 1, as in R
+#     total += vec[i];
+#   }
+#   return total/n;
+# }
+# /*** R
+# # This is R code embedded in C++ to compute the SD of a vector
+# sdR <- function (vec) {
+#   return(sd(vec))
+# }
+# */
+### <End_CPP_Code>
+```
+
+Next, we will demonstrate the `R` and `C++` integration.
+
+```{r message=F, warning=F, error=F}
+### R code
+# First source C++ code: for local C++ files: sourceCpp("/path/meanCPP.cpp")
+library(devtools)
+library(Rcpp)
+# install.packages("miniUI")
+# library(miniUI)
+# install.packages("pkgbuild")
+library(pkgbuild)
+
+sourceURL <- "https://www.socr.umich.edu/people/dinov/courses/DSPA_notes/meanCPP.cpp"
+localSource <- "meanCPP.cpp"
+download.file(url=sourceURL, destfile=localSource)
+sourceCpp("meanCPP.cpp")
+
+# Call outside C++ meanCPP() method
+r_vec <- rnorm(10^8) # generate 100M random values & compare computational complexity
+system.time(m1 <- mean(r_vec))    # R solution
+system.time(m2 <- meanCPP(r_vec)) # C++ solution
+round(m1-m2, 5)  # Difference of mean calculations?
+
+# Compare the sdR() function defined within C++ using R methods to base::sd()
+s1 <- sdR(r_vec); round(s1, 3) # remember the data is N(mean=0, sd=1)
+s2 <- sd(r_vec)
+round(s1-s2, 5)
+```
+
+Notice that the `C++` method *meanCPP()* is faster in computing the *mean* compared to the native `R` *base::mean()*.
+
+
+## Practice problem
+
+Try to analyze [the co-appearance network in the novel "Les Miserablese"](https://umich.instructure.com/files/330389/download?download_frd=1). The data contains the weighted network of co-appearances of characters in Victor Hugo's novel "Les Miserables". Nodes represent characters as indicated by the labels and edges connect any pair of characters that appear in the same chapter of the book.  The values on the edges are the number of such co-appearances. 
+
+```{r}
+miserablese <- read.table("https://umich.instructure.com/files/330389/download?download_frd=1", sep="", header=F)
+head(miserablese)
+```
+
+Also, try to interrogate some of the [larger datasets we have](https://umich.instructure.com/courses/38100/files/folder/Case_Studies) using alternative parallel computing and big data analytics.
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

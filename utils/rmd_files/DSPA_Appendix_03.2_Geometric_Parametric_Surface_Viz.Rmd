@@ -1,0 +1,294 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Geometric and Parametric Surface Visualization</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: ../SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+This DSPA section Appendix.3.2 (Non-Orientable Surfaces) is part of the [DSPA Appendix on visualization of geometric and parametric surfaces](https://socr.umich.edu/DSPA2/DSPA_Appendix_03_Geometric_Parametric_Surface_Viz.html). This DSPA Appendix (3) covers the following 3 topics:
+
+ - [3.1. Geometric Primitive Surfaces with and without Boundaries](https://socr.umich.edu/DSPA2/DSPA_Appendix_03.1_Geometric_Parametric_Surface_Viz.html)
+    + 1.1 Saddle Point Surface
+    + 1.2 Geometric Shapes: 3D Spherical Parameterization
+ - 3.2. Non-Orientable Surfaces (this section)
+    + 2.1 Mobius Band Triangulation
+    + 2.2 Klein Bottle
+ - [3.3. Brain Surfaces](https://socr.umich.edu/DSPA2/DSPA_Appendix_03.3_Geometric_Parametric_Surface_Viz.html)
+    + 3.1 Human Brain
+    + 3.2 Rodent Brain
+ - 3.4 [Time-varying surface embedding of 4D manifolds in 3D](https://socr.umich.edu/DSPA2/DSPA_Appendix_03.4_Geometric_Parametric_Surface_Viz.html)
+
+# Non-Orientable Surfaces
+
+## Mobius Band Triangulation
+
+The [Mobius band (or Moebius strip](https://en.wikipedia.org/wiki/Mobius_strip) is a non-orientable 2D surface with a single (curve) boundary. The example below shows the parameterization, triangulation and rendering of the Mobius band. The example also demonstrates how to add additional traces (curves or surfaces) to the same 3D scene.
+
+```{r warning=F, error=F, message=F}
+library(plotly)
+library(geometry)
+ 
+# Create a data.frame of all (u,v) coordinates
+grid.df <- expand.grid(
+  u = seq(0, 2*pi, length.out = 100),
+  v = seq(-1, 1, length.out = 50)
+)
+
+# Define the Mobius Band parametric value
+tp <- 1 + (grid.df$v * cos(grid.df$u / 2))/2
+mat <- matrix(
+  c(tp * cos(grid.df$u), tp * sin(grid.df$u), 
+    0.5 * grid.df$v * sin(grid.df$u / 2)), 
+  ncol = 3, dimnames = list(NULL, c("x", "y", "z"))
+)
+ 
+# Delaunay triangulation on grid.df (not on the matrix of values mat)
+# The Delaunay matrix has m rows and dim+1 columns. For each row, the matrix contains a set of indices to the points (zero-cells), which describes a simplex of dimension dim. The 3D simplex is a tetrahedron.
+# grid.df is an n-by-dim matrix. The rows of grid.df represent 
+# n points in dim-dimensional space
+Delaunay.mat <- delaunayn(grid.df)
+Delaunay.mat.t <- t(Delaunay.mat)
+#  Use mat to plot (not the 2D grid grid.df
+ 
+# Plotly layout 
+axs <- list(
+  backgroundcolor="rgb(200,200,200)", # gray
+  gridcolor="rgb(255,255,255)",       # white
+  showbackground=TRUE,
+  zerolinecolor="rgb(255,255,255)"     # white
+)
+ 
+#  Apply the colormap
+#  Compute the mean of z for each row of the Delaunay vertices
+zmean <- apply(Delaunay.mat, MARGIN=1, function(row){mean(mat[row,3])})
+ 
+library(scales)
+# Determine the 2-cell face's colors
+# plotted color result will be slightly different
+#  since colour_ramp uses CIELAB instead of RGB
+#  could use colorRamp for exact replication
+facecolor = colour_ramp(
+  # brewer_pal(palette="RdBu")(10); # brewer_pal("div")(10)
+  colorRampPalette(c("gold", "navy blue"))(4)
+)(rescale(x=zmean))
+ 
+ 
+plot_ly(
+  # x = x, y = y, z = z,  # vertex (0-cell) coordinates
+  # i = i, j = j, k = k,  # indices to the vertices, which describe a 2-cell (face or a simplex) of dimension dim
+  # see docs: https://plot.ly/r/3d-mesh-plots/
+  x = mat[, 1], y = mat[, 2], z = mat[, 3],
+  # JavaScript is 0 based index so subtract 1
+  i=Delaunay.mat[, 1]-1, j=Delaunay.mat[, 2]-1, k=Delaunay.mat[, 3]-1,
+  facecolor = facecolor,
+  type = "mesh3d",
+  contour=list(show=TRUE, color="#000", width=15)
+) %>%
+  # add two planes as curve traces
+  add_trace(x=mat[, 1], y=mat[, 2], z=0, type="scatter3d", mode="lines", line = list(color="rgb(0, 255, 0)")) %>%
+  add_trace(x=mat[, 1], y=0, z=mat[, 3], type="scatter3d", mode="lines", line = list(color="rgb(255, 0, 0)"), opacity=0.5) %>%
+  layout(
+    title="Mobius Strip Triangulation",
+    scene=list(xaxis=axs, yaxis=axs, zaxis=axs)
+  )
+
+```
+
+An alternative visualization of the Mobius band is illustrated below
+
+```{r warning=F, error=F, message=F}
+phi <- seq(from = 0, to = 2*pi, by = ((2*pi - 0)/(200 - 1)))
+psi <- seq(from = 0, to = 2*pi, by = ((2*pi - 0)/(200 - 1)))
+
+# rendering (u,v) parametric surfaces requires x,y,z arguments to be 2D arrays
+# In out case, the three coordinates have to be 200*200 parameterized tensors/arrays
+a <- 6 # Torus radius
+r <- 2 # Tube radius
+x2<- (a + r*cos(phi)) %o% cos(psi)  # x
+y2 <- (a + r*cos(phi)) %o% sin(psi) # y
+z2 <- rep(r, length(phi)) %o% sin(phi)                      # z
+    
+p <- plot_ly(hoverinfo="none", showscale = FALSE) %>%
+  add_trace(x = ~x2, y = ~y2, z = ~z2, type = 'surface', opacity=1, visible=T) %>%
+  layout(title = "Mobius band", showlegend = FALSE)
+p
+```
+
+## Klein Bottle
+
+A more interesting example of a non-orientable 2-manifold that is closed and has no boundary. It is natively embedded in $R^4$, but can be rendered in $R^3$ with some imagination. The Klein bottle surface does not intersect itself when it's natively embedded in $R^4$, however, its projection in $R^3$ appears to be self-intersecting. See the [Klein Bottle parametrization details online](https://en.wikipedia.org/wiki/Klein_bottle).
+
+```{r warning=F, error=F, message=F}
+# library(plotly)
+library(geometry)
+
+grid.df <- expand.grid(
+  u = seq(0, pi, length.out = 100),
+  v = seq(0, 2*pi, length.out = 100)
+)
+
+# Define a 3D Klein Bottle parameterization (see Wikipedia)
+mat <- matrix(
+    c(
+      -2/15 * cos(grid.df$u) * 
+          (3*cos(grid.df$v)-30*sin(grid.df$u) + 
+              90*cos(grid.df$u)^4 * sin(grid.df$u)
+              -60*cos(grid.df$u)^6 * sin(grid.df$u) +
+              5*cos(grid.df$u) * cos(grid.df$v) * sin(grid.df$u)), # x
+      -1/15*sin(grid.df$u) * 
+          (3*cos(grid.df$v) - 5*cos(grid.df$u)^2 * cos(grid.df$v)
+              -48*cos(grid.df$u)^4 * cos(grid.df$v) + 
+              48*cos(grid.df$u)^6 * cos(grid.df$v) - 60*sin(grid.df$u) +
+              5*cos(grid.df$u)*cos(grid.df$v)*sin(grid.df$u) -
+              5*cos(grid.df$u)^3 * cos(grid.df$v) *sin(grid.df$u) -
+              80* cos(grid.df$u)^5 * cos(grid.df$v) *sin(grid.df$u) +
+              80*cos(grid.df$u)^7 * cos(grid.df$v) *sin(grid.df$u)), # y
+        4/15 *(3 + 5*cos(grid.df$u)*sin(grid.df$u)) *sin(grid.df$v) # z
+      ), 
+    ncol = 3, dimnames = list(NULL, c("x", "y", "z"))
+)
+
+Delaunay.mat <- delaunayn(grid.df)
+Delaunay.mat.t <- t(Delaunay.mat)
+#  Use mat to plot (not the 2D grid grid.df
+ 
+# Plotly layout 
+axs <- list(
+  backgroundcolor="rgb(200,200,200)", # gray
+  gridcolor="rgb(255,255,255)",       # white
+  showbackground=TRUE,
+  zerolinecolor="rgb(255,255,255)"     # white
+)
+ 
+#  Apply the colormap
+#  Compute the mean of z for each row of the Delaunay vertices
+zmean <- apply(Delaunay.mat, MARGIN=1, function(row){mean(mat[row,3])})
+ 
+library(scales)
+# Determine the 2-cell face's colors
+# plotted color result will be slightly different
+#  since colour_ramp uses CIELAB instead of RGB
+#  could use colorRamp for exact replication
+facecolor = colour_ramp(
+  # brewer_pal(palette="RdBu")(10); # brewer_pal("div")(10)
+  colorRampPalette(c("pink", "purple"))(10)
+)(rescale(x=zmean))
+ 
+ 
+plot_ly(
+  # x = x, y = y, z = z,  # vertex (0-cell) coordinates
+  # i = i, j = j, k = k,  # indices to the vertices, which describe a 2-cell (face or a simplex) of dimension dim
+  # see docs: https://plot.ly/r/3d-mesh-plots/
+  x = mat[, 1], y = mat[, 2], z = mat[, 3],
+  # JavaScript is 0 based index so subtract 1
+  i=Delaunay.mat[, 1]-1, j=Delaunay.mat[, 2]-1, k=Delaunay.mat[, 3]-1,
+  facecolor = facecolor,
+  type = "mesh3d",
+  opacity = 0.3,
+  contour=list(show=TRUE, color="#000", width=15)
+) %>%
+  # add_trace(x=mat[, 1], y=mat[, 2], z=0, type="scatter3d", mode="lines", line = list(color="rgb(0, 255, 0)")) %>%
+  layout(
+    title="Klein Bottle Triangulation",
+    scene=list(xaxis=axs, yaxis=axs, zaxis=axs)
+  )
+
+# Plot surface using markers
+p <- plot_ly() %>% 
+  add_trace(type = 'scatter3d', size = 1, 
+     x = mat[, 1], y = mat[, 2], z = mat[, 3], opacity=0.01, mode = "markers"); p
+
+# Plot surface using "surface"
+# To use add_surface instead, we will have to first convert the surface
+# into a different format, with a vector of x locations, a vector of y locations, z as a matrix (dimensions equal to x by y). 
+# As the Klein Bottle does not have boundary, we also need to split the 
+# z values into two separate surface layers one for the top half of the surface and one for the bottom half
+# p <- plot_ly(showscale = FALSE) %>%  add_surface(x = mat[, 1], y = mat[, 2], z = mat[, 3], opacity=0.5); p
+
+```
+
+We can also try to render the Klein Bottle using a precomputed JSON object including the geometric, topological and meta-data attributes needed for the 3D rendering of the surface.
+
+```{r Klein_Bottle, warning=F, error=F}
+library(plotly)
+
+library(jsonlite)
+KB_data <- fromJSON("http://socr.umich.edu/data/DSPA/surfaces/KlineBottle.json", flatten=TRUE)
+
+# Examine the 3 cardinal projection planes (Klein Bottle cross-sections)
+image(KB_data$data$z[[1]])
+image(KB_data$data$y[[1]])
+image(KB_data$data$x[[1]])
+
+p <- plot_ly( # 'mesh3d' assumes vector inputs where z=z(x,y)
+              #x = ~as.vector(KB_data$data$x[[1]]), 
+              #y = ~as.vector(KB_data$data$y[[1]]),
+              #z = ~as.vector(KB_data$data$z[[1]]),
+  
+              # 'surface' type assumes (u,v) parametric descriptions
+              # x=x(u,v), y=y(u,v), z=z(u,v)
+              x = ~KB_data$data$x[[1]], 
+              y = ~KB_data$data$y[[1]],
+              z = ~KB_data$data$z[[1]],
+              type = 'surface', opacity=0.7); p
+
+```
+
+# References
+
+* [Back to the DSPA visualization of geometric and parametric surfaces Appendix](https://socr.umich.edu/DSPA2/DSPA_Appendix_03_Geometric_Parametric_Surface_Viz.html)
+* Additional [brain surface data are available online](http://www.freesurfer.net/pub/data/tutorial_data/long-tutorial/).
+* [R plot_ly documentation and details are available here](https://plot.ly/r/).
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

@@ -1,0 +1,259 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Appendix 9: OpenAI Synthetic Text, Image and Code Generation</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+This [DSPA2 appendix](https://www.socr.umich.edu/DSPA2/) illustrates some very simple examples of using the [OpenAI API](https://en.wikipedia.org/wiki/OpenAI) for synthetically generating free text, 2D images, and software code.
+
+```{r setup, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load user-specific OpenAI API Key
+# Sys.setenv(OPENAI_API_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+# Alternatively, add the key to the .Renviron file of the project. To open .Renviron for editing
+# if (!require(usethis))
+#     install.packages("usethis")
+# usethis::edit_r_environ(scope = "project")
+
+# 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 
+library(openai)
+Sys.setenv(OPENAI_API_KEY = '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')
+```
+
+This is a $3^{rd}$ generation SOCR AI Bot for (1) synthetically simulating intelligent text response to human text/voice prompts; (2) simulating realistic 2D brain images; and (3) writing R code for simple verbal descriptions. These are based on [OpenAI](https://en.wikipedia.org/wiki/OpenAI) and [Third-generation Generative Pre-trained Transformer (GPT-3)](https://en.wikipedia.org/wiki/GPT-3) technologies.
+
+# Context-Specific Synthetic Text Responses
+
+Based on [GPT3](https://en.wikipedia.org/wiki/GPT-3), use OpenAI to respond to the following prompt, i.e., the text input seeding/guiding the AI verbose response:
+
+*Expected health disparities and racial inequality in the US in 2030...*
+
+```{r text1}
+# What sampling temperature to use. Higher values means the model will take more risks. Try 0.9 for more creative applications, and 0 (argmax sampling) for ones with a well-defined answer.
+
+# GPT-3 models: https://beta.openai.com/docs/models/gpt-3
+
+# General Health Essay
+synthText <- create_completion(model = "gpt-3.5-turbo-instruct", n=5, best_of=10,
+                               max_tokens=300, temperature=0.8, # 
+                               prompt = "Write an abstract of a healthcare essay")
+                               # prompt = "How many outerspace layers are there?")
+synthText$choices$text
+
+# Health Disparity
+synthText <- 
+  create_completion(model = "gpt-3.5-turbo-instruct", n=5, best_of=10,
+                    max_tokens=300, temperature=0.8, # 
+                    prompt = "Expected health disparities and racial inequality in the US in 2030")
+synthText$choices$text
+```
+
+# Realistic 2D Brain Images
+
+Generate 5 2D sagittal MRI brain images of Alzheimer's disease patients and contrast these to healthy control patients.
+
+## imulated 2D Brain Scans of Asymptomatic Controls (Healthy Participants)
+
+```{r brainImagesHC}
+#### Healthy Controls 
+
+library(RCurl)
+library(json64)
+library(plotly)
+
+# Generate images": maximum text-prompt text length is 1000 characters, 1 <= n <= 10
+# https://beta.openai.com/docs/api-reference/images/create
+
+synthImages <- create_image("2D sagittal MRI brain image of Healthy Asymptomatic Controls",
+                            n=5, size="1024x1024",
+                            response_format="b64_json")  # response_format="url"
+
+# Convert base64 JSON synth images to 2D rasterized images
+# single image rendering
+# raw1 <- base64Decode(synthImages$data[1]$b64_json[1], mode="raw")
+# img1 <- png::readPNG(raw1)
+# plot_ly(z=~(255*img1), type="image")
+# plot_ly(z=~(255*img1[,,1]), type="heatmap")
+
+convBase64JSON2Img <- function(txt) {
+  raw <- base64Decode(txt, mode="raw")
+  # Handle PNG format
+  if (all(as.raw(c(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) == raw[1:8])) {
+    img <- png::readPNG(raw)
+  } 
+  # Handle JPEG format
+  else if (all(as.raw(c(0xff, 0xd8, 0xff, 0xd9)) == raw[c(1:2, length(raw)-(1:0))])) { 
+    img <- jpeg::readJPEG(raw)
+  } 
+  # Currently no other formats are interpreted, but other formats can be added below
+  else stop("No Appropriate Image Format Interpreter Available ...")
+  return(img)
+}
+# raw1 <- convBase64JSON2Img(synthImages$data[1]$b64_json[1])
+# plot_ly(z=~(255*raw1), type="image")
+
+vars <- c(1:length(synthImages$data[1]$b64_json))
+plots <- lapply(vars, function(var) {
+  raw = convBase64JSON2Img(synthImages$data[1]$b64_json[var])
+  plot_ly(z=~(255*raw), type="image", name=paste0("Synth Healthy Control Img ", var)) %>%
+                        layout(title = paste0("Synth AD Img ", var),
+                          xaxis = list(title = "", showticklabels = FALSE), 
+                          yaxis = list(title = "", showticklabels = FALSE))
+})
+subplot(plots, nrows = 1, shareY = TRUE) %>% layout(title="Simulated 2D Scans of Healthy Controls")
+```
+
+## Simulated 2D Brain Scans of Alzheimer's Disease Patients
+
+```{r brainImagesAD}
+#### AD Patients
+# Generate images": maximum text-prompt text length is 1000 characters, 1 <= n <= 10
+# https://beta.openai.com/docs/api-reference/images/create
+
+synthImages <- create_image("2D sagittal MRI brain image of Alzheimer's disease",
+                            n=5, size="1024x1024",
+                            response_format="b64_json")  # response_format="url"
+
+convBase64JSON2Img <- function(txt) {
+  raw <- base64Decode(txt, mode="raw")
+  # Handle PNG format
+  if (all(as.raw(c(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) == raw[1:8])) {
+    img <- png::readPNG(raw)
+  } 
+  # Handle JPEG format
+  else if (all(as.raw(c(0xff, 0xd8, 0xff, 0xd9)) == raw[c(1:2, length(raw)-(1:0))])) { 
+    img <- jpeg::readJPEG(raw)
+  } 
+  # Currently no other formats are interpreted, but other formats can be added below
+  else stop("No Appropriate Image Format Interpreter Available ...")
+  return(img)
+}
+
+vars <- c(1:length(synthImages$data[1]$b64_json))
+plots <- lapply(vars, function(var) {
+  raw = convBase64JSON2Img(synthImages$data[1]$b64_json[var])
+  plot_ly(z=~(255*raw), type="image", name=paste0("Synth AD Img ", var)) %>%
+                        layout(title = paste0("Synth AD Img ", var),
+                          xaxis = list(title = "", showticklabels = FALSE), 
+                          yaxis = list(title = "", showticklabels = FALSE))
+})
+subplot(plots, nrows = 1, shareY = TRUE) %>% layout(title="Simulated 2D Alzheimer's disease scans")
+```
+
+
+# Automated Software Code Explaining, Modification, De Novo Writing
+
+## Code-to-text Explaining
+
+ - *JavaScript Function 1*: create an array of 100 random uniform values
+ - *R Function 2*: for a given sample and a confidence level, compute the confidence interval around mean using normal approximation.
+
+```{r code2text}
+# https://beta.openai.com/docs/guides/code/quickstart
+# prompt  <- '// Function 1
+# var fullNames = [];
+# for (var i = 0; i < 100; i++) {
+#   fullNames.push(names[Math.floor(Math.random() * names.length)]
+#     + " " + lastNames[Math.floor(Math.random() * lastNames.length)]);
+# }
+# 
+# // What does Function 1 do?
+# '
+
+prompt  <- '// Function 1
+x <- runif(100)
+conf = 0.95
+se <- sd(x) / sqrt(length(x))
+alpha <- 1 - conf
+mean(x) + se * qnorm(c(alpha/2, 1 - alpha/2))
+
+// What does Function 1 do?
+'
+
+response = create_completion(model="code-davinci-002", prompt=prompt,
+                             temperature=0, max_tokens=64, top_p=1.0, frequency_penalty=0.0,
+                             presence_penalty=0.0)
+
+response$choices[[1]]
+```
+
+## CodeX
+
+The [Codex model](https://beta.openai.com/docs/guides/code/introduction) fine-tunes the [GPT-3 series](https://en.wikipedia.org/wiki/GPT-3) for software code. It is capable of drafting Python, R, JavaScript, Go, Perl, PHP, Ruby, Swift, SQL, and shell scripts.
+
+This prompt: *Write code to compute the five number summary of a given sample (vector)*, results in the following JavaScript code:
+
+```{r eval=FALSE}
+/* write code to compute five number summary of a sample */
+var rCode = document.createElement('script');
+rCode.innerHTML = 'var x = rnorm(100); var y = rnorm(100); var z = rnorm(100); var w = rnorm(100); var v = rnorm(100); var fiveNum = function(x) { return(c(min(x), quantile(x, 0.25), median(x), quantile(x, 0.75), max(x))); }; fiveNum(x); fiveNum(y); fiveNum(z); fiveNum(w); fiveNum(v);';
+document.body.appendChild(rCode);
+```
+
+We can also test the code in `R`.
+
+```{r}
+x = rnorm(100)
+y = rnorm(100)
+z = rnorm(100)
+w = rnorm(100)
+v = rnorm(100)
+fiveNum = function(x) { 
+  return(c(min(x), quantile(x, 0.25), median(x), quantile(x, 0.75), max(x)))
+}
+fiveNum(x); fiveNum(y); fiveNum(z); fiveNum(w); fiveNum(v)
+```
+
+Of course, this code may need to be properly formatted to make it useful. Yet, this AI-generated skeleton of a function can save significant amount of software development time.
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter" src="https://c.statcounter.com/5714596/0/038e9ac4/0/" alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->
+

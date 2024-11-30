@@ -1,0 +1,1522 @@
+---
+title: "DSPA2: Data Science and Predictive Analytics (UMich HS650)"
+subtitle: "<h2><u>Black Box Machine-Learning Methods: Neural Networks, Support Vector Machines, Random Forests</u></h2>"
+author: "<h3>SOCR/MIDAS (Ivo Dinov)</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+tags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] 
+output:
+  html_document:
+    theme: spacelab
+    highlight: tango
+    includes:
+      before_body: SOCR_header.html
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: show
+    self_contained: yes
+---
+
+In this chapter, we are going to cover several powerful black-box machine learning and artificial intelligence techniques. These techniques have complex mathematical formulations, however, efficient algorithms and reliable software packages have been developed to utilize them for various practical applications. We will (1) describe Neural Networks as analogues of biological neurons, (2) develop hands-on a neural network that can be trained to compute the square-root function, (3) describe support vector machine (SVM) classification, (4) present the random forest as an ensemble ML technique, and (5) analyze several case-studies, including optical character recognition (OCR), the Iris flowers, Google Trends and the Stock Market, and Quality of Life in chronic disease. 
+
+Later, in [Chapter 14](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html), we will provide more details and additional examples of deep neural network learning. For now, let's start by exploring the *mechanics* inside black box machine learning approaches.
+
+# Neural Networks
+
+## From biological to artificial neurons
+
+An `Artificial Neural Network (ANN)` model mimics the biological brain response to multisource (sensory-motor) stimuli (inputs). ANN simulates the brain using a network of interconnected neuron cells to create a massive parallel processor. Indeed, ANNs rely on graphs of artificial nodes, not brain cells, to model intrinsic process characteristics using observational data.
+
+The basic ANN component is a *cell node.* Suppose we have the input $x=\{x_i\}$ to the node feeding information from upstream network nodes, and one output propagating the information downstream through the network. The first step in fitting an ANN involves estimation of the weight coefficients for each input feature. These weights ($w$'s) correspond to the relative importance of each input. Then, the weighted signals are summed by the "neuron cell" and this sum is passed on according to an **activation function** denoted by $f(\cdot)$. The last step is generating an output $y$ at the end of each node. A typical output will have the following mathematical relationship to the inputs. The weights $\{w_i\}_{i\ge 1}$ control the weight-averaging of the inputs, $\{x_i\}$, used to assess the activation function. The constant factor weight $w_o$ and the corresponding *bias term* $b$ allows us to shift or offset the entire activation function (left or right).
+$$\underbrace{y(x)}_{output}=f\left (w_o \underbrace{b}_{bias}+\sum_{i=1}^n \overbrace{w_i}^{weights} \underbrace{x_i}_{inputs}\right ).$$
+
+There are three important components for building a neural network:
+
+ - **Activation function**: transforms weighted and aggregated inputs into an output.
+ - **Network topology**: describes the number of “neuron cells”, the number of layers, nodes per layer, and manner in which the cells are connected.
+ - **Training algorithm**: optimization strategy to estimate the network weights $\{w_i\}$.
+
+Let's look at each of these components one by one.
+
+## Activation functions
+
+There are many alternative activation functions. One example is a threshold activation function that results in an output signal only when a specified input threshold has been attained.
+
+```{r echo=FALSE, message=F, error=F, warning=F}
+# x<-runif(1000, -10, 10)
+# y<-ifelse(x>=0, 1, 0)
+# plot(x, y, t="n", xlab = "Sum of input signals", ylab = "Output signal", main = "Threshold Activation (th=0.0)")
+# segments(0, -0.1, 0, 1, col="black", lty=2)
+# lines(x[order(x)], y[order(x)], pch=16, col="black", lwd=4)
+library(plotly)
+
+x <- c(-2, 0, 0, 0, 2)
+y <- c( 0, 0, 0, 1, 1) 
+plot_ly() %>%
+  add_trace(x = x, y = y, type="scatter", mode="lines",
+        line = list(width = 4), name="Threshold") %>%
+  layout(title='Threshold Activation Function (x=0.0)',
+           xaxis = list(title="Sum of Input Signals"),
+           yaxis = list(title="Output signal"),
+           legend = list(orientation = 'h'))
+```
+
+$$f(x)= \left\{
+\begin{array}{ll}
+      0 & x<0 \\
+      1 & x\geq 0 \\
+\end{array} 
+\right. .$$
+
+This is the simplest form of an activation function. It may be rarely used in real world situations. Most commonly used alternative is the sigmoid activation function where $f(x)=\frac{1}{1+e^{-x}}$. The *Euler number* $e$ is defined by the limit of $e=\displaystyle\lim_{n\longrightarrow\infty}{\left ( 1+\frac{1}{n}\right )^n}$. The output signal is no longer binary but can be any real number ranging from 0 to 1. 
+
+```{r echo=F, message=F, error=F, warning=F}
+x <- runif(100000, -10, 10)
+y <- 1/(1+exp(-x))
+
+# plot(x, y, xlab = "Sum of input signals", ylab = "Output signal", main = "Sigmoid Activation (th1=0; th2=2)")
+# segments(0, -0.1, 0, 0.5, col="black", lty=2)
+# segments(2, -0.1, 2, (1/(1+exp(-2))), col="black", lty=2)
+
+plot_ly() %>%
+  add_trace(x = x, y = y, type="scatter", mode="markers",
+         name="Sigmoid") %>%
+  add_trace(x = c(0,0), y = c(0, 0.5), type="scatter", mode="markers+lines",
+         name="", showlegend=F) %>%
+  add_trace(x = c(2,2), y = c(0, (1/(1+exp(-2)))), type="scatter", mode="markers+lines",
+         name="", showlegend=F) %>%
+  layout(title='Sigmoid Activation Function (x1=0; x2=2)',
+           xaxis = list(title="Sum of Input Signals"),
+           yaxis = list(title="Output signal"),
+           legend = list(orientation = 'h'))
+```
+
+Other activation functions might also be useful:
+
+```{r echo=FALSE, fig.height=6, message=F, error=F, warning=F}
+x<-runif(10000, -10, 10)
+y <- 1/(1+exp(-x))
+y1<-x
+y2<-ifelse(x<=-5, -5, ifelse(x>=5, 5, x))
+y3<-(exp(x)-exp(-x))/(exp(x)+exp(-x))
+y4<-exp(-x^2/2)
+y5 <- 1/(1+exp(-(x+3)))
+
+# par(mfrow=c(2, 2))
+# plot(x, y1, main="Linear", xlab="", ylab="")
+# plot(x, y2, main="Saturated Linear", xlab="", ylab="")
+# plot(x, y3, main="Hyperbolic tangent", xlab="", ylab="")
+# plot(x, y4, main = "Gaussian", xlab="", ylab="")
+
+plot_ly() %>%
+  add_trace(x = x, y = 1+(y1/10-1)/2, type="scatter", mode="markers", name="Linear") %>%
+  add_trace(x = x, y = 1+(y2/5-1)/2, type="scatter", mode="markers", name="Saturated Linear") %>%
+  add_trace(x = x, y = 1+(y3-1)/2, type="scatter", mode="markers", name="Hyperbolic Tangent") %>%
+  add_trace(x = x, y = y4, type="scatter", mode="markers", name="Gaussian") %>%
+  add_trace(x = x, y = y, type="scatter", mode="markers", name="Sigmoid") %>%
+  add_trace(x = x, y = y5, type="scatter", mode="markers", name="Shifted (+3 Biased) Sigmoid") %>%
+  layout(title='Various Activation Functions',
+           xaxis = list(title="Input Signals"),
+           yaxis = list(title="Output signal"),
+           legend = list(orientation = 'h'))
+```
+
+Depending on the specific problem, we can choose a proper activation function based on the needs for a corresponding codomain or function range. For example, with hyperbolic tangent activation function, we can only have outputs ranging from -1 to 1 regardless of what input we have. With linear functions the output may range from $-\infty$ to $+\infty$. The Gaussian activation function yields an ANN model called *Radial Basis Function* network.
+
+## Network topology
+
+The number of layers: The $x$'s, or features, in the dataset are called **input nodes** while the predicted values are called the **output nodes**. Multilayer networks include multiple hidden layers. The following graph represents a two-layer neural network: 
+
+![](https://wiki.socr.umich.edu/images/3/36/DSPA_Figs_TwoLayer_Chapter6.png)
+$$\text{Two Layer network.}$$
+
+When we have multiple layers, the information flow could be complicated.
+
+## The direction of information travel
+
+The arrows in the last graph (with multiple layers) suggest a feed forward network. In such networks, we can also have multiple outcomes modeled simultaneously.
+
+![](https://wiki.socr.umich.edu/images/0/07/DSPA_Figs_multioutput_Chapter6.png)
+$$\text{Multi-output}$$
+
+Alternatively, in a recurrent network (feedback network), information can also travel backwards in loops (or delays). This is illustrated in the following graph.  
+
+![](https://wiki.socr.umich.edu/images/f/f9/DSPA_Figs_delay_chapter6.png)
+$$\text{Delay(feedback network)}$$
+
+This short-term memory increases the power of recurrent networks dramatically. However, in practice, recurrent networks are not commonly used.
+
+## Network layers
+
+In any network, the number of input nodes and output nodes are predetermined by the predictive variables in the dataset and the desired prediction outcome. Typically, researchers can specify the number of hidden layers and the number of nodes in each layer of the network model. Ideally, simpler networks with fewer nodes and lower number of hidden layers are preferred for simplicity, computational efficiency, and network model interpretability. 
+
+## Training neural networks with backpropagation
+
+This algorithm could determine the weights in the model using the strategy of optimizing back-propagating errors. First, we assign random weight values (all weights must be non-trivial, i.e., $\not= 0$). For example, we can use a normal distribution, or any other random process, to assign initial weights (priors). Then, we can adjust the weights iteratively by repeating the process until a certain convergence or stopping criterion is met. Each iteration contains two phases. 
+
+ - *Forward phase*: run the data from the input layer to output layer using the current iteration weight estimates,
+ - *Backward phase*: compare the generated outputs and the true target values (training validation). If the difference is significant, we change the weights and go through the forward phase, again.
+
+In the end, we pick a set of weights minimizing the total aggregate error to be the weights of the specific neural network.
+
+## Case Study 1: Google Trends and the Stock Market - **Regression**
+
+### Step 1 - collecting data
+
+In this case study, we are going to use the [Google trends and stock market dataset](https://wiki.socr.umich.edu/index.php/SOCR_Data_GoogleTrends_2005_2011). A [doc file with the meta-data](https://umich.instructure.com/files/416273/download?download_frd=1) and the [CSV data](https://umich.instructure.com/files/416274/download?download_frd=1) are available on the [supporting Case-Studies Canvas Site](https://umich.instructure.com/courses/38100/files/folder/Case_Studies). These daily data (between 2008 and 2009) can be used to examine the associations between Google search trends and market conditions, e.g., real estate or stock market indices.
+
+#### Variables
+
+ - **Index**: Time Index of the Observation
+ - **Date**: Date of the observation (Format: YYYY-MM-DD)
+ - **Unemployment**: The Google Unemployment Index tracks queries related to "unemployment, social, social security, unemployment benefits" and so on.
+ - **Rental**: The Google Rental Index tracks queries related to "rent, apartments, for rent, rentals", etc.
+ - **RealEstate**: The Google Real Estate Index tracks queries related to "real estate, mortgage, rent, apartments" and so on.
+ - **Mortgage**: The Google Mortgage Index tracks queries related to "mortgage, calculator, mortgage calculator, mortgage rates".
+ - **Jobs**: The Google Jobs Index tracks queries related to "jobs, city, job, resume, career, monster" and so forth.
+ - **Investing**: The Google Investing Index tracks queries related to "stock, finance, capital, yahoo finance, stocks", etc.
+ - **DJI_Index**: The Dow Jones Industrial (DJI) index. These data are interpolated from 5 records per week (Dow Jones stocks are traded on week-days only) to 7 days per week to match the constant 7-day records of the Google-Trends data.
+ - **StdDJI**: The standardized-DJI Index computed by: StdDJI = 3+(DJI-11091)/1501, where m=11091 and s=1501 are the approximate mean and standard-deviation of the DJI for the period (2005-2011).
+ - **30-Day Moving Average Data Columns**: The 8 variables below are the 30-day moving averages of the 8 corresponding (raw) variables above: *Unemployment30MA, Rental30MA, RealEstate30MA, Mortgage30MA, Jobs30MA, Investing30MA, DJI_Index30MA*, and *StdDJI_30MA*.
+ - **180-Day Moving Average Data Columns**: The 8 variables below are the 180-day moving averages of the 8 corresponding (raw) variables: *Unemployment180MA, Rental180MA, RealEstate180MA, Mortgage180MA, Jobs180MA, Investing180MA, DJI_Index180MA*, and *StdDJI_180MA*.
+
+We’ll remove the first two columns since the goal now is to model and predict Real Estate or other economic indices.
+
+### Step 2 - exploring and preparing the data
+
+First we need to load the dataset into `R`.
+
+```{r echo=T}
+google <- read.csv("https://umich.instructure.com/files/416274/download?download_frd=1", stringsAsFactors = F)
+```
+
+Let's delete the first two columns, since the only goal is to predict Google Real Estate Index with other indexes and DJI.
+
+```{r echo=T}
+google <- google[, -c(1, 2)]
+str(google)
+```
+
+As we can see from the structure of the data, these indexes and DJI have different ranges. We should `rescale` the data to make all features unitless, and therefore, comparable. In [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html), we learned that normalizing these features using our own `normalize()` function could fix the problem of heterogeneity of measuring units across features. We can use `lapply()` to apply the `normalize()` function to each feature (column in the data frame).
+
+```{r echo=T, message=F, error=F, warning=F}
+normalize <- function(x) {
+return((x - min(x)) / (max(x) - min(x)))
+}
+google_norm<-as.data.frame(lapply(google, normalize))
+summary(google_norm$RealEstate)
+```
+
+The last step clearly normalizes all feature vectors into the range $[0,1]$.
+
+The next step would be to split the `google` dataset into *training* and *testing* sets. This time we will use the `sample()` and `floor()` function to separate training and test dataset (75:25). The `sample()` function creates a set of (random) indicators for row indices. We can subset the original dataset with random rows using these indicators. The `floor()` function takes a number *x* and returns the closest integer to *x*.
+
+`sample(row, floor(size))`
+
+ - *row*: rows in the dataset that you want to select from. If you want to select all the rows, you can use $nrow(data)$ or $1:nrow(data)$ (for a single number or a vector).
+ - *size*: how many rows you want for your subset.
+
+```{r echo=T}
+sub <- sample(nrow(google_norm), floor(nrow(google_norm)*0.75))
+google_train <- google_norm[sub, ]
+google_test <- google_norm[-sub, ]
+```
+
+Following this data preprocessing, can move forward with the neural network training phase.
+
+### Step 3 - training a model on the data
+
+Here, we use the function `neuralnet::neuralnet()`, which returns a NN object containing:
+
+ - *call*; the matched call.
+ - *response*; extracted from the data argument.
+ - *covariate*; the variables extracted from the data argument.
+ - *model.list*; a list containing the covariates and the response variables extracted from the formula argument.
+ - *err.fct* and *act.fct*; the error and activation functions.
+ - *net.result*; a list containing the overall result of the neural network for every repetition.
+ - *weights*; a list containing the fitted weights of the neural network for every repetition.
+ - *result.matrix*; a matrix containing the reached threshold, needed steps, error, AIC, BIC, and weights for every repetition. Each column represents one repetition.
+
+`m <- neuralnet(target ~ predictors, data=mydata, hidden=1)`, where:
+
+ - *target*: variable we want to predict.
+ - *predictors*: predictors we want to use. Note that we cannot use "." to denote all the variables in this function. We have to add all predictors one by one to the model.
+ - *data*: training dataset.
+ - *hidden*: number of hidden nodes that we want to use in the model. By default, it is set to one.
+
+```{r fig.height=15, fig.width=15, message=F, error=F, warning=F}
+# install.packages("neuralnet")
+library(neuralnet)
+google_model <- neuralnet(RealEstate~Unemployment+Rental+Mortgage+Jobs+Investing+DJI_Index+StdDJI, data=google_train)
+plot(google_model)  # neuralnet::plot.nn
+```
+![](https://wiki.socr.umich.edu/images/e/e5/DSPA_Figs_plot_google_model_Ch6.png)
+
+The above graph shows that we have only one hidden node. `Error` represents the aggregate sum of squared errors and `Steps` indicates the number of iterations until the ANN model converged. Note that these outputs could be different when you run exact same model-fitting optimization because the weights are stochastically estimated.
+
+Also, *bias nodes* (blue singletons in the graph) may be added to feedforward neural networks acting like intermediate input nodes that produce constant values, e.g., 1. They are not connected to nodes in previous layers, yet they generate biased activation. Bias nodes are not required but are helpful in some neural networks as they allow network flexibility by offsetting the activation functions.
+
+### Step 4 - evaluating model performance
+
+Similar to the `predict()` function that we have mentioned in previous chapters, `compute()` is an alternative method that could help us to generate the model predictions.
+
+`p<-compute(m, test)`
+
+ - *m*: a trained neural networks model.
+ - *test*: the test dataset. This dataset should only contain the same type of predictors in the neural network model.
+
+Our model used `Unemployment, Rental, Mortgage, Jobs, Investing, DJI_Index, StdDJI` as predictors. Therefore, we need to reference these corresponding column numbers in the test dataset, i.e., columns 1, 2, 4, 5, 6, 7, 8, respectively.
+
+```{r echo=T}
+google_pred <- compute(google_model, google_test[, c(1:2, 4:8)])
+pred_results <- google_pred$net.result
+cor(pred_results, google_test$RealEstate)
+```
+
+As mentioned in [Chapter 3](https://socr.umich.edu/DSPA2/DSPA2_notes/03_LinearAlgebraMatrixComputingRegression.html), we can still use the correlation between predicted results and observed Real Estate Index to evaluate the algorithm. For real datasets, a correlation exceeding $0.9$ is a very good indicator of the performance of the NN model. Could this be improved further?
+
+### Step 5 - improving model performance
+
+This time we will include $4$ hidden nodes in the single-layer NN model. Let's see what results we can get from this more complicated model.
+
+```{r echo=T, message=F, error=F, warning=F}
+google_model2 <- neuralnet(RealEstate~Unemployment+Rental+Mortgage+Jobs+Investing+DJI_Index+StdDJI, data=google_train, hidden = 4)
+plot(google_model2)
+```
+![](https://wiki.socr.umich.edu/images/d/d1/DSPA_Figs_plot_google_model2_ch6.png)
+
+Although the graph looks more complicated than the previous neural network, we have smaller `Error`, i.e., sum of squared errors. The neural network models may be used both for *classification* and *regression*, which we will see in the next part. Let's first try regression.
+
+```{r echo=T, message=F, error=F, warning=F}
+google_pred2 <- compute(google_model2, google_test[, c(1:2, 4:8)])
+pred_results2 <- google_pred2$net.result
+cor(pred_results2, google_test$RealEstate)
+
+plot_ly() %>%
+  add_markers(x=pred_results2, y=google_test$RealEstate, 
+              name="Data Scatter", type="scatter", mode="markers") %>%
+  add_trace(x = c(0,1), y = c(0,1), type="scatter", mode="lines",
+        line = list(width = 4), name="Ideal Agreement") %>%
+  layout(title=paste0('Scatterplot (Normalized) Observed vs. Predicted Real Estate Values, Cor(Obs,Pred)=',
+                      round(cor(pred_results2, google_test$RealEstate), 2)),
+           xaxis = list(title="NN (hidden=4) Real Estate Predictions"),
+           yaxis = list(title="(Normalized) Observed Real Estate"),
+           legend = list(orientation = 'h'))
+```
+
+We get an even higher correlation. This is almost an ideal result! The predicted and observed `RealEstate` indices have a strong linear relationship. Nevertheless, too many hidden nodes might sometimes decrease the correlation between predicted and observed values, which will be examined in the practice problems later in this chapter.
+
+
+### Step 6 - adding additional layers
+
+We observe an even lower `Error` by using three hidden layers, each with $4,3,3$ nodes, respectively. However, this enhanced neural network may complicate the interpretation of the results (or may overfit the network to intrinsic noise in the data).
+
+```{r message=F, error=F, warning=F}
+google_model2 <- neuralnet(RealEstate~Unemployment+Rental+Mortgage+Jobs+Investing+DJI_Index+StdDJI, data=google_train, hidden = c(4,3,3))
+google_pred2<-compute(google_model2, google_test[, c(1:2, 4:8)])
+pred_results2<-google_pred2$net.result
+cor(pred_results2, google_test$RealEstate)
+# plot(google_model2)
+
+plot_ly() %>%
+  add_markers(x=pred_results2, y=google_test$RealEstate, 
+              name="Data Scatter", type="scatter", mode="markers") %>%
+  add_trace(x = c(0,1), y = c(0,1), type="scatter", mode="lines",
+        line = list(width = 4), name="Ideal Agreement") %>%
+  layout(title=paste0('Scatterplot (Normalized) Observed vs. Predicted Real Estate Values, Cor(Obs,Pred)=',
+                      round(cor(pred_results2, google_test$RealEstate), 2)),
+           xaxis = list(title="NN (hidden=(4,3,3)) Real Estate Predictions"),
+           yaxis = list(title="(Normalized) Observed Real Estate"),
+           legend = list(orientation = 'h'))
+```
+
+## Simple NN demo - learning to compute $\sqrt {\ \ \ }$
+
+Neural networks can be used at the interface of experimental, theoretical, computational and data sciences. Here is one powerful example, [data science applications to string theory](https://doi.org/10.1016/j.physrep.2019.09.005).
+
+We will demonstrate the foundation of the neural network prediction to estimate a basic mathematical function, square-root, $\sqrt {\ \ \ }: \mathbb{R}^+ \longrightarrow \mathbb{R}^+$. First, let’s generate and plot the data.
+
+```{r eval=T, warning=F, message=F, error=F}
+# generate random training data: 1,000 |X_i|, where X_i ~ Uniform (0,100) or perhaps ~ N(0,1)
+rand_data <- abs(runif(1000, 0, 100))
+ 
+# create a 2 column data-frame (input=data, output=sqrt_data)
+sqrt_df <- data.frame(rand_data, sqrt_data=sqrt(rand_data)) 
+# plot(rand_data, sqrt_df$sqrt_data)
+
+s <- seq(from=0, to=100, length.out=1000)
+plot_ly(x = ~s, y = ~sqrt(s), type="scatter", mode = "lines") %>%
+  layout(title='Square-root Function',
+           xaxis = list(title="Input (x)", scaleanchor="y"),
+           yaxis = list(title="Output (y=sqrt(x))", scaleanchor="x"),
+           legend = list(orientation = 'h'))
+```
+
+Next, fit the NN model.
+
+```{r eval=T, message=F, error=F, warning=F}
+# Train the neural net
+set.seed(1234)
+net.sqrt <- neuralnet(sqrt_data ~ rand_data,  sqrt_df, hidden=10, threshold=0.1)
+```
+
+Examine the NN-prediction results on testing data.
+
+```{r eval=T, message=F, error=F, warning=F}
+# report the NN
+# print(net.sqrt)
+ 
+# generate testing data seq(from=0.1, to=N, step=0.1)
+N <- 200 # out of range [100: 200] is also included in the testing!
+test_data <- seq(0, N, 0.1); test_data_sqrt <- sqrt(test_data)
+ 
+test_data.df <- data.frame(rand_data=test_data, sqrt_data=sqrt(test_data));
+ # try to predict the square-root values using 10 hidden nodes
+ # Compute or predict for test data input, test_data.df
+pred_sqrt <- predict(net.sqrt, test_data.df)
+ 
+ # compute uses the trained neural net (net.sqrt), 
+ # to estimate the square-roots of the testing data 
+ 
+# compare real (test_data_sqrt) and NN-predicted (pred_sqrt) square roots of test_data
+# plot(pred_sqrt, test_data_sqrt, xlim=c(0, 12), ylim=c(0, 12)); 
+# abline(0,1, col="red", lty=2)
+# legend("bottomright",  c("Pred vs. Actual SQRT", "Pred=Actual Line"), cex=0.8, lty=c(1,2),
+#         lwd=c(2,2),col=c("black","red"))
+
+plot_ly(x = ~pred_sqrt[,1], y = ~test_data_sqrt, type = "scatter", mode="markers", name="scatter") %>%
+  add_trace(x = c(0,14), y = c(0,14), mode="lines", line = list(width = 4), name="Ideal Agreement") %>%
+  layout(title='Scatter Plot Predicted vs. Actual SQRT',
+           xaxis = list(title="NN Predicted", scaleanchor="y"),
+           yaxis = list(title="Actual Value (y=sqrt(x))", scaleanchor="x"),
+           legend = list(orientation = 'h'))
+
+compare_df <-data.frame(pred_sqrt, test_data_sqrt); # compare_df
+ 
+# plot(test_data, test_data_sqrt)
+# lines(test_data, pred_sqrt, pch=22, col="red", lty=2)
+# legend("bottomright",  c("Actual SQRT","Predicted SQRT"),
+#        lty=c(1,2),lwd=c(2,2),col=c("black","red"))
+
+plot_ly(x = ~test_data, y = ~test_data_sqrt,  type="scatter", mode="lines", name="SQRT") %>%
+  add_trace(x = ~test_data, y = ~pred_sqrt, mode="markers", name="NN Model Prediction") %>%
+  layout(title='Predicted vs. Actual SQRT',
+           xaxis = list(title="Inputs"),
+           yaxis = list(title="Outputs (y=sqrt(x))"),
+           legend = list(orientation = 'h'))
+``` 
+
+We observe that the NN, `net.sqrt` actually learns and predicts pretty close to the complex square root function. Of course, everyone's results may vary as we randomly generate the training data (rand_data) and the NN construction (net.sqrt) is also stochastic.
+
+## Stochastic Neural Networks - Restricted Boltzmann Machines (RBMs)
+
+[DSPA Appendix 12 (Stochastic Neural Networks - Restricted Boltzmann Machine (RBM))](https://socr.umich.edu/DSPA2/DSPA2_notes/DSPA_Appendix_12_BoltzmannMachines
+.html) includes a description of stochastic neural networks, and more specifically, *Restricted Boltzmann Machine (RBM)*. RBMs are used for tasks such as dimensionality reduction, classification, regression, collaborative filtering, feature learning, and generative modeling. Its foundations span mathematics, statistics, and physics, with each field contributing essential principles to the structure and function of RBMs. This appendix provides an example of training 
+a RBM to predict the function $f(x)=x-\sin(x)$.
+
+
+## Case Study 2: Google Trends and the Stock Market - *Classification*
+
+In practice, NN may be more useful as a classifier. Let's demonstrate this by using the Stock Market data. We mark the samples according to their `RealEstate` categorization. Those higher than $75\%$ percentile will be labeled $0$, those lower than $0.25$ percentile will get labeled $2$, and those in between will get labeled $1$. Note that even in the classification setting, the responses still must be numeric.
+
+```{r message=F, error=F, warning=F}
+google_class = google_norm
+id1 = which(google_class$RealEstate>quantile(google_class$RealEstate,0.75))
+id2 = which(google_class$RealEstate<quantile(google_class$RealEstate,0.25))
+id3 = setdiff(1:nrow(google_class),union(id1,id2))
+google_class$RealEstate[id1]=0
+google_class$RealEstate[id2]=1
+google_class$RealEstate[id3]=2
+summary(as.factor(google_class$RealEstate))
+```
+
+We divide the data into training and testing sets and generate three derived one-hot-encoding features (dummy variables), which correspond to the three `RealEstate` outcome labels (categories).
+
+```{r message=F, error=F, warning=F}
+set.seed(2017)
+train = sample(1:nrow(google_class),0.7*nrow(google_class))
+google_tr = google_class[train,]
+google_ts = google_class[-train,]
+train_x = google_tr[,c(1:2,4:8)]
+train_y = google_tr[,3]
+colnames(train_x)
+test_x = google_ts[,c(1:2,4:8)]
+test_y = google_ts[3]
+train_y_ind = model.matrix(~factor(train_y)-1)
+colnames(train_y_ind) = c("High","Median","Low")
+train = cbind(train_x, train_y_ind)
+```
+
+We specify non-linear output and report intermediate results every $5,000$ iterations.
+
+```{r message=F, error=F, warning=F}
+nn_single = neuralnet(High+Median+Low~Unemployment+Rental+Mortgage+Jobs+Investing+DJI_Index+StdDJI,
+    data = train,
+    hidden=4,
+    linear.output=FALSE,
+    lifesign='full', lifesign.step=5000)
+```
+
+Below is the prediction function using this neural network model to forecast the `RealEstate` class label.
+
+```{r message=F, error=F, warning=F}
+pred = function(nn, dat) {
+    # compute uses the trained neural net (nn=nn_single), and 
+    # new testing data (dat=google_ts) to generate predictions (y_hat)
+    # compute returns a list containing: 
+    #     (1) neurons: a list of the neurons' output for each layer of the neural network, and
+    #     (2) net.result: a matrix containing the overall result of the neural network.
+    yhat = compute(nn, dat)$net.result
+    
+    # find the maximum in each row (1) in the net.result matrix
+    # to determine the first occurrence of a specific element in each row (1)
+    # we can use the apply function with which.max
+    yhat = apply(yhat, 1, which.max)-1
+    return(yhat)
+}
+
+mean(pred(nn_single, google_ts[,c(1:2,4:8)]) != as.factor(google_ts[,3]))
+```
+
+Finally, report the confusion matrix illustrating the agreement/disagreement between the 3 observed `RealEstate` class labels and their (NN) predicted counterparts.
+
+```{r message=F, error=F, warning=F}
+table(pred(nn_single, google_ts[,c(1:2,4:8)]), as.factor(google_ts[,3]))
+```
+
+Now let's inspect the structure of the resulting Neural Network.
+
+```{r message=F, error=F, warning=F}
+plot(nn_single)
+```
+
+Similarly, we can change `hidden` to utilize multiple hidden layers, however, a more complicated model won't necessarily guarantee an improved performance.
+
+```{r message=F, error=F, warning=F}
+nn_single = neuralnet(High+Median+Low~Unemployment+Rental+Mortgage+Jobs+Investing+DJI_Index+StdDJI,
+    data = train,
+    hidden=c(4,5),
+    linear.output=FALSE,
+    lifesign='full', lifesign.step=5000)
+mean(pred(nn_single, google_ts[,c(1:2,4:8)]) != as.factor(google_ts[,3]))
+```
+
+#  Support Vector Machines (SVM)
+
+Recall that in [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html) we presented lazy machine learning methods, which assign class labels using geometrical distances of different features. In multidimensional feature spaces, we can utilize spheres, centered according to the training dataset, to assign testing data labels. What kinds of shapes may be embedded in $nD$ space to help with the classification process?
+
+## Classification with hyperplanes
+
+The easiest shape would be an $(n-1)D$ plane embedded in $nD$, which splits the entire space into two parts. Support Vector Machines (SVM) can use hyperplanes to split the data into separate groups, or classes. Obviously, this may be useful for datasets that are *linearly separable*.
+
+As an example, consider lines, $(n-1)D$ planes, embedded in $\mathbb{R}^2$. Assuming that we have only two features, will you choose line $A$ or line $B$ as the better `hyperplane` separating the data? Or even another plane $C$?
+
+```{r echo=F, message=F, error=F, warning=F}
+A <- c(1, 4, 3, 2, 4, 8, 6, 10, 9)
+B <- c(1, 5, 3, 2, 3, 8, 8, 7, 10)
+
+# plot(A, B, xlab="", ylab="", pch=16, cex=2)
+# abline(v=5, col="red", lty=2)
+# text(5.4, 9, labels="A")
+# abline(12, -1, col="red", lty=2)
+# text(6, 5.4, labels="B")
+
+modelLabels <- c('A', 'B')
+modelLabels.x <- c(5.4, 8.2)
+modelLabels.y <- c(9, 4.1)
+modelLabels.col <- c("blue", "red")
+
+plot_ly(x = A, y = B, type="scatter", mode="markers", name="Data") %>%
+  add_lines(x = c(5,5), y = c(1,10), name="Line A")  %>% 
+  add_lines(x = c(10,2), y = c(2,10), name="Line B")  %>% 
+  layout(title="Illustration of Hyperplane (line) Separation of 2D Data",
+         xaxis=list(title="X", scaleanchor="y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Y", scaleanchor  = "x"), legend = list(orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, textangle=c(90,0),
+                            font=list(size=15, color=modelLabels.col), showarrow=FALSE))
+```
+
+### Finding the maximum margin
+
+To answer the above question, we need to search for the **Maximum Margin Hyperplane (MMH)**. That is the hyperplane that creates greatest separation between the two closest observations.
+
+We define support vectors as the points from each class that are closest to MMH. Each class must have at least one observation as a support vector.
+
+Using support vectors alone is insufficient for finding the MMH. Although some mathematical calculations are involved, the fundamentals of the SVM process is fairly simple. Let's look at linearly separable data and non-linearly separable data individually.
+
+### Linearly separable data
+
+If the dataset is linearly separable, we can find the outer boundaries of our two groups of data points. These boundaries are called convex hulls (red lines in the following graph). The MMH line (orange solid) is just the line that is perpendicular to the shortest line (green dash) between the two convex hulls.
+
+```{r echo=F, message=F, error=F, warning=F}
+# plot(A, B, xlab="", ylab="", pch=16, cex=2)
+# segments(1, 1, 4, 5, lwd=1, col = "red")
+# segments(1, 1, 4, 3, lwd = 1, col = "red")
+# segments(4, 3, 4, 5, lwd = 1, col = "red")
+# segments(6, 8, 10, 7, lwd = 1, col = "red")
+# segments(6, 8, 9, 10, lwd = 1, col = "red")
+# segments(10, 7, 9, 10, lwd = 1, col = "red")
+# segments(6, 8, 4, 5, lwd = 1, lty=2)
+# abline(9.833, -2/3, lwd=2)
+
+modelLabels <- c('A', 'B')
+modelLabels.x <- c(5.4, 8.2)
+modelLabels.y <- c(8, 4.1)
+modelLabels.col <- c("blue", "red")
+
+plot_ly() %>%
+  add_lines(x = c(6,4), y = c(8,5), name="Shortest Line Between the Convex Clusters (A)", line=list(dash='dash'))  %>% 
+  add_lines(x = c(10,2), y = c(3,8.7), name="MMH Line (B)")  %>% 
+  add_segments(x=1, xend=4, y=1, yend = 5, line=list(color="red"), showlegend=F) %>%
+  add_segments(x=1, xend=4, y=1, yend = 3, line=list(color="red"), showlegend=F) %>%
+  add_segments(x=4, xend=4, y=3, yend = 5, line=list(color="red"), showlegend=F) %>%
+  add_segments(x=6, xend=10, y=8, yend = 7, line=list(color="red"), showlegend=F) %>%
+  add_segments(x=6, xend=10, y=8, yend = 7, line=list(color="red"), showlegend=F) %>%
+  add_segments(x=10, xend=9, y=7, yend = 10, line=list(color="red"), showlegend=F) %>%
+  add_markers(x = A, y = B, type="scatter", mode="markers", name="Data", marker=list(color="blue")) %>%
+  add_markers(x = 4, y = 5, name="P1", 
+              marker = list(size = 20, color = 'blue', line = list(color = 'yellow', width = 2))) %>%
+  add_segments(x=6, xend=9, y=8, yend = 10, line=list(color="red"), showlegend=F) %>%
+  add_markers(x = 6, y = 8, name="P2", 
+              marker = list(size = 20, color = 'blue', line = list(color = 'yellow', width = 2))) %>%
+  layout(title="Illustration of Hyperplane (line) Separation of 2D Data",
+         xaxis=list(title="X", scaleanchor="y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Y", scaleanchor  = "x"), legend = list(orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, textangle=c(-40,0),
+                            font=list(size=15, color=modelLabels.col), showarrow=FALSE))
+```
+
+Mind the difference between *convex hull* and *concave hull* of a set of points.
+
+```{r message=F, error=F, warning=F}
+# install.packages("alphahull")
+library(alphahull)
+
+# Define a convex spline polygon function
+#   Input 'boundaryVertices' (n * 2 matrix) include the ordered X,Y coordinates of the boundary vertices
+#   'vertexNumber' is the number of spline vertices to use; dim(boundaryVertices)[1] ... not all are necessary and some end vertices are clipped
+#   'k' controls the smoothness of the  periodic spline, i.e., the number of points to wrap around the ends
+#   Returns an array of points 
+convexSplinePolygon <- function(boundaryVertices, vertexNumber, k=3) 
+  {
+    # Wrap k vertices around each end.
+    n <- dim(boundaryVertices)[1]
+    if (vertexNumber < n) {
+      print("vertexNumber< n!!!")
+      stop()
+    }
+    if (k >= 1) {
+        data <- rbind(boundaryVertices[(n-k+1):n, ], boundaryVertices, boundaryVertices[1:k, ])
+    } else {
+        data <- boundaryVertices
+    }
+
+    # Spline-interpolate the x and y coordinates
+    data.spline <- spline(1:(n+2*k), data[ , 1], n=vertexNumber)
+    x <- data.spline$x
+    x1 <- data.spline$y
+    x2 <- spline(1:(n+2*k), data[,2], n=vertexNumber)$y
+
+    # Keep only the middle part
+    cbind(x1, x2)[k < x & x <= n+k, ]
+}
+
+# install.packages("alphahull")
+# Concave hull (alpha-convex hull)
+group1 <- list(x=A[6:9], y=B[6:9])
+# if duplicate points are expected, remove them to prevent ahull() function errors
+group2 <- lapply(group1, "[" ,which(!duplicated(as.matrix(as.data.frame(group1)))))
+concaveHull1 <- ahull(group2, alpha=6)
+
+# plot(concaveHull1, add=FALSE, col="blue", wpoints=FALSE, xlim=c(0,10),ylim=c(0,10))
+# points(group2, pch=19)
+
+library(alphahull)
+# Convex hull
+group3 <- list(x=A[1:5], y=B[1:5])
+# points(group3, pch=19)
+convHull2 <- lapply(group3, "[", chull(group3))
+
+# polygon(convHull2, lty=2, border="gray", lwd=2)
+# polygon(convexSplinePolygon(as.matrix(as.data.frame(convHull2)), 100),border="red",lwd=2)
+# legend("topleft",  c("Convex Hull", "Convex Spline Hull", "Concave Hull"), lty=c(2,1,1), lwd=c(2,2,2),col=c("gray","red", "blue"), cex=0.8)
+# text(5,2, "group 2", col="red"); text(8,6, "group 1", col="blue")
+
+library(sp)
+SpP = SpatialPolygons(list(Polygons(list(Polygon(group2)),ID="s1"))) 
+# plot(SpP)
+# points(XY)
+x1 <- SpP@polygons[[1]]@Polygons[[1]]@coords[,1]
+y1 <- SpP@polygons[[1]]@Polygons[[1]]@coords[,2]
+df1 <- convexSplinePolygon(as.matrix(as.data.frame(convHull2)), 100)
+
+plot_ly() %>%
+  add_trace(x=df1[,1], y=df1[,2], type="scatter", mode="lines", name="Convex Hull", line=list(color="lightblue")) %>%
+  add_lines(x = x1, y = y1, type="scatter", mode="lines", name="Concave Region", line=list(color="orange")) %>%
+  add_segments(x = df1[1,1],  xend=df1[dim(df1)[1],1], y = df1[1,2], yend = df1[dim(df1)[1],2], type="scatter", 
+            mode="lines", name="", line=list(color="gray"), showlegend=F) %>%
+  add_segments(x = x1[3],  xend=x1[4], y = y1[3], yend = y1[4], type="scatter", 
+            mode="lines", name="Concave Region", line=list(color="orange"), showlegend=F) %>%
+  add_lines(x = c(6,4), y = c(8,5), name="Shortest Line Between the Convex Clusters (A)", line=list(dash='dash'))  %>% 
+  add_lines(x = c(10,2), y = c(3,8.7), mode="lines", name="MMH Line (B)")  %>% 
+  add_segments(x=1, xend=4, y=1, yend = 5, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_segments(x=1, xend=4, y=1, yend = 3, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_segments(x=4, xend=4, y=3, yend = 5, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_segments(x=6, xend=10, y=8, yend = 7, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_segments(x=6, xend=10, y=8, yend = 7, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_segments(x=10, xend=9, y=7, yend = 10, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_markers(x = A, y = B, type="scatter", mode="markers", name="Data", marker=list(color="blue")) %>%
+  add_markers(x = 4, y = 5, name="P1", 
+              marker = list(size = 20, color = 'blue', line = list(color = 'yellow', width = 2))) %>%
+  add_segments(x=6, xend=9, y=8, yend = 10, line=list(color="gray", dash='dash'), showlegend=F) %>%
+  add_markers(x = 6, y = 8, name="P2", 
+              marker = list(size = 20, color = 'blue', line = list(color = 'yellow', width = 2))) %>%
+  # add_lines(x = df1[,1], y = df1[,2], type="scatter", mode="lines", name="Convex Hull")  %>%
+  layout(title="Illustration of Hyperplane (line) Separation of 2D Data",
+         xaxis=list(title="X", scaleanchor="y"),  # control the y:x axes aspect ratio
+         yaxis = list(title="Y", scaleanchor  = "x"), legend = list(orientation = 'h'),
+         annotations = list(text=modelLabels,  x=modelLabels.x, y=modelLabels.y, textangle=c(-40,0),
+                            font=list(size=15, color=modelLabels.col), showarrow=FALSE))
+
+#   # extract the row numbers of the boundary points, in convex order.
+# indx=concaveHull1$arcs[,"end1"]  
+# points <- df[indx,2:3]               # extract the boundary points from df
+# points <- rbind(points,points[1,])   # add the closing point
+# # create the SpatialPolygonsDataFrame
+# SpP = SpatialPolygons(list(Polygons(list(Polygon(points)),ID="s1"))) 
+# plot(SpP)
+# plot(SpP@polygons[[1]]@Polygons[[1]]@coords[,1], SpP@polygons[[1]]@Polygons[[1]]@coords[,2])
+```
+
+An alternative way to linearly separate the data into (two) clusters is to find two parallel planes that can separate the data into two groups, and then increase the distance between the two planes as much as possible.
+
+We can use vector notation to mathematically define planes. In $n$-dimensional space, a plane could be expressed by the following equation:
+$$\vec{w}\cdot\vec{x}+b=0,$$
+where $\vec{w}$ (weights) is the plane normal vector, $\vec{x}$ is the vector of unknowns, both have *n* coordinates, and $b$ is a constant scalar that completely determines the plane (as it specifies a point the plane goes through). 
+
+To clarify this notation let's look at the situation in a 3D space where we can express (embed) 2D Euclidean planes using a point $(x_o,y_o,z_o)$ and normal-vector $(a,b,c)$ form. This is just a linear equation, where $d=-(ax_o + by_o + cz_0)$:
+$$ax + by + cz + d = 0,$$
+or equivalently
+$$w_1x_1+w_2x_2+w_3x_3+b=0$$
+We can see that it is equivalent to the vector notation
+
+Using the vector notation, we can specify two hyperplanes as follows:
+$$\vec{w}\cdot\vec{x}+b\geq+1$$
+and
+$$\vec{w}\cdot\vec{x}+b\leq-1$$
+We require that all of the observations in the first class fall above the first plane and all observations in the other class fall below the second plane.
+
+The distance between two planes is calculated as:
+$$\frac{2}{\lVert \vec{w}\rVert}$$
+where $\lVert  \cdot \rVert$ is the Euclidean norm. To maximize the distance, we need to minimize the Euclidean norm.
+
+To sum up we are going to find $\min\frac{\lVert \vec{w}\rVert}{2}$ subject to the following constrain
+
+$$y_i(\vec{w}\cdot\vec{x_i}-b)\geq1, \, 0\leq i\leq n\ ,$$
+where for each data point index $i$, $y_i= \pm1$ correspond to ${w}\cdot x_{i} - b \geq 1$ and ${w}\cdot x_{i} - b \leq -1$, respectively.
+
+We will see more about *constrained and unconstrained optimization* later in [Chapter 13](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html). For each nonlinear programming problem, the **primal problem**, there is related nonlinear programming problem, also known as the **Lagrangian dual problem**. Under certain assumptions for convexity and suitable constraints, the [primal and dual problems have equal optimal objective values](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html). Primal optimization problems are typically described as:
+
+$$\begin{array}{rcl} \min_x{f(x)} \\ 
+\text{subject to}  \\
+g_i(x) \leq 0\\
+h_j(x) = 0 \\
+\end{array}.$$
+
+Then the Lagrangian dual problem is defined as a parallel nonlinear programming problem
+
+$$\begin{array}{rcl} & \min_{u,v}{\theta(u,v)} & \\ 
+& \text{subject to} & \\
+& u \geq 0 & \\
+\end{array},$$
+where 
+$$ \theta(u,v)= \inf_{x}{ \left ( f(x)+\displaystyle\sum_i {u_i g_i(x)} +\displaystyle\sum_j {v_j h_j(x)} \right )}.$$
+
+[Chapter 13](https://socr.umich.edu/DSPA2/DSPA2_notes/13_FunctionOptimization.html) provides additional technical details about optimization duality. 
+
+Suppose the Lagrange primal is 
+$$L_p = \frac{1}{2}||w||^2-\sum_{i=1}^{n}\alpha_i[y_i(w_0+x_i^{t}w)-1],\ \text{where}\ \alpha_i\geq 0.$$
+
+To optimize that objective function, we can set the partial derivatives equal to zero:
+
+$$\frac{\partial}{\partial w}\ :\ w = \sum_{i=1}^{n}\alpha_iy_ix_i$$
+
+$$\frac{\partial}{\partial b}\ :\ 0 = \sum_{i=1}^{n}\alpha_iy_i.$$
+
+Substituting into the Lagrange primal, we obtain the Lagrange dual:
+
+$$L_D = \sum_{i=1}^{n}\alpha_i - \frac{1}{2} \sum_{i=1}^{n}\alpha_i\alpha_i' y_i y_i' x_i^t x_i '=
+\sum _{i=1}^{n}\alpha_i-{\frac {1}{2}}\sum _{i=1}^{n}\sum _{j=1}^{n}y_{i}\alpha_{i}(x_{i}\cdot x_{j})y_{j}\alpha_{j}.$$
+
+Then, we maximize $L_D$ subject to $\alpha_i \geq 0$ and $\sum_{i=1}^{n}\alpha_iy_i =0$.
+For each $i\in \{1,\,\cdots ,\,n\}$, this iterative optimization results in adjusting
+the coefficient $\alpha_{i}$ in the direction of 
+$\frac{\partial f}{\partial \alpha_{i}}$. 
+
+Hence, the resulting coefficient vector $(\alpha_{1}',\cdots ,\alpha_{n}')$ is projected onto the nearest vector of coefficients which satisfies the given constraints. Repeating this process drives the coefficient vector to a local optimum.
+
+By the [Karush-Kuhn-Tucker optimization conditions](https://en.wikipedia.org/wiki/Karush%E2%80%93Kuhn%E2%80%93Tucker_conditions), we have $\hat\alpha[y_i(\hat{b}+x_i^t\hat{w})-1]=0.$
+
+This implies that if $y_i \hat{f}(x_i)>1$, then $\hat{\alpha}_i=0$.
+
+The **support** of a function ($f(x_i)=\hat{b}+x_i^t\hat{w}$) is the smallest subset of the domain containing only arguments ($x$) which are not mapped to zero ($f(x)\not=0$). In our case, the solution $\hat{w}$ is defined in terms of a linear combination of the **support points**:
+
+$$\hat{f}(x)=w^t x = w = \sum_{i=1}^{n}\alpha_iy_ix_i. $$
+
+That's where the name of Support Vector Machines (SVM) comes from.
+
+### Non-linearly separable data
+
+For non-linearly separable data, we employ the *kernel trick* to linearize the problem in a higher dimensional space. Still, we use a separating hyperplane, but allow some of the points to be misclassified into the wrong class. To penalize for misclassification, we add a regularization term after the fidelity term (Euclidean norm) and then minimize the additive mixture of the two terms.
+
+Therefore, the solution will optimize the following *regularized* objective (cost) function:
+$$\min \left (\frac{\lVert \vec{w}\rVert}{2} +C\sum_{i=1}^{n} \xi_i \right )$$
+$$\text{subject to}$$
+$$y_i(\vec{w}\cdot\vec{x}_i-b)\geq1, \, \forall\vec{x}_i, \, \xi_i\geq0,$$
+where hyperparameter $C$ controls the error term (regularization) penalty and $\xi_i$ is the distance between the misclassified observation $i$ and the plane.
+
+We have the following Lagrange primal problem: 
+$$L_p = \frac{1}{2}||w||^2 + C\sum_{i=1}^{n}\xi_i-\sum_{i=1}^{n}\alpha_i[y_i(b+x_i^{t}w)-(1-\xi_i)] - \sum_{i=1}^{n}\gamma_i\xi_i,$$
+where $$\alpha_i,\gamma_i \geq 0.$$
+
+Similar to what we did earlier in the linearly separable case, we can use the derivatives of the primal problem to solve the dual problem. 
+
+Notice the inner product in the final expression. We can replace this inner product with a kernel function that maps the feature space into a higher dimensional space (e.g., using a polynomial kernel) or an infinite dimensional space (e.g., using a Gaussian kernel).
+
+### Using kernels for non-linear spaces
+
+An alternative way to solve for the non-linear separable is called the *kernel trick*. That is to add new dimensions (or features) to make these non-linear separable data to be separable in a higher dimensional space. 
+
+The solution of the quadratic optimization problem in this case involves *regularized* objective function:
+$$\min_{w, b} \left (\frac{\lVert \vec{w}\rVert}{2} +C\sum_{i=1}^{n} \xi_i \right ),$$
+$$\text{subject to}$$
+$$y_i(\vec{w}\cdot\phi (\vec{x}_i)-b)\geq 1 -\xi_i, \, \forall\vec{x}_i, \, \xi_i\geq 0.$$
+Again, the hyperparameter $C$ controls the regularization penalty and $\xi_i$ are the slack variables introduced by lifting the initial low-dimensional (non-linear) problem to a new higher dimensional linear problem. The quadratic optimization of this (primal) higher-dimensional problem is similarly transformed into a Lagrangian dual problem:
+
+$$L_p = \max_{\alpha} \min_{w, b} \left \{\frac{1}{2}||w||^2 + C\sum_{i=1}^{n}\alpha_i \left ( 1- w^T\phi(\vec{x}_i) +b  \right )\right \},$$
+where $$0\leq \alpha_i \leq C, \forall i.$$
+
+The solution to the Lagrange dual problem provides estimates of $\alpha_i$ and we can predict the *class label* of a new sample $x_{test}$ via:
+
+$$y_{test}={\text{sign}}\left (w^t \phi (x_{test})+b\right )=
+{\text{sign}}\left ( \sum_{i=1}^{n} \alpha_i y_i \ \underbrace{\phi(\vec{x}_{i,test})^t \phi(\vec{x}_{j,test})}_{kernel, 
+K(\vec{x}_i,\vec{x}_j)=\phi(\vec{x}_{i,test}). \phi(\vec{x}_{j,test})} +b  \right ).$$
+
+Below is one example where the 2D data (`mtcars`, $n=32, k=10$ cars fuel consumption) doesn't appear as linearly separable in its native 2D ($weight\times horsepower$), the binary colors correspond to *V-shaped* or *Straight* engine type.
+
+```{r message=F, warning=F, error=F}
+library(plotly)
+
+mtcars$vs[which(mtcars$vs == 0)] <- 'V-Shaped Engine'
+mtcars$vs[which(mtcars$vs == 1)] <- 'Straight Engine'
+mtcars$vs <- as.factor(mtcars$vs)
+
+p_2D <- plot_ly(mtcars, x = ~wt, y = ~hp/10, color = ~vs, colors = c('blue', 'red'), name=~vs) %>%
+  add_markers() %>%
+  add_segments(x = 1, xend = 6, y = 8, yend = 18, colors="gray", opacity=0.2, 
+               showlegend = FALSE) %>%
+  layout(xaxis = list(title = 'Weight'), yaxis = list(title = 'Horsepower'), legend = list(orientation = 'h'),
+         title="(mtcars) Automobile Weight vs. Horsepower Relation") %>% hide_colorbar()
+p_2D
+```
+
+However, the data can be lifted in 3D where it is more clearly linearly separable (by engine type) via a 2D plane.
+
+```{r message=F, warning=F, error=F}
+# library(plotly)
+# p_3D <- plot_ly(mtcars, x = ~wt, y = ~hp, z = ~qsec, color = ~vs, colors = c('blue', 'red')) %>%
+#   add_markers() %>%
+#   layout(scene = list(xaxis = list(title = 'Weight'),
+#                     yaxis = list(title = 'Horsepower'),
+#                     zaxis = list(title = '1/4 mile time')))
+#p_3D
+
+# Compute the Normal to the 2D PC plane
+normVec = c(1, 1.3, -3.0)
+# Compute the 3D point of gravitational balance (Plane has to go through it)
+dMean <- c(3.2, -280, 2)
+
+d <- as.numeric((-1)*normVec %*% dMean)  # force the plane to go through the mean
+x=mtcars$wt; y=mtcars$hp; z=mtcars$qsec; w=mtcars$vs   # define the x, y, z dimensions
+w.col = ifelse(mtcars$vs=="Straight Engine", "blue", "red")
+w.name = ifelse(mtcars$vs=="Straight Engine", "Straight", "V-shape")
+  
+# Reparametrize the 2D (x,y) grid, and define the corresponding model values z on the grid. Recall z=-(d + ax+by)/c, where normVec=(a,b,c)
+x.seq <- seq(min(x),max(x),length.out=100)
+y.seq <- seq(min(y),max(y),length.out=100)
+z.seq <- function(x,y) -(d + normVec[1]*x + normVec[2]*y)/normVec[3]
+# define the values of z = z(x.seq, y.seq), as a Matrix of dimension c(dim(x.seq), dim(y.seq))
+z1 <- t(outer(x.seq, y.seq, z.seq))/10; range(z1)  # we need to check this 10 correction, to ensure the range of z is appropriate!!!
+
+# Draw the 2D plane embedded in 3D, and then add points with "add_trace"
+myPlotly <- plot_ly(x=~x.seq, y=~y.seq, z=~z1,
+                    colors = "gray", type="surface", opacity=0.5, showlegend = FALSE) %>%
+    add_trace(data=mtcars, x=x, y=y, z=mtcars$qsec, mode="markers", type="scatter3d",
+              marker = list(color=w.col, opacity=0.9, symbol=105)) %>%
+    layout(showlegend = FALSE,  scene = list(
+        aspectmode = "manual", aspectratio = list(x=1, y=1, z=1),
+        xaxis = list(title = "Weight", range = c(min(x),max(x))),
+        yaxis = list(title = "Horsepower", range = c(min(y),max(y))),
+        zaxis = list(title = "1/4 mile time", range = c(14, 23)))
+    ) %>% hide_colorbar()
+myPlotly
+```
+
+How can we do that in practice? We transform our data using kernel functions. A general form for kernel functions would be:
+$$K(\vec{x_i}, \vec{x_j})=\phi(\vec{x_i})\cdot\phi(\vec{x_j}),$$
+where $\phi$ is a mapping of the data into another space.
+
+The linear kernel would be the simplest one that is just the dot product of the features.
+$$K(\vec{x_i}, \vec{x_j})=\vec{x_i}\cdot\vec{x_j}.$$
+The polynomial kernel of degree *d* transform the data by adding a simple non-linear transformation of the data.
+$$K(\vec{x_i}, \vec{x_j})=(\vec{x_i}\cdot\vec{x_j}+1)^d.$$
+The sigmoid kernel is very similar to the neural networks approach. It uses a sigmoid activation function.
+$$K(\vec{x_i}, \vec{x_j})=\tanh(k\vec{x_i}\cdot\vec{x_j}-\delta).$$
+The Gaussian radial basis function (RBF) kernel is similar to RBF neural network and may be a good place to start, in general.
+$$K(\vec{x_i}, \vec{x_j})=\exp \left (\frac{-\lVert \vec{x_i}-\vec{x_j}\rVert^2}{2\sigma^2}\right ) .$$
+
+## Case Study 3: Optical Character Recognition (OCR)
+
+In [Chapter 4](https://socr.umich.edu/DSPA2/DSPA2_notes/04_DimensionalityReduction.html) we saw machine learning strategies for hand-written digit recognition. We now want to expand that to character recognition. The following example illustrates management and transferring of handwritten notes (text) and converting them to typeset or printed text representing the characters in the original notes (unstructured image data).
+
+*Protocol*:
+
+ - Divide the image (typically optical image of handwritten notes on paper) into a fine grid where each cell contains 1 glyph (symbol, letter, number).
+ - Match the glyph in each cell to 1 of the possible characters in a dictionary.
+ - Combine individual characters together into words to reconstitute the digital representation of the optical image of the handwritten notes.
+ 
+In this example, we use an optical document image (data) that has already been pre-partitioned into rectangular grid cells containing 1 character of the [26 English letters, A through Z](https://wiki.socr.umich.edu/index.php/SOCR_LetterFrequencyData).
+
+The resulting gridded dataset is distributed by the [UCI Machine Learning Data Repository](https://archive.ics.uci.edu/ml). The [dataset contains 20, 000 examples of 26 English capital letters printed using 20 different randomly reshaped and morphed fonts](https://umich.instructure.com/courses/38100/files/folder/Case_Studies/16_HandwrittenLetters).
+
+![This figure show an example of the preprocessed gridded handwritten letters.](https://wiki.socr.umich.edu/images/2/2d/SOCR_Data_Dinov_EnglishLetterFrequency_Fig2.png)
+
+### Step 1: Prepare and explore the data
+
+Load the data and split it into training and testing sets.
+
+```{r eval=T, message=F, error=F, warning=F}
+# read in data and examine its structure
+hand_letters <- read.csv("https://umich.instructure.com/files/2837863/download?download_frd=1", header = T)
+str(hand_letters)
+
+# divide into training (3/4) and testing (1/4) data
+hand_letters_train <- hand_letters[1:15000, ]
+hand_letters_test  <- hand_letters[15001:20000, ]
+```
+
+### Step 2: Training an SVM model
+
+We can specify `vanilladot` as a linear kernel, or alternatively:
+
+ - `rbfdot` Radial Basis kernel i.e, "Gaussian" 
+ - `polydot` Polynomial kernel
+ - `tanhdot` Hyperbolic tangent kernel
+ - `laplacedot` Laplacian kernel
+ - `besseldot` Bessel kernel
+ - `anovadot` ANOVA RBF kernel
+ -  `splinedot` Spline kernel 
+ - `stringdot` String kernel
+
+
+```{r eval=T, message=F, error=F, warning=F}
+# begin by training a simple linear SVM
+library(kernlab)
+set.seed(123)
+hand_letter_classifier <- ksvm(as.factor(letter) ~ ., data = hand_letters_train, kernel = "vanilladot")
+
+# look at basic information about the model
+hand_letter_classifier
+```
+
+### Step 3: Evaluating model performance
+
+```{r message=F, error=F, warning=F}
+# predictions on testing dataset
+hand_letter_predictions <- predict(hand_letter_classifier, hand_letters_test)
+
+head(hand_letter_predictions)
+
+# table(hand_letter_predictions, hand_letters_test$letter)
+
+# look only at agreements vs. disagreements
+# construct a vector of TRUE/FALSE indicating correct/incorrect predictions
+agreement <- hand_letter_predictions == hand_letters_test$letter # check if characters agree
+table(agreement)
+prop.table(table(agreement))
+
+tab <- table(hand_letter_predictions, hand_letters_test$letter)
+tab_df <- tidyr::spread(as.data.frame(tab), key = Var2, value = Freq)
+
+sum(diag(table(hand_letter_predictions, hand_letters_test$letter)))
+
+plot_ly(x = colnames(tab), y = colnames(tab), z = as.matrix(tab_df[, -1]), type = "heatmap")
+```
+
+### Step 4: Improving model performance
+
+Replacing the `vanilladot` linear kernel with `rbfdot` Radial Basis Function kernel, i.e., "Gaussian" kernel may improve the OCR prediction.
+    
+```{r message=F, error=F, warning=F}
+hand_letter_classifier_rbf <- ksvm(as.factor(letter) ~ ., data = hand_letters_train, kernel = "rbfdot")
+hand_letter_predictions_rbf <- predict(hand_letter_classifier_rbf, hand_letters_test)
+
+agreement_rbf <- hand_letter_predictions_rbf == hand_letters_test$letter
+table(agreement_rbf)
+prop.table(table(agreement_rbf))
+```
+
+Note the improvement of automated (SVM) classification accuracy ($0.928$) for `rbfdot` compared to the previous (`vanilladot`) result ($0.844$).
+
+## Case Study 4: Iris Flowers
+
+Let's have another look at the *iris data* that we saw in [Chapter 2](https://socr.umich.edu/DSPA2/DSPA2_notes/02_Visualization.html).
+
+### Step 1 - collecting data
+
+SVM requires all features to be numeric and each feature has to be scaled into a relatively small interval. We are using Edgar Anderson's Iris Data in R for this case study. This dataset measures the length and width of sepals and petals from three Iris flower species.
+
+### Step 2 - exploring and preparing the data
+
+Let's load the data first. In this case study we want to explore the variable `Species`.
+
+```{r message=F, error=F, warning=F}
+data(iris)
+str(iris)
+table(iris$Species)
+```
+
+The data looks good. However, recall that we need fairly normalized data. We could normalize the data by hand. Luckily, the `R` package we are going to use will normalize the dataset automatically.
+
+Now we can separate the training and test dataset using the $75\%-25\% rule.
+
+```{r message=F, error=F, warning=F}
+sub<-sample(nrow(iris), floor(nrow(iris)*0.75))
+iris_train<-iris[sub, ]
+iris_test<-iris[-sub, ]
+```
+
+Let's first try a toy (iris data) example.
+
+```{r message=F, error=F, warning=F, fig.height=6,fig.align='center',fig.width=8}
+library(e1071)
+iris.svm_1 <- svm(Species~Petal.Length+Petal.Width, data=iris_train,
+                kernel="linear", cost=1)
+iris.svm_2 <- svm(Species~Petal.Length+Petal.Width, data=iris_train,
+                kernel="radial", cost=1)
+par(mfrow=c(2,1))
+plot(iris.svm_1, iris[,c(5,3,4)], symbolPalette = rainbow(4), color.palette = terrain.colors)
+legend("center", "Linear")
+plot(iris.svm_2, iris[,c(5,3,4)], symbolPalette = rainbow(4), color.palette = terrain.colors)
+legend("center", "Radial", )
+```
+
+### Step 3 - training a model on the data
+
+We are going to use `kernlab` for this case study. However other packages like `e1071` and `klaR` are available if you are quite familiar with C++.
+
+Let's break down the function `ksvm()`
+
+`m<-ksvm(target~predictors, data=mydata, kernel="rbfdot", c=1)`
+
+ - *target*: the outcome variable that we want to predict.
+ - *predictors*: features that the prediction is based on. In this function we can use the "." to represent all the variables in the dataset again.
+ - *data*: the training dataset that the *target* and *predictors* can be found.
+ - *kernel*: is the kernel mapping we want to use. By default, it is the radial basis function (`rbfdot`).
+ - $C$ is a number that specifies the cost of misclassification.
+
+Let's install the package and test it with some real data.
+
+```{r message=F, error=F, warning=F}
+# install.packages("kernlab")
+library(kernlab)
+iris_clas <- ksvm(Species~., data=iris_train, kernel="vanilladot")
+iris_clas
+```
+
+Here, we used all the variables other than the `Species` in the dataset as predictors. In this model, we used the kernel `vanilladot`, a linear kernel, and obtained a training error of about 0.03.
+
+### Step 4 - evaluating model performance
+
+Given any pre-fit model, we have already used the `predict()` function to make predictions. Here we have a factor outcome, so we need the command `table()` to show us how well the predictions and actual data match.
+
+```{r message=F, error=F, warning=F}
+iris.pred<-predict(iris_clas, iris_test)
+table(iris.pred, iris_test$Species)
+```
+
+We can see that only a few cases of Iris `versicolor` flowers may be classified as `virginica`. The species of the majority of the flowers are all correctly identified.
+
+To see the results more clearly, we can use the proportional table to show the agreements of the categories.
+
+```{r message=F, error=F, warning=F}
+agreement<-iris.pred==iris_test$Species
+prop.table(table(agreement))
+```
+
+Here `==` means "equal to". Over 90% of predictions are correct. Nevertheless, is there any chance that we can improve the outcome? What if we try a Gaussian kernel?
+
+### Step 5 - RBF kernel function
+
+Linear kernel is the simplest one but usually not the best one. Let's try the **RBF (Radial Basis "Gaussian" Function)** kernel instead.
+
+```{r message=F, error=F, warning=F}
+iris_clas1<-ksvm(Species~., data=iris_train, kernel="rbfdot")
+iris_clas1
+iris.pred1<-predict(iris_clas1, iris_test)
+table(iris.pred1, iris_test$Species)
+agreement<-iris.pred1==iris_test$Species
+prop.table(table(agreement))
+```
+
+The model performance did not drastically improve, compared to the previous *linear* kernel case (you might get slightly different results). This is because this Iris dataset has a mostly linear feature space separation. In practice, we could try alternative kernel functions and see which one fits the dataset the best.
+
+## Parameter Tuning
+
+We can tune the SVM using the `tune.svm` function in the package `e1071`.
+
+```{r message=F, error=F, warning=F}
+costs = exp(-5:8)
+tune.svm(Species~., kernel = "radial", data = iris_train, cost = costs)
+```
+
+Further, we can draw a **cv** plot to gauge the model performance:
+
+```{r message=F, error=F, warning=F}
+# install.packages("sparsediscrim") 
+set.seed(2017)
+
+# Install the Package sparsediscrim: https://cran.r-project.org/src/contrib/Archive/sparsediscrim/
+# install.packages("corpcor", "bdsmatrix")
+# install.packages("C:/Users/Dinov/Desktop/sparsediscrim_0.2.4.tar.gz", repos = NULL, type="source")
+library(sparsediscrim)
+library (reshape); library(ggplot2)
+folds = cv_partition(iris$Species, num_folds = 5)
+train_cv_error_svm = function(costC) {
+  #Train
+  ir.svm = svm(Species~., data=iris,
+                 kernel="radial", cost=costC)
+  train_error = sum(ir.svm$fitted != iris$Species) / nrow(iris)
+  #Test
+  test_error = sum(predict(ir.svm, iris_test) != iris_test$Species) / nrow(iris_test)
+  #CV error
+  ire.cverr = sapply(folds, function(fold) {
+    svmcv = svm(Species~.,data = iris, kernel="radial", cost=costC, subset = fold$training)
+    svmpred = predict(svmcv, iris[fold$test,])
+    return(sum(svmpred != iris$Species[fold$test]) / length(fold$test))
+  })
+  cv_error = mean(ire.cverr)
+  return(c(train_error, cv_error, test_error))
+}
+
+costs = exp(-5:8)
+ir_cost_errors = sapply(costs, function(cost) train_cv_error_svm(cost))
+df_errs = data.frame(t(ir_cost_errors), costs)
+colnames(df_errs) = c('Train', 'CV', 'Test', 'Logcost')
+dataL <- melt(df_errs, id="Logcost")
+
+# ggplot(dataL, aes_string(x="Logcost", y="value", colour="variable",
+#                          group="variable", linetype="variable", shape="variable")) +
+#   geom_line(size=1) + labs(x = "Cost",
+#                            y = "Classification error",
+#                            colour="",group="",
+#                            linetype="",shape="") + scale_x_log10()
+
+plot_ly(dataL, x = ~log(Logcost), y = ~value, color = ~variable, 
+        colors = c('blue', 'red', "green"), type="scatter", mode="lines") %>%
+  layout(xaxis = list(title = 'log(Cost)'), yaxis = list(title = 'Classifier Error'), legend = list(orientation = 'h'),
+         title="SVM CV-Plot of Model Performance (Iris Data)") %>% hide_colorbar()
+```
+
+## Improving the performance of Gaussian kernels
+
+Now, let's attempt to improve the performance of a Gaussian kernel by tuning:
+
+```{r message=F, error=F, warning=F}
+set.seed(2020)
+gammas = exp(-5:5)
+tune_g = tune.svm(Species~., kernel = "radial", data = iris_train, cost = costs, gamma = gammas)
+tune_g
+```
+
+We observe that the model achieves a better prediction now.
+
+```{r message=F, error=F, warning=F}
+iris.svm_g <- svm(Species~., data=iris_train,
+                kernel="radial", gamma=0.0183, cost=20)
+table(iris_test$Species, predict(iris.svm_g, iris_test))
+agreement<-predict(iris.svm_g, iris_test)==iris_test$Species
+prop.table(table(agreement))
+```
+
+[Chapter 14](https://socr.umich.edu/DSPA2/DSPA2_notes/14_DeepLearning.html) provides more details about neural networks and deep learning.
+
+
+# Ensemble meta-learning
+
+*Meta-learning* involves building and ensembling multiple learners relying either on single or multiple learning algorithms. Meta-learners combine the outputs of several techniques and report consensus results that are more reliable, in general. For example, to decrease the [*variance* (bagging) or *bias* (boosting)](https://wiki.socr.umich.edu/index.php/SMHS_BiasPrecision), **random forest** attempts in two steps to correct the general decision trees' trend to overfit the model to the training set:
+
+ 1. Step 1: producing a distribution of simple ML models on subsets of the original data.
+ 2. Step 2: combine the distribution into one "aggregated" model.
+
+Before stepping into the details, let's briefly summarize:
+
+ - *Bagging* (stands for Bootstrap Aggregating) is the way to decrease the variance of your prediction by generating additional data for training from your original dataset using combinations with repetitions to produce multiple samples of the same cardinality/size as your original data. We can't expect to improve the model predictive power by synthetically increasing the size of the training set, however we may decrease the variance by narrowly tuning the prediction to the expected outcome.
+
+ - *Boosting* is a two-step approach that aims to reduce bias in parameter estimation. First, we use subsets of the original data to produce a series of moderately performing models and then "boost" their performance by combining them together using a particular cost function (e.g., Accuracy). Unlike bagging, in classical boosting, the subset creation is not random and depends upon the performance of the previous models: every new subset contains the elements that were (likely to be) misclassified by previous models. Usually, when using boosting, we prefer weaker classifiers. For example, a prevalent choice is to use a stump (level-one decision tree) in AdaBoost (Adaptive Boosting).
+
+## Bagging
+
+One of the most well-known meta-learning method is bootstrap aggregating or *bagging*. It builds multiple models with bootstrap samples using a single algorithm. The models' predictions are combined with voting (for classification) or averaging (for numeric prediction). Voting means the bagging model's prediction is based on the majority of learners' prediction for a class. Bagging is especially good with unstable learners like decision trees or SVM models.
+
+To illustrate the Bagging method we will again use the Quality of life and chronic disease dataset we saw earlier in [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html). Just like we did in the second practice problem in this chapter, we will use `CHARLSONSCORE` as the class label, which has 11 different levels.
+
+```{r}
+qol <- read.csv("https://umich.instructure.com/files/481332/download?download_frd=1")
+qol <- qol[!qol$CHARLSONSCORE==-9 , -c(1, 2)]
+qol$CHARLSONSCORE <- as.factor(qol$CHARLSONSCORE)
+```
+
+To apply `bagging()`, we need to download the `ipred` package first. After loading the package, we build a bagging model with `CHARLSONSCORE` as class label and all other variables in the dataset as predictors. We can specify the number of voters (decision tree models we want to have), which defaults to 25.
+
+```{r}
+# install.packages("ipred")
+library(ipred)
+set.seed(123)
+mybag<-bagging(CHARLSONSCORE ~ ., data=qol, nbagg=25)
+```
+
+The result, `mybag`, is a complex class object that includes `y` (vector of responses), `X` (data frame of predictors), `mtrees` (multiple trees as a list of length *nbagg* containing the trees for each bootstrap sample, `OOB` (logical indicating whether the out-of-bag estimate should be computed), `err` error	(if OOB=TRUE, the out-of-bag estimate of misclassification or root mean squared error or the Brier score for censored data), and comb	(Boolean indicating whether a combination of models was requested).
+
+Now we will use the `predict()` function to apply this forecasting model. For evaluation purposes, we create a table to inspect the re-substitution error.
+
+```{r}
+bt_pred <- predict(mybag, qol)
+agreement <- bt_pred==qol$CHARLSONSCORE
+prop.table(table(agreement))
+```
+
+This model works very well with its training data. It labeled 99.8% of the cases correctly. To evaluate its performance on testing data, we apply the `caret` `train()` function again with 10 repeated CVs as a re-sampling method. In `caret`, the bagged trees method is called `treebag`.
+
+```{r}
+library(caret)
+set.seed(123)
+ctrl <- trainControl(method="repeatedcv", number = 10, repeats = 10)
+train(CHARLSONSCORE ~ ., data=as.data.frame(qol), method="treebag", trControl=ctrl)
+```
+
+Well, we got a very marginal accuracy of 52% and a fair Kappa statistics. This result is better than the one we got earlier using the `ksvm()` function alone ($\sim 50\%$). Here we combined the prediction results of $38$ decision trees to get this accuracy. It seems that we can't forecast `CHARLSONSCORE` too well, however other QoL outcomes may have higher prediction accuracy. For instance, we may predict `QOL_Q_01` with  $accuracy=0.6$ and $\kappa=0.42$.
+
+```{r eval=F}
+set.seed(123)
+ctrl <- trainControl(method="repeatedcv", number = 10, repeats = 10)
+train(as.factor(QOL_Q_01) ~ . , data=as.data.frame(qol), method="treebag", trControl=ctrl)
+```
+
+In addition to decision tree classification, `caret` allows us to explore alternative `bag()` functions. For instance, instead of bagging based on decision trees, we can bag using a SVM model. `caret` provides a nice setting for SVM training, making predictions and counting votes in a list object `svmBag`. We can examine these objects by using the `str()` function.
+
+```{r}
+str(svmBag)
+```
+
+Clearly, `fit` provides the training functionality, `pred` the prediction and forecasting on new data, and `aggregate` is a way to combine many models and achieve voting-based consensus. Using the member operator, the $\$$ sign, we can explore these three types of elements of the `svmBag` object. For instance, the `fit` element may be extracted from the SVM object by:
+
+```{r}
+svmBag$fit
+```
+
+The SVM bag `fit` relies on the `kernlab::ksvm()` function. The other two methods, `pred` and `aggregate`, may be explored in a similar way. They follow the SVM model building and testing process we saw earlier. 
+
+This `svmBag` object could be used as an optional setting in the `train()` function. However, this option requires that all features are linearly independent, which may be rare in real world data. 
+
+```{r include=F, eval=F}
+bagctrl <- bagControl(fit=svmBag$fit, predict = svmBag$pred, aggregate=svmBag$aggregate)
+qol.rand <- qol[order(runif(2328)), ]
+set.seed(123)
+svmbag <- train(grade ~ ., data=boystown_n, "bag", trControl=ctrl, bagControl=bagctrl)
+svmbag
+```
+
+## Boosting
+
+*Bagging* uses equal weights for all learners we include in the model. *Boosting* is different as it employs non-uniform weights. Suppose we have the first learner correctly classifying 60% of the observations. This 60% of data may be less likely to be included in the training dataset for the next learner. So, we have more learners working on the remaining "hard-to-classify" observations.
+
+Mathematically, the boosting technique uses a weighted sum of functions to predict the outcome class labels. We can try to fit the true model using weighted additive modeling. We start with a random learner that can classify some of the observations mostly correctly, possibly with some errors.
+
+$$\hat{y}_1=l_1.$$
+
+This $l_1$ is our first learner and $\hat{y}_1$ denotes its predictions (this equation is in matrix form). Then, we can calculate the residuals of our first learner.
+
+$$\epsilon_1=y-v_1\times\hat{y}_1,$$
+where $v_1$ is a shrinkage parameter to avoid overfitting. Next, we fit the residual with another learner. This learner minimizes the following objective function $\sum_{i=1}^N||y_i-l_{k-1}-l_k||$. Here `k=2`. Then we obtain a second model $l_2$ with:
+
+$$\hat{y}_2=l_2.$$
+
+After that, we can update the residuals:
+
+$$\epsilon_2=\epsilon_1-v_2\times\hat{y}_2.$$
+
+We repeat this residual fitting until adding another learner $l_k$ results in updated residual $\epsilon_k$ that is smaller than a small predefined threshold. In the end, we will have an additive model like:
+
+$$L=v_1\times l_1+v_2\times l_2+...+v_k\times l_k,$$
+
+where we ensemble *k* weak learners to generate a stronger meta model.
+
+[Schapire and Freund](https://doi.org/10.1006/jcss.1997.1504) found that although individual learners trained on the pilot observations might be very weak in predicting in isolation, boosting the collective power of all of them is expected to generate a model **no worse than the best of all individual constituent models** included in the boosting ensemble. Usually, the boosting results are quite better than the top individual model. Although boosting can be used for almost all models, it's most commonly applied to decision trees.
+
+## Random forests
+
+Random forests, or decision tree forests, represent a class of boosting methods focusing on decision tree learners. Random forests (RF) represent ensembles of a large number of (typically weaker) classifiers such as individual decision trees that provide independent class predictions. Then, for any testing set, the RF aggregates the predictions of all individual trees to pool the most likely class label which becomes the RF prediction. If and when a large number of relatively independent tree models reach a consensus, i.e., majority vote, this forecasting outcome is expected to outperform any specific individual decision tree model. Whereas many of the trees in the forest may yield vastly incorrect and wild predictions, any consistent pattern emerging from other trees would suggest strong candidate predictions that pull the consensus in a uniform (correct) direction. The main assumptions of the random forest ensemble method include (1) existence of an actual signal encoded in the data features that may guide the individual tree into a nonrandom guessing pattern, and (2) the individual trees in the forest should be fairly independently trained to output predictions with low correlations.
+
+### Random Forest Algorithm (Pseudo Code)
+
+As RF relies on bagging to generate a meta ensemble regression or classification, it uses averaging of a large number of weak (noisy), mostly independent, and approximately unbiased models. This average pooling naturally reduces the performance variance. RF can be applied to any family of classifiers, and is particularly useful with decision trees, which tend to capture complex high-dimensional interactions. When grown sufficiently deep, the RFs have relatively low bias in their predictions. Individual trees are commonly expected to generate noisy predictions. Therefore, the expectation of the subsequent RF average pooling of the identically distributed $B$ trees is the same as the expectation of each of the constituent trees. Hence, the bias of bagged trees in the RF will be the same as the bias of any one of the individual trees. However, the RF improvement over each individual decision tree prediction rapidly decreases the forecasting variance. In boosting methods, the decision trees are not necessarily independent, but are grown adaptively to reduce the bias.
+
+Recall that by the [central limit theorem (CLT)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3152447/), the average of $B$ independent random variables from a distribution with a variance $\sigma^2$, has a much lower variance $\frac{\sigma^2}{B}$, which goes to zero as the sample size $B\to\infty$. However, when the random and identically distributed variables are not independent, then the variance of the arithmetic mean could be much larger. For instance, if pairwise correlations of the variables is non-trivial, $\rho>0$, the variance of the sampling distribution of the average would be on the order of $O(\sigma^2)$. More specifically, in this case the variance would be
+$$\left ( \rho +\frac{1-\rho}{B}\right )  \sigma^2\ \  \underbrace{\longrightarrow}_{B\to\infty}\ \ \rho\sigma^2 .$$
+
+In other words, the process of bagging dependent trees has less benefit on reducing prediction variability in the *average* pooled predictor. In RF, the improvement of prediction is based on the variance reduction of bagging, which is achieved by reducing tree correlations using tree-growing process based on *random selection of the input variables*.
+
+Below is a pseudo code illustrating the core parts of a Random Forest approach for regression or classification.
+
+ - Given a number of trees $B$, iterate over each tree index ($1\le b\le B$):
+   + Draw a bootstrap sample $Z^*$ of size $N$ from the training data
+   + Grow a random-forest tree $T_b$ to the bootstrapped data, by recursively repeating these steps for each terminal node of
+the current tree, until the minimum node size $n_{min}$ is reached
+      - Choose a random set of $m\ll p$ variables 
+      - Decide on an optimal variable split among the $m$ features
+      - Split the node into two children nodes based on the features
+ - Compile an output by ensembling the trees, $\{T_b\}_1^B$.
+ 
+The *RF prediction* given a new testing case $x$ is given by:
+
+ - For *regression problems*, pool across all random forest trees, $\hat{f}^{RF}_B (x) = \frac{1}{B}\sum_{b=1}^B {T_b(x)}$, and
+ - For *classification problems*: Suppose the $b$-th tree in the RF generates a class prediction $\hat{C}_b(x)$. Then, the RF output (prediction) is 
+ 
+$$\hat{C}_B^{RF}(x) = {{majority}\choose{vote}}\{ \hat{C}_b(x)\}. $$
+
+At each iteration, the bootstrapped sample dataset affects the growth of each tree. Prior to deciding whether and how to split a leaf node, we *randomly* choose $m\leq p$ features as candidate splitting variables. In general, $1\leq m\sim \sqrt{p} \ll p$.
+Suppose the parameter vector $\Omega_b$ characterizes the $b$-th random forest tree in terms of splitting variables, node cut-points, and terminal-node values. In the RF regression setting, growing $B$ trees $\{T(x|\Omega_b)\}_1^B$ yields the following random forest regression predictor
+
+$$\hat{f}_B^{RF}(x)=\frac{1}{B}\sum_{b=1}^B {T(x|\Omega_b)} .$$
+
+### Training random forests
+
+One approach to train and build random forests uses the `randomForest::randomForest()` method, which has the following invocation:
+
+`m<-randomForest(expression, data, ntree=500, mtry=sqrt(p))`
+
+ - *expression*: the class variable and features we want to include in the model.
+ - *data*: training data containing class and features.
+ - *ntree*: number of voting decision trees
+ - *mtry*: optional integer specifying the number of features to randomly select at each split. The parameter `p` stands for the number of features in the data.
+
+Let's build a random forest using the Quality of Life dataset.
+
+```{r message=F}
+# install.packages("randomForest")
+library(randomForest)
+set.seed(123)
+rf <- randomForest(as.factor(QOL_Q_01) ~ . , data=qol)
+rf
+```
+
+By default the model contains 500 voter trees and tries 6 variables at each split. Its OOB (out-of-bag) error rate is about 38%, which corresponds with a moderate accuracy (62%). Note that the OOB error rate is not a re-substitution error. Next to the confusion matrix, we see the reported OOB error rate for all specific classes. All of these error rates are reasonable estimates of future performances with unseen data. We can see that this model is so far the best of all models, although it is still not highly predictive of `QOL_Q_01`.
+
+### Evaluating random forest performance
+
+In addition to model building, the `caret` package also supports model evaluation. It reports more detailed model performance evaluations. As usual, we need to specify the re-sampling method and a parameter grid. Let's use a 10-fold CV re-sampling method as an example. The grid for this model contains information about the `mtry` parameter (the only tuning parameter for random forest). Previously we tried the default value $\sqrt{38}=6$ (38 is the number of features). This time we could compare multiple `mtry` parameters.  
+
+```{r}
+library(caret)
+ctrl <- trainControl(method="cv", number=10)
+grid_rf <- expand.grid(mtry=c(2, 4, 8, 16))
+```
+
+Next, we apply the `train()` function with our `ctrl` and `grid_rf` settings.
+
+```{r eval=T}
+set.seed(123)
+m_rf <- train(as.factor(QOL_Q_01) ~ ., data = qol, method = "rf", 
+metric = "Kappa", trControl = ctrl, tuneGrid = grid_rf)
+m_rf
+```
+
+This call may take a while to complete. The result appears to be a good model, when `mtry=16` we reached a moderately high accuracy (0.62) and good `kappa` statistic (0.44). This is a good result for a meta-learner of 6 dispersed classes (`table(as.factor(qol$QOL_Q_01))`).
+
+More examples of using `randomForest()` and interpreting its results are shown in [Chapter 5](https://www.socr.umich.edu/DSPA2/).
+
+## Adaptive boosting
+
+We may achieve even higher accuracy using **AdaBoost**. Adaptive boosting (AdaBoost) can be used in conjunction with many other types of learning algorithms to improve their performance. The output of the other learning algorithms ('weak learners') is combined into a weighted sum that represents the final output of the boosted classifier. AdaBoost is adaptive in the sense that subsequent weak learners are tweaked in favor of those instances misclassified by the previous classifiers. 
+
+For binary cases, we could use the method `ada::ada()` and for multiple classes (multinomial/polytomous outcomes) we can use the package `adabag`. The `adabag::boosting()` function allows us to specify a method by setting `coeflearn`. The two main types of adaptive boosting methods that are commonly used include the `AdaBoost.M1` algorithm, e.g., `Breiman` and `Freund`, or the `Zhu`'s `SAMME` algorithm. The key parameter in the `adabag::boosting()` method is *coeflearn*:
+
+ - *Breiman* (default), corresponding to $\alpha=\frac{1}{2}\times \ln\left (\frac{1-err}{err} \right )$, using the AdaBoost.M1 algorithm, where $\alpha$ is the [weight updating coefficient](https://en.wikipedia.org/wiki/AdaBoost#Choosing_.CE.B1t)
+ - *Freund*, corresponding to $\alpha=\ln\left (\frac{1-err}{err} \right )$, or
+ - *Zhu*, corresponding to $\alpha=\ln\left (\frac{1-err}{err} \right ) + \ln(nclasses-1)$.
+
+The generalizations of AdaBoost for multiple classes ($\geq 2$) include `AdaBoost.M1` (where individual trees are required to have an error $\lt \frac{1}{2}$) and `SAMME` (where individual trees are required to have an error $\lt 1-\frac{1}{nclasses}$). 
+
+Let's see some examples using these three alternative adaptive boosting methods:
+
+```{r message=F}
+# Prep the data
+qol <- read.csv("https://umich.instructure.com/files/481332/download?download_frd=1")
+qol <- qol[!qol$CHARLSONSCORE==-9 , -c(1, 2)]
+qol$CHARLSONSCORE <- as.factor(qol$CHARLSONSCORE)
+#qol$QOL_Q_01 <- as.factor(qol$QOL_Q_01)
+qol <- qol[!qol$CHARLSONSCORE==-9 , -c(1, 2)]
+qol$cd <- qol$CHRONICDISEASESCORE>1.497
+qol$cd <- factor(qol$cd, levels=c(F, T), labels = c("minor_disease", "severe_disease"))
+qol <- qol[!qol$CHRONICDISEASESCORE==-9, ]
+
+# install.packages("ada"); install.packages("adabag")
+library("ada"); library("adabag")
+set.seed(123)
+# qol_boost <- boosting(QOL_Q_01 ~ . , data=qol, mfinal = 100, coeflearn = 'Breiman')
+# mean(qol_boost$class==qol$QOL_Q_01)
+qol_boost <- boosting(cd ~ . , data=qol[, -37], mfinal = 100, coeflearn = 'Breiman')
+mean(qol_boost$class==qol$cd)
+
+set.seed(123)
+#qol_boost <- boosting(QOL_Q_01 ~ ., data=qol, mfinal = 100, coeflearn = 'Breiman')
+#mean(qol_boost$class==qol$QOL_Q_01)
+qol_boost <- boosting(cd ~ . , data=qol[, -37], mfinal = 100, coeflearn = 'Breiman')
+mean(qol_boost$class==qol$cd)
+
+set.seed(1234)
+#qol_boost <- boosting(QOL_Q_01 ~ ., data=qol, mfinal = 100, coeflearn = 'Zhu')
+#mean(qol_boost$class==qol$QOL_Q_01)
+qol_boost <- boosting(cd ~ . , data=qol[, -37], mfinal = 100, coeflearn = 'Zhu')
+mean(qol_boost$class==qol$cd)
+```
+
+We observe that the `Zhu` approach achieves the best results, average $accuracy> 0.93$. Notice that the default method is M1 `Breiman` and the number of boosting iterations is specified by the parameter `mfinal`.
+
+# Practice SVM Problems
+
+## Problem 1: Google Trends and the Stock Market
+
+Use the [Google trend data](https://wiki.socr.umich.edu/index.php/SOCR_Data_GoogleTrends_2005_2011). Fit a neural network model with the Google Trends data we saw earlier. This time use `Investing` as target and `Unemployment, Rental, RealEstate, Mortgage, Jobs, DJI_Index, StdDJI` as predictors. Use 3 hidden nodes. 
+
+**Note**: remember to change the columns you want to include in the test dataset when predicting.
+
+The following number is the correlation between predicted and observed values.
+
+```{r fig.height=15, fig.width=15, message=F, error=F, warning=F}
+google_model3 <- neuralnet(Investing~Unemployment+Rental+RealEstate+Mortgage+Jobs+DJI_Index+StdDJI, data=google_train, hidden = 3)
+plot(google_model3)
+google_pred3<-compute(google_model3, google_test[, c(1:5, 7:8)])
+pred_results3<-google_pred3$net.result
+cor(pred_results3, google_test$Investing)
+```
+
+You might get slightly different results since the weights are generated randomly.
+
+## Problem 2: Quality of Life and Chronic Disease
+
+Use the [Quality of life and chronic disease](https://umich.instructure.com/files/481332/download?download_frd=1) and the corresponding [meta-data doc](https://umich.instructure.com/files/399150/download?download_frd=1&verifier=aq3okIt8HwhhGPPWmbz7yd7vYGOKILe0Wvu13E6d), which we used in [Chapter 5](https://socr.umich.edu/DSPA2/DSPA2_notes/05_SupervisedClassification.html), . 
+
+Let's load the data first. In this case study, we want to use the variable `CHARLSONSCORE` as our target variable.
+
+```{r message=F, error=F, warning=F}
+qol <- read.csv("https://umich.instructure.com/files/481332/download?download_frd=1")
+featureLength <- dim(qol)[2]
+str(qol[, c((featureLength-3):featureLength)])
+```
+
+Delete the first two columns (we don't need ID variables) and rows that have missing values in `CHARLSONSCORE`(where `CHARLSONSCORE`equals "-9")
+`!qol$CHARLSONSCORE==-9` means we want all the rows that have CHARLSONSCORE not equal to -9. The exclamation sign (!) indicates "exclude". Also, we need to convert our categorical variable `CHARLSONSCORE` into a factor.
+
+```{r message=F, error=F, warning=F}
+qol <- qol[!qol$CHARLSONSCORE==-9 , -c(1, 2)]
+qol$CHARLSONSCORE<-as.factor(qol$CHARLSONSCORE)
+featureLength <- dim(qol)[2]
+str(qol[, c((featureLength-3):featureLength)])
+```
+
+Now the dataset is ready. First, separate the dataset into training and test datasets using the $75\%-25\% rule. Then, build a SVM model using all other variables in the dataset to be predictor variables. Try to add different costs of misclassification to the model. Rather than the default `C=1` we use `C=2` and `C=3`. See how the model behaves. Here we utilize the radial basis kernel.
+
+Output for `C=2`.
+
+```{r message=F, error=F, warning=F}
+sub <- sample(nrow(qol), floor(nrow(qol)*0.75))
+qol_train <- qol[sub, ]
+qol_test <- qol[-sub, ]
+qol_clas2 <- ksvm(CHARLSONSCORE~., data=qol_train, kernel="rbfdot", C=2)
+qol_clas2
+qol.pred2 <- predict(qol_clas2, qol_test)
+
+# table(qol.pred2, qol_test$CHARLSONSCORE)
+agreement <- qol.pred2==qol_test$CHARLSONSCORE
+prop.table(table(agreement))
+
+tab <- table(qol.pred2, qol_test$CHARLSONSCORE)
+tab_df <- tidyr::spread(as.data.frame(tab), key = Var2, value = Freq)
+
+sum(diag(table(hand_letter_predictions, hand_letters_test$letter)))
+
+plot_ly(x = colnames(tab), y = colnames(tab), z = as.matrix(tab_df[, -1]), type = "heatmap")
+```
+
+Output for `C=3`.
+
+```{r message=F, error=F, warning=F}
+qol_clas3 <- ksvm(CHARLSONSCORE~., data=qol_train, kernel="rbfdot", C=3)
+qol_clas3
+qol.pred3 <- predict(qol_clas3, qol_test)
+# table(qol.pred3, qol_test$CHARLSONSCORE)
+agreement <- qol.pred3==qol_test$CHARLSONSCORE
+prop.table(table(agreement))
+
+tab <- table(qol.pred3, qol_test$CHARLSONSCORE)
+tab_df <- tidyr::spread(as.data.frame(tab), key = Var2, value = Freq)
+
+sum(diag(table(hand_letter_predictions, hand_letters_test$letter)))
+
+plot_ly(x = colnames(tab), y = colnames(tab), z = as.matrix(tab_df[, -1]), type = "heatmap")
+```
+
+Try to practice these techniques using [other data from the list of our Case-Studies](https://umich.instructure.com/courses/38100/files/).
+
+
+<!--html_preserve-->
+<div>
+    	<footer><center>
+			<a href="https://www.socr.umich.edu/">SOCR Resource</a>
+				Visitor number 
+				<img class="statcounter"
+								src="https://c.statcounter.com/5714596/0/038e9ac4/0/" 
+								alt="Web Analytics" align="middle" border="0">
+				<script type="text/javascript">
+					var d = new Date();
+					document.write(" | " + d.getFullYear() + " | ");
+				</script> 
+				<a href="https://socr.umich.edu/img/SOCR_Email.png"><img alt="SOCR Email"
+	 			title="SOCR Email" src="https://socr.umich.edu/img/SOCR_Email.png"
+	 			style="border: 0px solid ;"></a>
+	 		 </center>
+	 	</footer>
+
+	<!-- Start of StatCounter Code -->
+		<script type="text/javascript">
+			var sc_project=5714596; 
+			var sc_invisible=1; 
+			var sc_partition=71; 
+			var sc_click_stat=1; 
+			var sc_security="038e9ac4"; 
+		</script>
+		
+		<script type="text/javascript" src="https://www.statcounter.com/counter/counter.js"></script>
+	<!-- End of StatCounter Code -->
+	
+	<!-- GoogleAnalytics -->
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"> </script>
+		<script type="text/javascript"> _uacct = "UA-676559-1"; urchinTracker(); </script>
+	<!-- End of GoogleAnalytics Code -->
+</div>
+<!--/html_preserve-->

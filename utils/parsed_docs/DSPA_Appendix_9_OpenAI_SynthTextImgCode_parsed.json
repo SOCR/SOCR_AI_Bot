@@ -1,0 +1,81 @@
+{
+  "metadata": {
+    "created_at": "2024-11-30T13:46:17.575554",
+    "total_sections": 4,
+    "total_code_chunks": 7,
+    "total_tables": 1,
+    "r_libraries": [
+      "RCurl",
+      "json64",
+      "openai",
+      "plotly",
+      "usethis"
+    ]
+  },
+  "sections": [
+    {
+      "title": "Main",
+      "content": "---\ntitle: \"DSPA2: Data Science and Predictive Analytics (UMich HS650)\"\nsubtitle: \"<h2><u>Appendix 9: OpenAI Synthetic Text, Image and Code Generation</u></h2>\"\nauthor: \"<h3>SOCR/MIDAS (Ivo Dinov)</h3>\"\ndate: \"`r format(Sys.time(), '%B %Y')`\"\ntags: [DSPA, SOCR, MIDAS, Big Data, Predictive Analytics] \noutput:\n  html_document:\n    theme: spacelab\n    highlight: tango\n    includes:\n      before_body: SOCR_header.html\n    toc: true\n    number_sections: true\n    toc_depth: 2\n    toc_float:\n      collapsed: false\nThis [DSPA2 appendix](https://www.socr.umich.edu/DSPA2/) illustrates some very simple examples of using the [OpenAI API](https://en.wikipedia.org/wiki/OpenAI) for synthetically generating free text, 2D images, and software code.\n\n\nThis is a $3^{rd}$ generation SOCR AI Bot for (1) synthetically simulating intelligent text response to human text/voice prompts; (2) simulating realistic 2D brain images; and (3) writing R code for simple verbal descriptions. These are based on [OpenAI](https://en.wikipedia.org/wiki/OpenAI) and [Third-generation Generative Pre-trained Transformer (GPT-3)](https://en.wikipedia.org/wiki/GPT-3) technologies.",
+      "word_count": 124
+    },
+    {
+      "title": "Context-Specific Synthetic Text Responses",
+      "content": "Based on [GPT3](https://en.wikipedia.org/wiki/GPT-3), use OpenAI to respond to the following prompt, i.e., the text input seeding/guiding the AI verbose response:\n\n*Expected health disparities and racial inequality in the US in 2030...*",
+      "word_count": 31
+    },
+    {
+      "title": "Realistic 2D Brain Images",
+      "content": "Generate 5 2D sagittal MRI brain images of Alzheimer's disease patients and contrast these to healthy control patients.\n\n## imulated 2D Brain Scans of Asymptomatic Controls (Healthy Participants)\n\n\n## Simulated 2D Brain Scans of Alzheimer's Disease Patients",
+      "word_count": 37
+    },
+    {
+      "title": "Automated Software Code Explaining, Modification, De Novo Writing",
+      "content": "## Code-to-text Explaining\n\n - *JavaScript Function 1*: create an array of 100 random uniform values\n - *R Function 2*: for a given sample and a confidence level, compute the confidence interval around mean using normal approximation.\n\n\n## CodeX\n\nThe [Codex model](https://beta.openai.com/docs/guides/code/introduction) fine-tunes the [GPT-3 series](https://en.wikipedia.org/wiki/GPT-3) for software code. It is capable of drafting Python, R, JavaScript, Go, Perl, PHP, Ruby, Swift, SQL, and shell scripts.\n\nThis prompt: *Write code to compute the five number summary of a given sample (vector)*, results in the following JavaScript code:\n\n\nWe can also test the code in `R`.\n\n\nOf course, this code may need to be properly formatted to make it useful. Yet, this AI-generated skeleton of a function can save significant amount of software development time.\n\n\n<!--html_preserve-->\n<div>\n    \t<footer><center>\n\t\t\t<a href=\"https://www.socr.umich.edu/\">SOCR Resource</a>\n\t\t\t\tVisitor number \n\t\t\t\t<img class=\"statcounter\" src=\"https://c.statcounter.com/5714596/0/038e9ac4/0/\" alt=\"Web Analytics\" align=\"middle\" border=\"0\">\n\t\t\t\t<script type=\"text/javascript\">\n\t\t\t\t\tvar d = new Date();\n\t\t\t\t\tdocument.write(\" | \" + d.getFullYear() + \" | \");\n\t\t\t\t</script> \n\t\t\t\t<a href=\"https://socr.umich.edu/img/SOCR_Email.png\"><img alt=\"SOCR Email\"\n\t \t\t\ttitle=\"SOCR Email\" src=\"https://socr.umich.edu/img/SOCR_Email.png\"\n\t \t\t\tstyle=\"border: 0px solid ;\"></a>\n\t \t\t </center>\n\t \t</footer>\n\n\t<!-- Start of StatCounter Code -->\n\t\t<script type=\"text/javascript\">\n\t\t\tvar sc_project=5714596; \n\t\t\tvar sc_invisible=1; \n\t\t\tvar sc_partition=71; \n\t\t\tvar sc_click_stat=1; \n\t\t\tvar sc_security=\"038e9ac4\"; \n\t\t</script>\n\t\t\n\t\t<script type=\"text/javascript\" src=\"https://www.statcounter.com/counter/counter.js\"></script>\n\t<!-- End of StatCounter Code -->\n\t\n\t<!-- GoogleAnalytics -->\n\t\t<script src=\"https://www.google-analytics.com/urchin.js\" type=\"text/javascript\"> </script>\n\t\t<script type=\"text/javascript\"> _uacct = \"UA-676559-1\"; urchinTracker(); </script>\n\t<!-- End of GoogleAnalytics Code -->\n</div>\n<!--/html_preserve-->",
+      "word_count": 218
+    }
+  ],
+  "tables": [
+    {
+      "section": "Main",
+      "content": "      smooth_scroll: true\n---",
+      "row_count": 2
+    }
+  ],
+  "r_code": [
+    {
+      "section": "Main",
+      "code": "knitr::opts_chunk$set(echo = TRUE)\n\n# Load user-specific OpenAI API Key\n# Sys.setenv(OPENAI_API_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')\n# Alternatively, add the key to the .Renviron file of the project. To open .Renviron for editing\n# if (!require(usethis))\n#     install.packages(\"usethis\")\n# usethis::edit_r_environ(scope = \"project\")\n\n# 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 \nlibrary(openai)\nSys.setenv(OPENAI_API_KEY = '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')",
+      "line_count": 12
+    },
+    {
+      "section": "Context-Specific Synthetic Text Responses",
+      "code": "# What sampling temperature to use. Higher values means the model will take more risks. Try 0.9 for more creative applications, and 0 (argmax sampling) for ones with a well-defined answer.\n\n# GPT-3 models: https://beta.openai.com/docs/models/gpt-3\n\n# General Health Essay\nsynthText <- create_completion(model = \"gpt-3.5-turbo-instruct\", n=5, best_of=10,\n                               max_tokens=300, temperature=0.8, # \n                               prompt = \"Write an abstract of a healthcare essay\")\n                               # prompt = \"How many outerspace layers are there?\")\nsynthText$choices$text\n\n# Health Disparity\nsynthText <- \n  create_completion(model = \"gpt-3.5-turbo-instruct\", n=5, best_of=10,\n                    max_tokens=300, temperature=0.8, # \n                    prompt = \"Expected health disparities and racial inequality in the US in 2030\")\nsynthText$choices$text",
+      "line_count": 17
+    },
+    {
+      "section": "Realistic 2D Brain Images",
+      "code": "#### Healthy Controls \n\nlibrary(RCurl)\nlibrary(json64)\nlibrary(plotly)\n\n# Generate images\": maximum text-prompt text length is 1000 characters, 1 <= n <= 10\n# https://beta.openai.com/docs/api-reference/images/create\n\nsynthImages <- create_image(\"2D sagittal MRI brain image of Healthy Asymptomatic Controls\",\n                            n=5, size=\"1024x1024\",\n                            response_format=\"b64_json\")  # response_format=\"url\"\n\n# Convert base64 JSON synth images to 2D rasterized images\n# single image rendering\n# raw1 <- base64Decode(synthImages$data[1]$b64_json[1], mode=\"raw\")\n# img1 <- png::readPNG(raw1)\n# plot_ly(z=~(255*img1), type=\"image\")\n# plot_ly(z=~(255*img1[,,1]), type=\"heatmap\")\n\nconvBase64JSON2Img <- function(txt) {\n  raw <- base64Decode(txt, mode=\"raw\")\n  # Handle PNG format\n  if (all(as.raw(c(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) == raw[1:8])) {\n    img <- png::readPNG(raw)\n  } \n  # Handle JPEG format\n  else if (all(as.raw(c(0xff, 0xd8, 0xff, 0xd9)) == raw[c(1:2, length(raw)-(1:0))])) { \n    img <- jpeg::readJPEG(raw)\n  } \n  # Currently no other formats are interpreted, but other formats can be added below\n  else stop(\"No Appropriate Image Format Interpreter Available ...\")\n  return(img)\n}\n# raw1 <- convBase64JSON2Img(synthImages$data[1]$b64_json[1])\n# plot_ly(z=~(255*raw1), type=\"image\")\n\nvars <- c(1:length(synthImages$data[1]$b64_json))\nplots <- lapply(vars, function(var) {\n  raw = convBase64JSON2Img(synthImages$data[1]$b64_json[var])\n  plot_ly(z=~(255*raw), type=\"image\", name=paste0(\"Synth Healthy Control Img \", var)) %>%\n                        layout(title = paste0(\"Synth AD Img \", var),\n                          xaxis = list(title = \"\", showticklabels = FALSE), \n                          yaxis = list(title = \"\", showticklabels = FALSE))\n})\nsubplot(plots, nrows = 1, shareY = TRUE) %>% layout(title=\"Simulated 2D Scans of Healthy Controls\")",
+      "line_count": 46
+    },
+    {
+      "section": "Realistic 2D Brain Images",
+      "code": "#### AD Patients\n# Generate images\": maximum text-prompt text length is 1000 characters, 1 <= n <= 10\n# https://beta.openai.com/docs/api-reference/images/create\n\nsynthImages <- create_image(\"2D sagittal MRI brain image of Alzheimer's disease\",\n                            n=5, size=\"1024x1024\",\n                            response_format=\"b64_json\")  # response_format=\"url\"\n\nconvBase64JSON2Img <- function(txt) {\n  raw <- base64Decode(txt, mode=\"raw\")\n  # Handle PNG format\n  if (all(as.raw(c(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) == raw[1:8])) {\n    img <- png::readPNG(raw)\n  } \n  # Handle JPEG format\n  else if (all(as.raw(c(0xff, 0xd8, 0xff, 0xd9)) == raw[c(1:2, length(raw)-(1:0))])) { \n    img <- jpeg::readJPEG(raw)\n  } \n  # Currently no other formats are interpreted, but other formats can be added below\n  else stop(\"No Appropriate Image Format Interpreter Available ...\")\n  return(img)\n}\n\nvars <- c(1:length(synthImages$data[1]$b64_json))\nplots <- lapply(vars, function(var) {\n  raw = convBase64JSON2Img(synthImages$data[1]$b64_json[var])\n  plot_ly(z=~(255*raw), type=\"image\", name=paste0(\"Synth AD Img \", var)) %>%\n                        layout(title = paste0(\"Synth AD Img \", var),\n                          xaxis = list(title = \"\", showticklabels = FALSE), \n                          yaxis = list(title = \"\", showticklabels = FALSE))\n})\nsubplot(plots, nrows = 1, shareY = TRUE) %>% layout(title=\"Simulated 2D Alzheimer's disease scans\")",
+      "line_count": 32
+    },
+    {
+      "section": "Automated Software Code Explaining, Modification, De Novo Writing",
+      "code": "# https://beta.openai.com/docs/guides/code/quickstart\n# prompt  <- '// Function 1\n# var fullNames = [];\n# for (var i = 0; i < 100; i++) {\n#   fullNames.push(names[Math.floor(Math.random() * names.length)]\n#     + \" \" + lastNames[Math.floor(Math.random() * lastNames.length)]);\n# }\n# \n# // What does Function 1 do?\n# '\n\nprompt  <- '// Function 1\nx <- runif(100)\nconf = 0.95\nse <- sd(x) / sqrt(length(x))\nalpha <- 1 - conf\nmean(x) + se * qnorm(c(alpha/2, 1 - alpha/2))\n\n// What does Function 1 do?\n'\n\nresponse = create_completion(model=\"code-davinci-002\", prompt=prompt,\n                             temperature=0, max_tokens=64, top_p=1.0, frequency_penalty=0.0,\n                             presence_penalty=0.0)\n\nresponse$choices[[1]]",
+      "line_count": 26
+    },
+    {
+      "section": "Automated Software Code Explaining, Modification, De Novo Writing",
+      "code": "/* write code to compute five number summary of a sample */\nvar rCode = document.createElement('script');\nrCode.innerHTML = 'var x = rnorm(100); var y = rnorm(100); var z = rnorm(100); var w = rnorm(100); var v = rnorm(100); var fiveNum = function(x) { return(c(min(x), quantile(x, 0.25), median(x), quantile(x, 0.75), max(x))); }; fiveNum(x); fiveNum(y); fiveNum(z); fiveNum(w); fiveNum(v);';\ndocument.body.appendChild(rCode);",
+      "line_count": 4
+    },
+    {
+      "section": "Automated Software Code Explaining, Modification, De Novo Writing",
+      "code": "x = rnorm(100)\ny = rnorm(100)\nz = rnorm(100)\nw = rnorm(100)\nv = rnorm(100)\nfiveNum = function(x) { \n  return(c(min(x), quantile(x, 0.25), median(x), quantile(x, 0.75), max(x)))\n}\nfiveNum(x); fiveNum(y); fiveNum(z); fiveNum(w); fiveNum(v)",
+      "line_count": 9
+    }
+  ]
+}
