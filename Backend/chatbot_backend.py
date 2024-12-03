@@ -14,8 +14,7 @@ import asyncio
 
 logging.basicConfig(level=logging.ERROR)
 
-os.environ["OPENAI_API_KEY"] = "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"
-
+os.environ["OPENAI_API_KEY"] = ""
 
 # Create FastAPI app
 app = FastAPI()
