@@ -14,7 +14,7 @@ import asyncio
 
 logging.basicConfig(level=logging.ERROR)
 
-os.environ["OPENAI_API_KEY"] = ""
+# os.environ["OPENAI_API_KEY"] = ""
 
 # Create FastAPI app
 app = FastAPI()
