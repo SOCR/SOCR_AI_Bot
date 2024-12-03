@@ -17,34 +17,46 @@ chat_server <- function(input, output, session) {
   #   })
   # }
   
+  # First, modify your safe_markdown_to_html function to include copy buttons
   safe_markdown_to_html <- function(text) {
     tryCatch({
-      # Convert markdown but preserve math delimiters
+      # First convert markdown to HTML
       html <- commonmark::markdown_html(text)
+      
+      # Add copy button only to code blocks
+      html <- gsub(
+        '<pre><code class="language-([^"]*)">(.*?)</code></pre>',
+        '<div class="code-wrapper">
+         <div class="code-header">
+           <button class="code-copy-btn" data-clipboard-text="\\2">
+             <i class="fas fa-copy"></i> Copy code
+           </button>
+         </div>
+         <pre><code class="language-\\1">\\2</code></pre>
+       </div>',
+        html
+      )
       
       # Remove wrapping paragraph tags if present
       html <- gsub("^<p>|</p>$", "", html)
-      
-      return(HTML(html))
+      return(html)
     }, error = function(e) {
       return(htmltools::htmlEscape(text))
     })
   }
   
-  # Render previous messages from database
+  # Modify your message rendering in previous_messages
   output$previous_messages <- renderUI({
-    # Trigger update when messages change
+    print("previous message was called")
     session$userData$rv$message_update
-    
     req(session$userData$current_chat_id())
-    cat("chat id changed to: ", session$userData$current_chat_id(),"\n")
     
     messages <- dbGetQuery(db_conn, "
-      SELECT role, content, created_at
-      FROM messages
-      WHERE chat_id = ?
-      ORDER BY created_at ASC
-    ", params = list(session$userData$current_chat_id()))
+    SELECT role, content, created_at
+    FROM messages
+    WHERE chat_id = ?
+    ORDER BY created_at ASC
+  ", params = list(session$userData$current_chat_id()))
     
     if (nrow(messages) == 0) {
       return(
@@ -61,15 +73,32 @@ chat_server <- function(input, output, session) {
       lapply(1:nrow(messages), function(i) {
         msg <- messages[i, ]
         is_user <- msg$role == "user"
-        print(msg$content)
+        
         div(
           class = paste("chat-message", if(is_user) "user" else "assistant"),
+          
           if (!is_user) div(class = "assistant-name", "Assistant"),
+          
           if (is_user) {
             htmltools::htmlEscape(msg$content)
           } else {
-            HTML(safe_markdown_to_html(msg$content))
+            tagList(
+              # Message content
+              HTML(safe_markdown_to_html(msg$content)),
+              
+              # Copy full response button at bottom
+              div(
+                class = "response-footer",
+                tags$button(
+                  class = "copy-response-btn",
+                  `data-clipboard-text` = msg$content,
+                  icon("copy"), 
+                  "Copy response"
+                )
+              )
+            )
           },
+          
           div(
             class = "message-timestamp",
             format(as.POSIXct(msg$created_at), "%I:%M %p")
@@ -79,7 +108,7 @@ chat_server <- function(input, output, session) {
     )
   })
   
-  # Render current streaming message
+  # Similarly modify current_message output
   output$current_message <- renderUI({
     msg <- current_message()
     
@@ -89,8 +118,16 @@ chat_server <- function(input, output, session) {
     
     div(
       class = "chat-message assistant",
+      style = "position: relative;",
       div(class = "assistant-name", "Assistant"),
-      HTML(safe_markdown_to_html(msg$content))
+      tagList(
+        HTML(safe_markdown_to_html(msg$content)),
+        tags$button(
+          class = "copy-response-btn",
+          `data-clipboard-text` = msg$content,
+          "Copy response"
+        )
+      )
     )
   })
   
@@ -107,44 +144,55 @@ chat_server <- function(input, output, session) {
       }
       partial_message <- get("partial_message", envir = .GlobalEnv)
       
-      if (!is.null(data$content)) {
-        if (data$content == "END_OF_MESSAGE") {
-          # Store completed message in database
-          dbExecute(db_conn, "
+      # Handle status messages from backend
+      if (!is.null(data$type) && data$type == "status") {
+        if (data$content %in% c("stopped", "complete")) {
+          print("Processing completion/stop")  # Debug log
+          # Save partial message if it exists
+          if (nchar(partial_message$content) > 0) {
+            dbExecute(db_conn, "
             INSERT INTO messages (message_id, chat_id, role, content, created_at)
             VALUES (?, ?, ?, ?, datetime('now'))
           ", params = list(
             UUIDgenerate(),
             session$userData$current_chat_id(),
             "assistant",
-            partial_message$content
+            paste0(partial_message$content, 
+                   if(data$content == "stopped") "\n\n[Generation stopped]" else "")
+          ))
+            
+            # Update reactive values
+            session$userData$rv$message_update <- session$userData$rv$message_update + 1
+            session$userData$rv$chat_list_update <- session$userData$rv$chat_list_update + 1
+            
+            # Clear current streaming message
+            current_message(NULL)
+            
+            # Reset buffer
+            assign("partial_message", list(role = "assistant", content = ""), envir = .GlobalEnv)
+          }
+          
+          # Reset UI
+          # Use session$sendCustomMessage to update UI
+          session$sendCustomMessage("toggleButtons", list(
+            show = "send",
+            hide = "stop_gen"
           ))
           
-          # Update reactive values
-          session$userData$rv$message_update <- session$userData$rv$message_update + 1
-          session$userData$rv$chat_list_update <- session$userData$rv$chat_list_update + 1
-          
-          # Clear current streaming message
-          current_message(NULL)
-          
-          # Reset buffer
-          assign("partial_message", list(role = "assistant", content = ""), envir = .GlobalEnv)
-          
           # Scroll to bottom
-          runjs("
-            const chatDiv = document.getElementById('chat_container');
-            if(chatDiv) {
-              chatDiv.scrollTop = chatDiv.scrollHeight;
-            }
-          ")
-        } else {
-          # Update partial message with new content
-          partial_message$content <- paste0(partial_message$content, data$content)
-          assign("partial_message", partial_message, envir = .GlobalEnv)
-          
-          # Update current streaming message
-          current_message(partial_message)
+          session$sendCustomMessage("scrollChat", TRUE)
         }
+        return()
+      }
+      
+      # Handle normal content streaming
+      if (!is.null(data$content) && !is.null(data$role) && data$role == "ai") {
+        # Update partial message with new content
+        partial_message$content <- paste0(partial_message$content, data$content)
+        assign("partial_message", partial_message, envir = .GlobalEnv)
+        
+        # Update current streaming message
+        current_message(partial_message)
       }
     })
   })
@@ -194,15 +242,13 @@ chat_server <- function(input, output, session) {
       chat_title <- dbGetQuery(db_conn, "SELECT title FROM chats WHERE chat_id = ?",
                                params = list(session$userData$current_chat_id()))$title
       
-      if (chat_title == "New Chat") {
-        new_title <- substr(message, 1, 25)
-        if (nchar(message) > 25) new_title <- paste0(new_title, "...")
-        
+      if (chat_title == "(New Chat)") {
+        new_title <- format_chat_title(message)
         dbExecute(db_conn, "
-          UPDATE chats
-          SET title = ?
-          WHERE chat_id = ?
-        ", params = list(new_title, session$userData$current_chat_id()))
+            UPDATE chats
+            SET title = ?
+            WHERE chat_id = ?
+          ", params = list(new_title, session$userData$current_chat_id()))
       }
       
     }, error = function(e) {
@@ -214,24 +260,33 @@ chat_server <- function(input, output, session) {
   
   # Server code for button toggling
   observeEvent(input$send, {
-    shinyjs::hide(id = "send")
+    # shinyjs::hide(id = "send")
     shinyjs::show(id = "stop_gen")
   })
   
   observeEvent(input$stop_gen, {
-    shinyjs::show(id = "send")
+    # shinyjs::show(id = "send")
     shinyjs::hide(id = "stop_gen")
   })
   
   # When generation completes
   observe({
     # Your generation complete condition here
-    shinyjs::show(id = "send")
+    # shinyjs::show(id = "send")
     shinyjs::hide(id = "stop_gen")
   })
   # Handle stop generation
+  # Handle stop generation
   observeEvent(input$stop_gen, {
-    # Add your stop generation logic here
+    # Send stop signal to WebSocket server
+    ws$send(jsonlite::toJSON(list(
+      type = jsonlite::unbox("stop"),
+      chat_id = jsonlite::unbox(session$userData$current_chat_id())
+    )))
+    
+    # Update UI immediately
+    # shinyjs::show(id = "send")
+    shinyjs::hide(id = "stop_gen")
   })
   
   # Clean up when session ends
@@ -240,4 +295,57 @@ chat_server <- function(input, output, session) {
     dbDisconnect(db_conn)
   })
   
+}
+
+
+# Util functions 
+
+format_chat_title <- function(message) {
+  # Remove excess whitespace and line breaks
+  message <- trimws(gsub("\\s+", " ", message))
+  
+  # Remove common prefixes that might not be meaningful
+  message <- gsub("^(hey|hi|hello|please|can you|could you|I want to|I need|help me)\\s+", "", 
+                  message, ignore.case = TRUE)
+  
+  # Remove code blocks and special characters
+  message <- gsub("```.*?```", "", message)  # Remove code blocks
+  message <- gsub("[^[:alnum:][:space:]?!.]", "", message)  # Keep only alphanumeric, spaces, and basic punctuation
+  
+  # If message starts with a question mark after cleaning, remove it
+  message <- gsub("^\\?+\\s*", "", message)
+  
+  # Capitalize first letter of each word, but preserve common terms
+  words <- strsplit(tolower(message), " ")[[1]]
+  keep_lowercase <- c("a", "an", "the", "in", "on", "at", "to", "for", "of", "and", "or", "but")
+  words <- sapply(1:length(words), function(i) {
+    if (i == 1 || !words[i] %in% keep_lowercase) {
+      tools::toTitleCase(words[i])
+    } else {
+      words[i]
+    }
+  })
+  message <- paste(words, collapse = " ")
+  
+  # Truncate while preserving whole words
+  if (nchar(message) > 35) {
+    words <- strsplit(message, " ")[[1]]
+    title <- ""
+    for (word in words) {
+      if (nchar(paste0(title, word)) > 32) {  # 37 to leave room for "..."
+        title <- paste0(trimws(title), "...")
+        break
+      }
+      title <- paste(title, word)
+    }
+    message <- title
+  }
+  
+  # Add question mark if the original message was a question
+  if (grepl("\\?", message)) {
+    message <- gsub("\\?+\\s*$", "", message)  # Remove existing question marks at end
+    message <- paste0(message, "?")
+  }
+  
+  return(trimws(message))
 }
