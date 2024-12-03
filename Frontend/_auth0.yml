@@ -1,0 +1,7 @@
+name: myApp
+remote_url: ''
+auth0_config:
+  api_url: !expr paste0('https://', 'dev-kddguts83dme74g5.us.auth0.com')
+  credentials:
+    key: iDVQL1lHsAtI1PMfJbiC2mbxEsj8HngW
+    secret: fXZDIqoZZomYE04rl1a9rAqsFVwwFndxzBY2AnBBpdfRwIbBL5JuN3TKU0SvptuL
