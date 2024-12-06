@@ -1,23 +1,29 @@
 from fastapi import FastAPI, WebSocket
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import START, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
 import os
 import logging
 from websockets.exceptions import ConnectionClosed
-
 import asyncio
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
 
 logging.basicConfig(level=logging.ERROR)
 
-# os.environ["OPENAI_API_KEY"] = ""
-
 # Create FastAPI app
 app = FastAPI()
+
+# Load the vector store with allow_dangerous_deserialization=True
+embeddings = OpenAIEmbeddings()
+vectorstore = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
 
 # Define the model
 llm = ChatOpenAI(model="gpt-4o", streaming=True)
@@ -25,22 +31,49 @@ llm = ChatOpenAI(model="gpt-4o", streaming=True)
 # Define a graph
 workflow = StateGraph(state_schema=MessagesState)
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", r"""You are an AI assistant with expertise in mathematics, science, and technical subjects. You are in particular an expert in data science and machine learning. Format all mathematical content using LaTeX:
-                    - Use $...$ for inline equations (e.g., The formula $E=mc^2$ shows...)
-                    - Use $$....$$ for display equations (e.g., The derivative is: $$E=mc^2$$)
-                    - Use proper LaTeX notation for all mathematical symbols
-                    - When explaining equations, break down complex mathematics step by step
+prompt = ChatPromptTemplate.from_messages([
+    ("system", r"""You are an AI assistant with expertise in mathematics, science, and technical subjects. You are in particular an expert in data science and machine learning. Format all mathematical content using LaTeX:
+                - Use $...$ for inline equations (e.g., The formula $E=mc^2$ shows...)
+                - Use $$....$$ for display equations (e.g., The derivative is: $$E=mc^2$$)
+                - Use proper LaTeX notation for all mathematical symbols
+                - When explaining equations, break down complex mathematics step by step
 
-                    Respond thoughtfully while ensuring all mathematical expressions are properly formatted for rendering."""),
-        MessagesPlaceholder(variable_name="messages"),
-    ]
-)
+                Use the following relevant information to help answer the user's question:
+                {context}
+
+                If the retrieved information is relevant, use it to enhance your response. If it's not relevant, you can ignore it.
+                
+                Respond thoughtfully while ensuring all mathematical expressions are properly formatted for rendering."""),
+    MessagesPlaceholder(variable_name="messages"),
+])
+
 # Define the function that calls the models
 def call_model(state: MessagesState):
+    # Get the last message
+    last_message = state["messages"][-1].content
+    
+    # Retrieve relevant chunks
+    results = vectorstore.similarity_search_with_score(last_message, k=3)
+    
+    # Format context
+    context = "\n\n".join([
+        f"Source: {doc.metadata['source']}\n"
+        f"Type: {doc.metadata['type']}\n"
+        f"Content: {doc.metadata['full_text'] if doc.metadata['type'] == 'text' else doc.metadata['full_table'] if doc.metadata['type'] == 'table' else doc.metadata['full_r_code']}"
+        for doc, score in results
+    ])
+    
+    # Print the prompt and context
+    print("\n" + "="*50)
+    print("Query:", last_message)
+    print("-"*50)
+    print("Retrieved Context:")
+    print(context)
+    print("-"*50)
+    
+    # Call the chain with context
     chain = prompt | llm
-    response = chain.invoke(state)
+    response = chain.invoke({"messages": state["messages"], "context": context})
     return {"messages": response}
 
 # Define the node in the graph
@@ -113,4 +146,3 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if current_task:
             current_task.cancel()
-        await websocket.close()

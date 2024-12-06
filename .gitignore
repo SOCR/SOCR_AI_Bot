@@ -3,3 +3,6 @@
 .RData
 .Ruserdata
 Frontend\_auth0.yml
+env/
+.env
+__pycache__/
